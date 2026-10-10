@@ -1,0 +1,110 @@
+// ============================================================================
+// Prisma Schema for Salah Companion (Prayer Tracker)
+// Optimized for lightweight, production-ready local or cloud deployment
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Using SQLite for lightweight zero-config embedded storage.
+  // To switch to PostgreSQL:
+  // 1. Change provider to "postgresql"
+  // 2. Set DATABASE_URL="postgresql://user:password@localhost:5432/salah_companion?schema=public"
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ----------------------------------------------------------------------------
+// User Account Model
+// ----------------------------------------------------------------------------
+model User {
+  id                      String      @id @default(uuid())
+  name                    String
+  email                   String      @unique
+  password                String?     // Hashed with bcrypt (optional for Google OAuth users)
+  role                    String      @default("USER") // "USER" | "ADMIN"
+  prayerCalculationMethod String      @default("Karachi") // e.g. "Karachi", "MWL", "ISNA", "Egypt"
+  latitude                Float?      // User GPS latitude for prayer calculations
+  longitude               Float?      // User GPS longitude for prayer calculations
+  isEmailVerified         Boolean     @default(false)
+  verificationTokenHash   String?     // Cryptographic SHA-256 hash of single-use verification token
+  tokenExpiresAt          DateTime?
+  lastVerificationSentAt  DateTime?   // Rate-limiting timestamp for resend requests
+  googleId                String?     @unique
+  avatarUrl               String?
+  createdAt               DateTime    @default(now())
+  updatedAt               DateTime    @updatedAt
+
+  // Relations
+  prayerLogs              PrayerLog[]
+  deedLogs                DeedLog[]
+
+  @@index([email])
+  @@index([verificationTokenHash])
+  @@map("users")
+}
+
+// ----------------------------------------------------------------------------
+// Prayer Log Model
+// ----------------------------------------------------------------------------
+model PrayerLog {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  prayerName      String   // "Fajr" | "Dhuhr" | "Asr" | "Maghrib" | "Isha"
+  date            String   // "YYYY-MM-DD"
+  status          String   // "on_time" | "late" | "qada" | "missed"
+  prayerStartTime String?  // ISO timestamp string
+  prayerEndTime   String?  // ISO timestamp string
+  loggedAt        DateTime @default(now())
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, prayerName, date])
+  @@index([userId, date])
+  @@index([status])
+  @@map("prayer_logs")
+}
+
+// ----------------------------------------------------------------------------
+// Deed & Quran Reading Log Model
+// ----------------------------------------------------------------------------
+model DeedLog {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      String   // "YYYY-MM-DD"
+  deedType  String   // "quran" | "deed" | "dhikr" | "learning"
+  title     String?
+  completed Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, deedType, date])
+  @@index([userId, date])
+  @@map("deed_logs")
+}
+
+// ----------------------------------------------------------------------------
+// Pending Registration Model (Account created ONLY after email verification)
+// ----------------------------------------------------------------------------
+model PendingRegistration {
+  id                      String   @id @default(uuid())
+  name                    String
+  email                   String   @unique // Only one active pending registration per email
+  password                String   // Pre-hashed with bcrypt (salt rounds: 12)
+  prayerCalculationMethod String   @default("Karachi")
+  latitude                Float?
+  longitude               Float?
+  tokenHash               String   @unique // Cryptographic SHA-256 hash of verification token
+  expiresAt               DateTime
+  lastSentAt              DateTime @default(now())
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([email])
+  @@index([tokenHash])
+  @@map("pending_registrations")
+}

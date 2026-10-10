@@ -1,0 +1,153 @@
+import assert from 'node:assert/strict';
+
+const BASE_URL = process.env.TEST_API_URL || 'http://localhost:5000';
+
+console.log('--- Running Google OAuth & Session Management Integration Tests ---');
+console.log(`Target API: ${BASE_URL}\n`);
+
+async function runTests() {
+  // Test 1: Initiate Google OAuth Flow (GET /api/auth/google)
+  console.log('1. Testing GET /api/auth/google (OAuth Initiation & CSRF State Cookie)...');
+  const initRes = await fetch(`${BASE_URL}/api/auth/google`, {
+    redirect: 'manual',
+  });
+
+  assert([301, 302, 307, 308].includes(initRes.status), `Expected 302 redirect, received status ${initRes.status}`);
+  const redirectLocation = initRes.headers.get('location');
+  const setCookieHeader = initRes.headers.get('set-cookie');
+
+  assert(redirectLocation, 'Location header must be present in redirect');
+  assert(setCookieHeader && setCookieHeader.includes('oauth_state='), 'Must set HttpOnly oauth_state cookie for CSRF protection');
+  assert(setCookieHeader.toLowerCase().includes('httponly'), 'oauth_state cookie must be HttpOnly');
+  console.log('✓ Test 1 Passed: Returns 302 redirect and sets secure oauth_state cookie.');
+
+  // Extract oauth_state from cookie
+  const stateMatch = setCookieHeader.match(/oauth_state=([^;]+)/);
+  const oauthState = stateMatch ? stateMatch[1] : null;
+  assert(oauthState, 'Failed to extract oauth_state value from set-cookie header');
+
+  // Test 2: CSRF Mismatch Protection (GET /api/auth/google/callback with forged state)
+  console.log('\n2. Testing CSRF Protection on Callback (State Mismatch)...');
+  const csrfTamperedRes = await fetch(`${BASE_URL}/api/auth/google/callback?code=mock_code&state=forged_state_value`, {
+    redirect: 'manual',
+    headers: {
+      Cookie: `oauth_state=${oauthState}`,
+    },
+  });
+
+  const csrfTamperedLocation = csrfTamperedRes.headers.get('location');
+  assert(csrfTamperedLocation && csrfTamperedLocation.includes('auth_error=CSRF_STATE_MISMATCH'),
+    `Expected redirect with CSRF_STATE_MISMATCH, received: ${csrfTamperedLocation}`);
+  console.log('✓ Test 2 Passed: Mismatched CSRF state correctly rejected with CSRF_STATE_MISMATCH.');
+
+  // Test 3: OAuth Cancellation / Denial handling
+  console.log('\n3. Testing Google Access Denial Callback Handling...');
+  const deniedRes = await fetch(`${BASE_URL}/api/auth/google/callback?error=access_denied`, {
+    redirect: 'manual',
+  });
+  const deniedLocation = deniedRes.headers.get('location');
+  assert(deniedLocation && deniedLocation.includes('auth_error=access_denied'),
+    `Expected redirect with access_denied, received: ${deniedLocation}`);
+  console.log('✓ Test 3 Passed: User cancellation handled gracefully.');
+
+  // Test 4: Valid OAuth Callback (GET /api/auth/google/callback with valid state & code)
+  console.log('\n4. Testing Valid Google OAuth Callback with Code Exchange...');
+  const validCallbackRes = await fetch(`${BASE_URL}/api/auth/google/callback?code=mock_google_oauth_code&state=${oauthState}`, {
+    redirect: 'manual',
+    headers: {
+      Cookie: `oauth_state=${oauthState}`,
+    },
+  });
+
+  assert([301, 302, 307, 308].includes(validCallbackRes.status), `Expected 302 redirect, got ${validCallbackRes.status}`);
+  const successLocation = validCallbackRes.headers.get('location');
+  const callbackCookies = validCallbackRes.headers.get('set-cookie');
+
+  assert(successLocation && successLocation.includes('auth=google_success'),
+    `Expected redirect to dashboard with auth=google_success, got: ${successLocation}`);
+  assert(callbackCookies && callbackCookies.includes('auth_token='),
+    'Expected Set-Cookie header containing auth_token session cookie');
+  assert(callbackCookies.toLowerCase().includes('httponly'),
+    'auth_token cookie must have HttpOnly flag for XSS protection');
+  console.log('✓ Test 4 Passed: Code exchange succeeded, user upserted, and HttpOnly auth_token cookie issued.');
+
+  // Extract auth_token from callback
+  const authTokenMatch = callbackCookies.match(/auth_token=([^;]+)/);
+  const sessionToken = authTokenMatch ? authTokenMatch[1] : null;
+  assert(sessionToken, 'Failed to extract auth_token');
+
+  // Test 5: Verify Session Restoration (GET /api/auth/me) via HttpOnly Cookie
+  console.log('\n5. Testing Session Restoration (GET /api/auth/me) via Cookie...');
+  const meRes = await fetch(`${BASE_URL}/api/auth/me`, {
+    headers: {
+      Cookie: `auth_token=${sessionToken}`,
+    },
+  });
+
+  assert.equal(meRes.status, 200, `Expected 200 OK from /api/auth/me, got ${meRes.status}`);
+  const meData = await meRes.json();
+  assert(meData.success === true, 'Response must have success: true');
+  assert(meData.user, 'Response must include user object');
+  assert(meData.user.email, 'User object must include email');
+  assert(meData.user.isEmailVerified === true, 'Google authenticated user must have isEmailVerified: true');
+  assert(typeof meData.user.password === 'undefined', 'Password must be sanitized and never returned');
+  console.log(`✓ Test 5 Passed: Successfully verified session for user: ${meData.user.email} (${meData.user.name}).`);
+
+  // Test 6: Verify Unauthorized Access when no cookie or token is provided
+  console.log('\n6. Testing Route Protection on Unauthenticated Request (GET /api/auth/me)...');
+  const unauthRes = await fetch(`${BASE_URL}/api/auth/me`);
+  assert.equal(unauthRes.status, 401, `Expected 401 Unauthorized, got ${unauthRes.status}`);
+  const unauthData = await unauthRes.json();
+  assert.equal(unauthData.code, 'UNAUTHORIZED', 'Error code must be UNAUTHORIZED');
+  console.log('✓ Test 6 Passed: Unauthenticated request rejected with 401.');
+
+  // Test 7: Direct POST /api/auth/google (Google Identity Services popup / ID Token verification)
+  console.log('\n7. Testing POST /api/auth/google (Direct GIS / Credential Exchange)...');
+  const postGoogleRes = await fetch(`${BASE_URL}/api/auth/google`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      credential: 'mock_direct_google_test',
+      prayerCalculationMethod: 'Karachi',
+    }),
+  });
+
+  assert.equal(postGoogleRes.status, 200, `Expected 200 OK, got ${postGoogleRes.status}`);
+  const postGoogleData = await postGoogleRes.json();
+  assert(postGoogleData.success === true, 'Must return success: true');
+  assert(postGoogleData.user, 'Must return user profile');
+  assert(postGoogleData.user.isEmailVerified === true, 'User must be verified');
+  const postGoogleCookies = postGoogleRes.headers.get('set-cookie');
+  assert(postGoogleCookies && postGoogleCookies.includes('auth_token='), 'POST /api/auth/google must set auth_token cookie');
+  console.log(`✓ Test 7 Passed: Direct Google sign-in works and issues session cookie for ${postGoogleData.user.email}.`);
+
+  // Test 8: Logout (POST /api/auth/logout)
+  console.log('\n8. Testing Logout (POST /api/auth/logout)...');
+  const logoutRes = await fetch(`${BASE_URL}/api/auth/logout`, {
+    method: 'POST',
+    headers: {
+      Cookie: `auth_token=${sessionToken}`,
+    },
+  });
+
+  assert.equal(logoutRes.status, 200, `Expected 200 OK, got ${logoutRes.status}`);
+  const logoutCookies = logoutRes.headers.get('set-cookie');
+  assert(logoutCookies, 'Must return Set-Cookie header on logout');
+  // Check that auth_token cookie is cleared (Expires in past or Max-Age=0 or empty)
+  assert(
+    logoutCookies.includes('auth_token=;') ||
+    logoutCookies.includes('Max-Age=0') ||
+    logoutCookies.includes('Expires=Thu, 01 Jan 1970'),
+    'auth_token cookie must be cleared on logout'
+  );
+  console.log('✓ Test 8 Passed: Logout endpoint clears auth_token session cookie.');
+
+  console.log('\n🎉 ALL 8 GOOGLE AUTHENTICATION INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉\n');
+}
+
+runTests().catch((err) => {
+  console.error('\n❌ Test failed with error:', err);
+  process.exit(1);
+});
