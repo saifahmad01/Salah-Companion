@@ -7,15 +7,20 @@ import { hadithRouter } from './hadithRoutes.js';
 import { userRouter } from './userRoutes.js';
 import { notificationRouter } from './notificationRoutes.js';
 
+import { checkDbHealth } from '../db/connection.js';
+
 export const apiRouter = Router();
 
-// Health check endpoint
-apiRouter.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    status: 'healthy',
+// Health check endpoint with database status
+apiRouter.get('/health', async (req, res) => {
+  const dbHealth = await checkDbHealth();
+  const statusCode = dbHealth.connected ? 200 : 503;
+  res.status(statusCode).json({
+    success: dbHealth.connected,
+    status: dbHealth.connected ? 'healthy' : 'degraded',
     timestamp: new Date().toISOString(),
     service: 'Salah Companion Backend',
+    database: dbHealth,
   });
 });
 

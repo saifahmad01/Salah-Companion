@@ -4,7 +4,7 @@ import cookieParser from 'cookie-parser';
 import { config } from './config/env.js';
 import { apiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
-import { db } from './db/connection.js';
+import { db, checkDbHealth } from './db/connection.js';
 import { startNotificationScheduler, stopNotificationScheduler } from './services/notificationScheduler.js';
 
 const app = express();
@@ -79,12 +79,15 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    success: true,
-    status: 'healthy',
+app.get('/health', async (req, res) => {
+  const dbHealth = await checkDbHealth();
+  const statusCode = dbHealth.connected ? 200 : 503;
+  res.status(statusCode).json({
+    success: dbHealth.connected,
+    status: dbHealth.connected ? 'healthy' : 'degraded',
     timestamp: new Date().toISOString(),
     service: 'Salah Companion Backend',
+    database: dbHealth,
   });
 });
 
@@ -113,13 +116,13 @@ const server = app.listen(config.port, '0.0.0.0', () => {
 const shutdown = () => {
   console.log('\n[Server] Shutting down gracefully...');
   stopNotificationScheduler();
-  server.close(() => {
+  server.close(async () => {
     console.log('[Server] HTTP server closed.');
     try {
-      db.close();
-      console.log('[Database] SQLite connection closed.');
+      await db.close();
+      console.log('[Database] Database connections closed.');
     } catch (e) {
-      console.error('[Database] Error closing SQLite:', e);
+      console.error('[Database] Error closing database connections:', e);
     }
     process.exit(0);
   });

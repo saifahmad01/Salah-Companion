@@ -13,6 +13,14 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN || '*',
   frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
   dbPath: process.env.DATABASE_PATH || path.resolve(__dirname, '../../database.sqlite'),
+  databaseUrl: process.env.DATABASE_URL || '',
+  directUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
+  dbSsl: process.env.DATABASE_SSL !== 'false',
+
+  // Supabase API Integration
+  supabaseUrl: process.env.SUPABASE_URL || '',
+  supabaseAnonKey: process.env.SUPABASE_ANON_KEY || process.env.SUPABASE_KEY || '',
+  supabaseServiceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '',
 
   // Prime window in minutes for on_time status (default 35 minutes)
   primeWindowMinutes: parseInt(process.env.PRIME_WINDOW_MINUTES || '35', 10),
