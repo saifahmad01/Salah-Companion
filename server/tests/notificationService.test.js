@@ -158,6 +158,7 @@ async function runTests() {
   // Scenario 6: Disabled notifications are not delivered
   // --------------------------------------------------------------------------
   console.log('Test 6: Verifying disabled notification setting...');
+  await db.prepare(`DELETE FROM notification_logs WHERE user_id = ? AND prayer_name = ?`).run(testUserId, 'maghrib');
   await saveUserPreferences(testUserId, {
     maghribEnabled: false, // User disabled Maghrib notifications
   });
