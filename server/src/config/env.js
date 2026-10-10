@@ -53,6 +53,7 @@ export const config = {
   // Google OAuth 2.0 Credentials
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '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',
+  googleCallbackUrl: process.env.GOOGLE_CALLBACK_URL || '',
 
   // Web Push VAPID Configuration
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || 'BK0MvxYd3ZDZoa05l-2e7qSdFFyUl1OVAtvwVIRf96sWxNAwbS7yifAb9gxTG5YDfHWUlXu_rGn5guso0O6pvvc',

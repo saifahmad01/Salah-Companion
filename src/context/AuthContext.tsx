@@ -94,6 +94,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           EMAIL_NOT_VERIFIED: 'Your Google account does not have a verified email address.',
           access_denied: 'Google sign-in was cancelled.',
           GOOGLE_NOT_CONFIGURED: 'Google Sign-In is not configured yet. Please configure a valid Google Web Client ID (.apps.googleusercontent.com) from Google Cloud Console in your server environment.',
+          redirect_uri_mismatch: 'Google OAuth Redirect URI mismatch: Please register your backend callback URL (http://localhost:5000/api/auth/google/callback) under "Authorized redirect URIs" in Google Cloud Console.',
           MISSING_AUTH_CODE: 'Google did not return an authorization code. Please try again.',
           AUTH_FAILED: 'Google authentication failed. Please try again or sign in with your email.',
         }

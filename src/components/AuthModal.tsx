@@ -653,16 +653,29 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   </button>
                 </div>
 
-                <div className="text-[11px] text-amber-900/90 space-y-1">
+                <div className="text-[11px] text-amber-900/90 space-y-2">
                   <p>
-                    <span className="font-semibold text-emerald-800">✓ Google Client Secret:</span>{' '}
-                    <code className="bg-amber-100 px-1 py-0.5 rounded text-[10px] font-mono">GOCSPX-xIHt...</code>{' '}
-                    <span className="text-emerald-700 font-bold">(Active)</span>
+                    <span className="font-semibold text-emerald-800">✓ Google Client ID:</span>{' '}
+                    <code className="bg-amber-100 px-1 py-0.5 rounded text-[10px] font-mono break-all">{googleClientId}</code>
                   </p>
-                  <p className="text-[10.5px] text-stone-600 leading-snug">
-                    To open the live Google popup, enter your Web Client ID from Google Cloud Console (ends with{' '}
-                    <code className="text-stone-800 font-mono">.apps.googleusercontent.com</code>).
-                  </p>
+                  <div className="p-2.5 rounded-xl bg-white/95 border border-amber-300 space-y-1.5 text-[10.5px]">
+                    <div className="font-bold text-stone-800 flex items-center justify-between">
+                      <span>Google Cloud Console Settings</span>
+                      <span className="text-[9.5px] font-normal text-amber-800">Fix redirect_uri_mismatch</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-500 font-medium block">Authorized JavaScript origins:</span>
+                      <code className="block bg-stone-100 text-stone-800 px-1.5 py-0.5 rounded font-mono text-[10px] select-all mt-0.5">
+                        {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'}
+                      </code>
+                    </div>
+                    <div>
+                      <span className="text-stone-500 font-medium block">Authorized redirect URIs (Must match exactly):</span>
+                      <code className="block bg-blue-50 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[10px] select-all mt-0.5 font-semibold">
+                        http://localhost:5000/api/auth/google/callback
+                      </code>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Optional Web Client ID Input */}

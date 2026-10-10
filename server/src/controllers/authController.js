@@ -600,7 +600,7 @@ export async function initiateGoogleOAuth(req, res) {
     path: '/',
   });
 
-  const redirectUri = `${config.appUrl}/api/auth/google/callback`;
+  const redirectUri = getOAuthCallbackUrl(req);
 
   const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
     (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
@@ -614,11 +614,22 @@ export async function initiateGoogleOAuth(req, res) {
 
   // Only during automated test suite execution with test signature, allow test callback
   if (isAuthorizedTest) {
-    return res.redirect(`${config.appUrl}/api/auth/google/callback?code=mock_google_oauth_code&state=${state}&test_secret=${encodeURIComponent(config.jwtSecret)}`);
+    return res.redirect(`${redirectUri}?code=mock_google_oauth_code&state=${state}&test_secret=${encodeURIComponent(config.jwtSecret)}`);
   }
 
   // Google OAuth is not configured: strictly reject and redirect to login with actionable error
   return res.redirect(`${FRONTEND_URL}/login?auth_error=GOOGLE_NOT_CONFIGURED`);
+}
+
+/**
+ * Helper to determine OAuth callback URL consistently
+ */
+export function getOAuthCallbackUrl(req) {
+  if (config.googleCallbackUrl) {
+    return config.googleCallbackUrl;
+  }
+  const baseUrl = config.appUrl ? config.appUrl.replace(/\/+$/, '') : `http://${req?.get ? req.get('host') : 'localhost:5000'}`;
+  return `${baseUrl}/api/auth/google/callback`;
 }
 
 /**
@@ -652,7 +663,7 @@ export async function handleGoogleOAuthCallback(req, res) {
       (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
       (req.query.test_secret && req.query.test_secret === config.jwtSecret);
 
-    const redirectUri = `${config.appUrl}/api/auth/google/callback`;
+    const redirectUri = getOAuthCallbackUrl(req);
     const googleProfile = await getGoogleProfileFromCode(code, redirectUri, isAuthorizedTest);
     const { email, name, googleId, picture, emailVerified } = googleProfile;
 
