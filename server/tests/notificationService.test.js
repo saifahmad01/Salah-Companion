@@ -286,6 +286,10 @@ async function runTests() {
     staleTestUser
   );
   await db.prepare(`DELETE FROM prayer_logs WHERE user_id = ?`).run(testUserId);
+  await db.prepare(`DELETE FROM users WHERE id IN (?, ?) OR id LIKE 'test_user_%'`).run(
+    testUserId,
+    staleTestUser
+  );
 
   console.log('\n--- ALL 10 Salah Notification Test Scenarios Passed! ---');
   await db.close();

@@ -1,6 +1,8 @@
 import { query } from '../src/db/connection.js';
 
 async function run() {
+  await query(`DELETE FROM notification_preferences WHERE user_id LIKE 'test_user_%'`);
+  await query(`DELETE FROM notification_logs WHERE user_id LIKE 'test_user_%'`);
   await query(`DELETE FROM prayer_logs WHERE user_id LIKE 'test_user_%'`);
   const deleteRes = await query(`
     DELETE FROM users 
