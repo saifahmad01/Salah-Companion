@@ -82,7 +82,10 @@ export const RegisterPage: React.FC = () => {
     }
   }
 
+  const [googleLoading, setGoogleLoading] = useState(false)
+
   const handleGoogleLogin = () => {
+    setGoogleLoading(true)
     window.location.href = salahApi.getGoogleOAuthUrl()
   }
 
@@ -300,7 +303,8 @@ export const RegisterPage: React.FC = () => {
                 <button
                   type="button"
                   onClick={handleGoogleLogin}
-                  className="w-full py-2.5 px-4 rounded-xl font-semibold text-[#14291F] text-xs sm:text-sm bg-white hover:bg-stone-50 border border-[#DED4C1] shadow-xs flex items-center justify-center gap-2.5 transition cursor-pointer"
+                  disabled={loading || googleLoading}
+                  className="w-full py-2.5 px-4 rounded-xl font-semibold text-[#14291F] text-xs sm:text-sm bg-white hover:bg-stone-50 border border-[#DED4C1] shadow-xs flex items-center justify-center gap-2.5 transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   <svg className="w-4 h-4" viewBox="0 0 24 24">
                     <path
@@ -320,7 +324,7 @@ export const RegisterPage: React.FC = () => {
                       d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
                     />
                   </svg>
-                  <span>Continue with Google</span>
+                  <span>{googleLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
                 </button>
               </div>
 

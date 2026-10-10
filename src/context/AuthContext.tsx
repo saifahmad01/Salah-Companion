@@ -70,6 +70,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       // 1. Google OAuth Callback
       if (authStatus === 'google_success') {
         try {
+          if (tokenParam) {
+            authStorage.setToken(tokenParam)
+          }
           const profile = await refreshUser()
           if (profile) {
             setBanner({
@@ -78,7 +81,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
             })
           }
         } finally {
-          window.history.replaceState({}, document.title, window.location.pathname || '/')
+          const targetPath = window.location.pathname.startsWith('/app') ? window.location.pathname : '/app'
+          window.history.replaceState({}, document.title, targetPath)
           setLoading(false)
         }
         return
@@ -94,7 +98,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           type: 'error',
           message: errorDescriptions[authError] || `Google sign-in failed: ${decodeURIComponent(authError)}`,
         })
-        window.history.replaceState({}, document.title, window.location.pathname || '/')
+        const targetPath = window.location.pathname.startsWith('/app') ? '/login' : window.location.pathname
+        window.history.replaceState({}, document.title, targetPath)
         setLoading(false)
         return
       }

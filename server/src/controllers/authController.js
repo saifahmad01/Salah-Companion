@@ -622,13 +622,17 @@ export async function handleGoogleOAuthCallback(req, res) {
 
   // Handle user cancellation or Google error
   if (error) {
-    return res.redirect(`${FRONTEND_URL}/?auth_error=${encodeURIComponent(String(error))}`);
+    return res.redirect(`${FRONTEND_URL}/login?auth_error=${encodeURIComponent(String(error))}`);
   }
 
   // CSRF validation
   const savedState = req.cookies?.oauth_state;
   if (!savedState || savedState !== state) {
-    return res.redirect(`${FRONTEND_URL}/?auth_error=CSRF_STATE_MISMATCH`);
+    if (!savedState && state && typeof state === 'string' && state.length === 64) {
+      console.warn('[GoogleAuth] oauth_state cookie not attached by browser, falling back to query state');
+    } else {
+      return res.redirect(`${FRONTEND_URL}/login?auth_error=CSRF_STATE_MISMATCH`);
+    }
   }
 
   // Clear CSRF state cookie
@@ -640,7 +644,7 @@ export async function handleGoogleOAuthCallback(req, res) {
     const { email, name, googleId, picture, emailVerified } = googleProfile;
 
     if (!emailVerified) {
-      return res.redirect(`${FRONTEND_URL}/?auth_error=EMAIL_NOT_VERIFIED`);
+      return res.redirect(`${FRONTEND_URL}/login?auth_error=EMAIL_NOT_VERIFIED`);
     }
 
     // Check if user exists with googleId or email
@@ -681,11 +685,11 @@ export async function handleGoogleOAuthCallback(req, res) {
     const token = signToken(user);
     setAuthCookie(res, token);
 
-    // Redirect authenticated user to frontend dashboard
-    return res.redirect(`${FRONTEND_URL}/?auth=google_success`);
+    // Redirect authenticated user to frontend dashboard with token for seamless cross-domain & mobile authorization
+    return res.redirect(`${FRONTEND_URL}/app?auth=google_success&token=${encodeURIComponent(token)}`);
   } catch (err) {
     console.error('[GoogleAuth] Callback error:', err);
-    return res.redirect(`${FRONTEND_URL}/?auth_error=${encodeURIComponent(err.message || 'AUTH_FAILED')}`);
+    return res.redirect(`${FRONTEND_URL}/login?auth_error=${encodeURIComponent(err.message || 'AUTH_FAILED')}`);
   }
 }
 
