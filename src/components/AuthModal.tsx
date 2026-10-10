@@ -60,13 +60,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Google OAuth configuration states
   const [googleClientId, setGoogleClientId] = useState(() => {
     try {
+      const stored = localStorage.getItem('salah_google_client_id')
+      if (stored && stored.includes('.apps.googleusercontent.com')) return stored
       return (
-        localStorage.getItem('salah_google_client_id') ||
         import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-        ''
+        '520110657430-7cbd1c04pahgar6o59bp2s0lkub9b29q.apps.googleusercontent.com'
       )
     } catch {
-      return ''
+      return (
+        import.meta.env.VITE_GOOGLE_CLIENT_ID ||
+        '520110657430-7cbd1c04pahgar6o59bp2s0lkub9b29q.apps.googleusercontent.com'
+      )
     }
   })
   const [showGoogleSetup, setShowGoogleSetup] = useState(false)
