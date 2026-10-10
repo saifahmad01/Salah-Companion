@@ -131,4 +131,12 @@ const shutdown = () => {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+process.on('unhandledRejection', (reason) => {
+  console.error('[Process] Unhandled Rejection:', reason?.message || reason);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[Process] Uncaught Exception:', err?.message || err);
+});
+
 export default app;

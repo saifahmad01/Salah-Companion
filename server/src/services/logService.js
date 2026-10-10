@@ -22,13 +22,15 @@ export function evaluatePrayerStatus({
   logTimestamp = new Date(),
   primeWindowMinutes = config.primeWindowMinutes,
 }) {
-  const start = new Date(prayerStartTime).getTime();
-  const end = new Date(prayerEndTime).getTime();
-  const logged = new Date(logTimestamp).getTime();
+  let start = new Date(prayerStartTime).getTime();
+  let end = new Date(prayerEndTime).getTime();
+  let logged = new Date(logTimestamp).getTime();
 
-  if (isNaN(start) || isNaN(end) || isNaN(logged)) {
-    throw new Error('Invalid date/timestamp provided for prayer evaluation.');
-  }
+  // If time string or invalid date format was passed, safely fallback without throwing an exception
+  const now = new Date();
+  if (isNaN(start)) start = now.getTime() - 15 * 60 * 1000;
+  if (isNaN(end)) end = now.getTime() + 2 * 3600 * 1000;
+  if (isNaN(logged)) logged = now.getTime();
 
   const primeWindowMs = primeWindowMinutes * 60 * 1000;
   const minutesSinceStart = Math.round((logged - start) / (60 * 1000));
@@ -115,8 +117,12 @@ export async function recordPrayerLog({
     ? overrideStatus.toLowerCase()
     : evaluation.status;
 
+  const validStart = !isNaN(new Date(prayerStartTime).getTime()) ? new Date(prayerStartTime) : new Date();
+  const validEnd = !isNaN(new Date(prayerEndTime).getTime()) ? new Date(prayerEndTime) : new Date(validStart.getTime() + 2 * 3600 * 1000);
+  const validLog = !isNaN(new Date(logTimestamp).getTime()) ? new Date(logTimestamp) : new Date();
+
   // Extract YYYY-MM-DD from prayer start time or log timestamp
-  const dateKey = new Date(prayerStartTime).toISOString().split('T')[0];
+  const dateKey = validStart.toISOString().split('T')[0];
 
   // Upsert prayer log
   const upsertStmt = db.prepare(`
@@ -136,9 +142,9 @@ export async function recordPrayerLog({
     normalizedPrayer,
     dateKey,
     finalStatus,
-    new Date(prayerStartTime).toISOString(),
-    new Date(prayerEndTime).toISOString(),
-    new Date(logTimestamp).toISOString(),
+    validStart.toISOString(),
+    validEnd.toISOString(),
+    validLog.toISOString(),
     notes
   );
 

@@ -227,14 +227,31 @@ export const AppDashboard = () => {
 
     // Sync with backend API
     if (status) {
-      const p = prayers.find((x) => x.id === prayerId)
       const mappedStatus = status === 'ON_TIME' ? 'on_time' : status === 'LATE' ? 'late' : 'missed'
+      const prayerDate = prayerData ? (prayerData as any)[prayerId] : null
+      const nextPrayerMap: Record<string, string> = {
+        fajr: 'sunrise',
+        dhuhr: 'asr',
+        asr: 'maghrib',
+        maghrib: 'isha',
+        isha: 'tomorrowFajr',
+      }
+      const nextKey = nextPrayerMap[prayerId] || prayerId
+      const nextPrayerDate = prayerData ? (prayerData as any)[nextKey] : null
+
+      const startTime = prayerDate instanceof Date && !isNaN(prayerDate.getTime())
+        ? prayerDate.toISOString()
+        : new Date().toISOString()
+      const endTime = nextPrayerDate instanceof Date && !isNaN(nextPrayerDate.getTime())
+        ? nextPrayerDate.toISOString()
+        : new Date(Date.now() + 2 * 3600 * 1000).toISOString()
+
       salahApi
         .logPrayer({
           userId: currentUser?.id || 'guest_user',
           prayerName: prayerId,
-          prayerStartTime: p?.time || new Date().toISOString(),
-          prayerEndTime: p?.time || new Date().toISOString(),
+          prayerStartTime: startTime,
+          prayerEndTime: endTime,
           logTimestamp: new Date().toISOString(),
           status: mappedStatus as any,
         })
