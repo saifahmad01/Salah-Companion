@@ -227,16 +227,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }
 
   // Google OAuth button click handler
-  const handleGoogleSignIn = async (forceDemo: boolean = false) => {
+  const handleGoogleSignIn = async () => {
     setErrorMessage(null)
     const activeClientId = googleClientId.trim()
     const isLiveClientId = activeClientId.includes('.apps.googleusercontent.com')
-
-    // If user explicitly chose demo/instant login
-    if (forceDemo) {
-      await executeGoogleLogin(`mock_google_${Date.now()}`)
-      return
-    }
 
     // 1. If valid Google Web Client ID is configured and GIS is available in window
     if (isLiveClientId && typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
@@ -265,16 +259,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         tokenClient.requestAccessToken()
         return
       } catch (err: any) {
-        console.warn('[Google] initTokenClient failed, prompting fallback:', err)
+        console.warn('[Google] initTokenClient failed, redirecting to backend OAuth:', err)
       }
     }
 
-    // 2. Seamless instant Google sign-in fallback
-    try {
-      await executeGoogleLogin(`mock_google_${Date.now()}`)
-    } catch {
-      window.location.href = salahApi.getGoogleOAuthUrl()
-    }
+    // 2. Direct redirect to backend Google OAuth 2.0 endpoint
+    window.location.href = salahApi.getGoogleOAuthUrl()
   }
 
   const handleSaveCustomClientId = (e: React.FormEvent) => {
@@ -411,7 +401,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {errorCode === 'GOOGLE_ACCOUNT' && (
               <button
                 type="button"
-                onClick={() => handleGoogleSignIn(false)}
+                onClick={() => handleGoogleSignIn()}
                 className="self-start text-[11px] font-bold text-blue-700 hover:underline flex items-center gap-1 mt-1 cursor-pointer bg-blue-100/70 border border-blue-300 px-2.5 py-1 rounded-lg"
               >
                 <span>👉 Continue with Google</span>
@@ -616,7 +606,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             {/* Google OAuth Button */}
             <button
               type="button"
-              onClick={() => handleGoogleSignIn(false)}
+              onClick={() => handleGoogleSignIn()}
               disabled={googleLoading}
               className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-stone-50 border border-[#DDD7C8] text-xs font-semibold text-[#1F2D26] shadow-2xs flex items-center justify-center gap-2.5 transition active:scale-95 cursor-pointer disabled:opacity-60 mb-2"
             >
@@ -642,7 +632,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <span>{googleLoading ? 'Signing in with Google...' : 'Continue with Google'}</span>
             </button>
 
-            {/* Google OAuth Details & 1-Click Test Panel */}
+            {/* Google OAuth Details Panel */}
             {showGoogleSetup && (
               <div className="rounded-2xl bg-amber-50/90 border border-amber-200 p-3.5 mb-3 text-left space-y-2.5 animate-fade-in shadow-2xs">
                 <div className="flex items-center justify-between">
@@ -689,17 +679,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     </button>
                   )}
                 </form>
-
-                {/* Instant 1-Click Google Sign-In */}
-                <button
-                  type="button"
-                  onClick={() => handleGoogleSignIn(true)}
-                  disabled={googleLoading}
-                  className="w-full py-2 px-2.5 rounded-xl bg-[#0C4535] hover:bg-[#073327] text-white text-[11px] font-bold shadow-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer disabled:opacity-50"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-300" />
-                  <span>Sign In as Verified Google User (Instant Test)</span>
-                </button>
 
                 {/* OAuth 2.0 Full Redirect Flow */}
                 <button

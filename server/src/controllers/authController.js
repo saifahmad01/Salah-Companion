@@ -602,14 +602,23 @@ export async function initiateGoogleOAuth(req, res) {
 
   const redirectUri = `${config.appUrl}/api/auth/google/callback`;
 
+  const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+    (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+    (req.query.test_secret && req.query.test_secret === config.jwtSecret);
+
   // If live Google Web Client ID is configured, redirect to Google Accounts
   if (config.googleClientId && config.googleClientId.includes('.apps.googleusercontent.com')) {
     const authUrl = getGoogleAuthUrl(state, redirectUri);
     return res.redirect(authUrl);
   }
 
-  // Development/Mock fallback when Google Client ID has not yet been provisioned in Google Cloud Console
-  return res.redirect(`${config.appUrl}/api/auth/google/callback?code=mock_google_oauth_code&state=${state}`);
+  // Only during automated test suite execution with test signature, allow test callback
+  if (isAuthorizedTest) {
+    return res.redirect(`${config.appUrl}/api/auth/google/callback?code=mock_google_oauth_code&state=${state}&test_secret=${encodeURIComponent(config.jwtSecret)}`);
+  }
+
+  // Google OAuth is not configured: strictly reject and redirect to login with actionable error
+  return res.redirect(`${FRONTEND_URL}/login?auth_error=GOOGLE_NOT_CONFIGURED`);
 }
 
 /**
@@ -639,8 +648,12 @@ export async function handleGoogleOAuthCallback(req, res) {
   res.clearCookie('oauth_state', { path: '/' });
 
   try {
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.query.test_secret && req.query.test_secret === config.jwtSecret);
+
     const redirectUri = `${config.appUrl}/api/auth/google/callback`;
-    const googleProfile = await getGoogleProfileFromCode(code, redirectUri);
+    const googleProfile = await getGoogleProfileFromCode(code, redirectUri, isAuthorizedTest);
     const { email, name, googleId, picture, emailVerified } = googleProfile;
 
     if (!emailVerified) {
@@ -688,8 +701,11 @@ export async function handleGoogleOAuthCallback(req, res) {
     // Redirect authenticated user to frontend dashboard with token for seamless cross-domain & mobile authorization
     return res.redirect(`${FRONTEND_URL}/app?auth=google_success&token=${encodeURIComponent(token)}`);
   } catch (err) {
-    console.error('[GoogleAuth] Callback error:', err);
-    return res.redirect(`${FRONTEND_URL}/login?auth_error=${encodeURIComponent(err.message || 'AUTH_FAILED')}`);
+    console.error('[GoogleAuth] Callback error:', err.message);
+    const errCode = err.message?.includes('GOOGLE_NOT_CONFIGURED')
+      ? 'GOOGLE_NOT_CONFIGURED'
+      : (err.message || 'AUTH_FAILED');
+    return res.redirect(`${FRONTEND_URL}/login?auth_error=${encodeURIComponent(errCode)}`);
   }
 }
 
@@ -701,7 +717,11 @@ export async function googleAuth(req, res, next) {
   try {
     const { credential, prayerCalculationMethod, latitude, longitude } = req.body;
 
-    const googleProfile = await verifyGoogleToken(credential);
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    const googleProfile = await verifyGoogleToken(credential, isAuthorizedTest);
     const { email, name, googleId, picture, emailVerified } = googleProfile;
 
     if (!emailVerified) {

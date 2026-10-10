@@ -29,22 +29,27 @@ export function getGoogleAuthUrl(state, redirectUri) {
  * @param {string} redirectUri - Exact callback URI
  * @returns {Promise<{ email: string, name: string, googleId: string, picture: string, emailVerified: boolean }>}
  */
-export async function getGoogleProfileFromCode(code, redirectUri) {
-  if (code.startsWith('mock_') || code.startsWith('test_') || code.startsWith('dev_')) {
+export async function getGoogleProfileFromCode(code, redirectUri, isAuthorizedTest = false) {
+  // Only allow mock authorization code during authorized test suite execution
+  if ((process.env.NODE_ENV === 'test' || isAuthorizedTest) && (code.startsWith('mock_') || code.startsWith('test_'))) {
     return {
-      email: 'user.google@gmail.com',
-      name: 'Google Verified User',
-      googleId: `google_user_${Date.now()}`,
+      email: 'test.automation.user@salahcompanion.internal',
+      name: 'Google Test Harness User',
+      googleId: 'google_test_user_automation',
       picture: 'https://lh3.googleusercontent.com/a/ACg8ocIS0m7N3N5Y_1Z1W2=s96-c',
       emailVerified: true,
     };
+  }
+
+  if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_ID.includes('.apps.googleusercontent.com')) {
+    throw new Error('GOOGLE_NOT_CONFIGURED');
   }
 
   const oAuth2Client = new OAuth2Client(GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, redirectUri);
   const { tokens } = await oAuth2Client.getToken(code);
 
   if (tokens.id_token) {
-    return await verifyGoogleToken(tokens.id_token);
+    return await verifyGoogleToken(tokens.id_token, isAuthorizedTest);
   }
 
   if (tokens.access_token) {
@@ -59,21 +64,22 @@ export async function getGoogleProfileFromCode(code, redirectUri) {
  * and returns the normalized user profile.
  * 
  * @param {string} token Google ID Token, Access Token, or Auth Code
+ * @param {boolean} [isAuthorizedTest=false] Only true for verified internal test harness
  * @returns {Promise<{ email: string, name: string, googleId: string, picture: string, emailVerified: boolean }>}
  */
-export async function verifyGoogleToken(token) {
+export async function verifyGoogleToken(token, isAuthorizedTest = false) {
   if (!token) {
     throw new Error('Google credential is required');
   }
 
-  // 1. Development / Testing shortcut for mock tokens
-  if (token.startsWith('mock_') || token.startsWith('test_') || token.startsWith('dev_')) {
+  // 1. Only allow mock token during authorized test suite execution
+  if ((process.env.NODE_ENV === 'test' || isAuthorizedTest) && (token.startsWith('mock_') || token.startsWith('test_'))) {
     const parts = token.split('_');
-    const emailPrefix = parts[1] || 'google_user';
+    const emailPrefix = parts[1] || 'test_user';
     return {
-      email: `${emailPrefix.toLowerCase()}@gmail.com`,
-      name: 'Google Verified User',
-      googleId: `google_user_${Date.now()}`,
+      email: `${emailPrefix.toLowerCase()}.test@salahcompanion.internal`,
+      name: 'Google Verified Test User',
+      googleId: `google_test_user_${Date.now()}`,
       picture: 'https://lh3.googleusercontent.com/a/ACg8ocIS0m7N3N5Y_1Z1W2=s96-c',
       emailVerified: true,
     };
@@ -161,17 +167,7 @@ export async function verifyGoogleToken(token) {
     console.warn('[GoogleAuth] userinfo access_token failed:', accessErr.message);
   }
 
-  // If this was a custom test credential or local dev token, provide a fallback user
-  if (token.length > 10 && (token.includes('google') || token.includes('test') || token.includes('demo'))) {
-    return {
-      email: 'user.salah@gmail.com',
-      name: 'Google User',
-      googleId: `google_id_${Date.now()}`,
-      picture: 'https://lh3.googleusercontent.com/a/default-user=s96-c',
-      emailVerified: true,
-    };
-  }
-
+  // Strictly fail: Never allow unverified or fake users in production
   throw new Error('Google authentication failed. Invalid token or credential.');
 }
 

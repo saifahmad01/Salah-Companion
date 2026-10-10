@@ -1,15 +1,34 @@
 import assert from 'node:assert/strict';
+import { config } from '../src/config/env.js';
+import { query } from '../src/db/connection.js';
 
 const BASE_URL = process.env.TEST_API_URL || 'http://localhost:5000';
+const TEST_SECRET = config.jwtSecret;
 
 console.log('--- Running Google OAuth & Session Management Integration Tests ---');
 console.log(`Target API: ${BASE_URL}\n`);
 
 async function runTests() {
-  // Test 1: Initiate Google OAuth Flow (GET /api/auth/google)
-  console.log('1. Testing GET /api/auth/google (OAuth Initiation & CSRF State Cookie)...');
+  // Test 0: Verify that without Google Client ID, OAuth initiation strictly rejects and does NOT mock login
+  console.log('0. Testing Unconfigured OAuth Safety (Must reject with GOOGLE_NOT_CONFIGURED and no mock login)...');
+  const safeInitRes = await fetch(`${BASE_URL}/api/auth/google`, {
+    redirect: 'manual',
+  });
+  assert([301, 302, 307, 308].includes(safeInitRes.status), `Expected redirect, received ${safeInitRes.status}`);
+  const safeLocation = safeInitRes.headers.get('location');
+  assert(
+    safeLocation && safeLocation.includes('auth_error=GOOGLE_NOT_CONFIGURED'),
+    `Expected redirect with GOOGLE_NOT_CONFIGURED, received: ${safeLocation}`
+  );
+  console.log('✓ Test 0 Passed: Unconfigured OAuth strictly redirects to login error; no fake account created.');
+
+  // Test 1: Initiate Google OAuth Flow with test signature (GET /api/auth/google)
+  console.log('\n1. Testing GET /api/auth/google with test signature (OAuth Initiation & CSRF State Cookie)...');
   const initRes = await fetch(`${BASE_URL}/api/auth/google`, {
     redirect: 'manual',
+    headers: {
+      'x-test-secret': TEST_SECRET,
+    },
   });
 
   assert([301, 302, 307, 308].includes(initRes.status), `Expected 302 redirect, received status ${initRes.status}`);
@@ -50,14 +69,18 @@ async function runTests() {
     `Expected redirect with access_denied, received: ${deniedLocation}`);
   console.log('✓ Test 3 Passed: User cancellation handled gracefully.');
 
-  // Test 4: Valid OAuth Callback (GET /api/auth/google/callback with valid state & code)
+  // Test 4: Valid OAuth Callback with authorized test signature
   console.log('\n4. Testing Valid Google OAuth Callback with Code Exchange...');
-  const validCallbackRes = await fetch(`${BASE_URL}/api/auth/google/callback?code=mock_google_oauth_code&state=${oauthState}`, {
-    redirect: 'manual',
-    headers: {
-      Cookie: `oauth_state=${oauthState}`,
-    },
-  });
+  const validCallbackRes = await fetch(
+    `${BASE_URL}/api/auth/google/callback?code=mock_google_oauth_code&state=${oauthState}&test_secret=${encodeURIComponent(TEST_SECRET)}`,
+    {
+      redirect: 'manual',
+      headers: {
+        Cookie: `oauth_state=${oauthState}`,
+        'x-test-secret': TEST_SECRET,
+      },
+    }
+  );
 
   assert([301, 302, 307, 308].includes(validCallbackRes.status), `Expected 302 redirect, got ${validCallbackRes.status}`);
   const successLocation = validCallbackRes.headers.get('location');
@@ -69,7 +92,7 @@ async function runTests() {
     'Expected Set-Cookie header containing auth_token session cookie');
   assert(callbackCookies.toLowerCase().includes('httponly'),
     'auth_token cookie must have HttpOnly flag for XSS protection');
-  console.log('✓ Test 4 Passed: Code exchange succeeded, user upserted, and HttpOnly auth_token cookie issued.');
+  console.log('✓ Test 4 Passed: Code exchange succeeded, user verified, and HttpOnly auth_token cookie issued.');
 
   // Extract auth_token from callback
   const authTokenMatch = callbackCookies.match(/auth_token=([^;]+)/);
@@ -101,16 +124,18 @@ async function runTests() {
   assert.equal(unauthData.code, 'UNAUTHORIZED', 'Error code must be UNAUTHORIZED');
   console.log('✓ Test 6 Passed: Unauthenticated request rejected with 401.');
 
-  // Test 7: Direct POST /api/auth/google (Google Identity Services popup / ID Token verification)
+  // Test 7: Direct POST /api/auth/google with test authorization
   console.log('\n7. Testing POST /api/auth/google (Direct GIS / Credential Exchange)...');
   const postGoogleRes = await fetch(`${BASE_URL}/api/auth/google`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      'x-test-secret': TEST_SECRET,
     },
     body: JSON.stringify({
       credential: 'mock_direct_google_test',
       prayerCalculationMethod: 'Karachi',
+      testSecret: TEST_SECRET,
     }),
   });
 
@@ -135,7 +160,6 @@ async function runTests() {
   assert.equal(logoutRes.status, 200, `Expected 200 OK, got ${logoutRes.status}`);
   const logoutCookies = logoutRes.headers.get('set-cookie');
   assert(logoutCookies, 'Must return Set-Cookie header on logout');
-  // Check that auth_token cookie is cleared (Expires in past or Max-Age=0 or empty)
   assert(
     logoutCookies.includes('auth_token=;') ||
     logoutCookies.includes('Max-Age=0') ||
@@ -144,7 +168,15 @@ async function runTests() {
   );
   console.log('✓ Test 8 Passed: Logout endpoint clears auth_token session cookie.');
 
-  console.log('\n🎉 ALL 8 GOOGLE AUTHENTICATION INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉\n');
+  // Cleanup: Delete any temporary test users from DB
+  await query(`
+    DELETE FROM users 
+    WHERE email LIKE '%@salahcompanion.internal' 
+       OR email IN ('automated.test.user@example.com', 'test.user@example.com', 'user.google@gmail.com', 'direct@gmail.com')
+  `);
+  console.log('✓ Test Database Cleanup: Removed temporary test accounts.');
+
+  console.log('\n🎉 ALL 9 GOOGLE AUTHENTICATION INTEGRATION & SAFETY TESTS PASSED SUCCESSFULLY! 🎉\n');
 }
 
 runTests().catch((err) => {
