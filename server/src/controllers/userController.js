@@ -23,7 +23,7 @@ export async function getUserStatsHandler(req, res, next) {
       });
     }
 
-    const stats = getUserPrayerStats(id);
+    const stats = await getUserPrayerStats(id);
 
     return res.status(200).json({
       success: true,
@@ -61,8 +61,8 @@ export async function upsertUserHandler(req, res, next) {
         updated_at = datetime('now')
     `);
 
-    upsertStmt.run(id, userName, email || null);
-    const user = db.prepare(`SELECT * FROM users WHERE id = ?`).get(id);
+    await upsertStmt.run(id, userName, email || null);
+    const user = await db.prepare(`SELECT * FROM users WHERE id = ?`).get(id);
 
     return res.status(200).json({
       success: true,
@@ -79,7 +79,7 @@ export async function upsertUserHandler(req, res, next) {
  */
 export async function listUsersHandler(req, res, next) {
   try {
-    const users = db.prepare(`SELECT * FROM users ORDER BY created_at DESC`).all();
+    const users = await db.prepare(`SELECT * FROM users ORDER BY created_at DESC`).all();
     return res.status(200).json({
       success: true,
       count: users.length,

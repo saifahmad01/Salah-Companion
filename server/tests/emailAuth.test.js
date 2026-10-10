@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
-import Database from 'better-sqlite3';
+import { prisma } from '../src/db/prisma.js';
 
 const BASE_URL = process.env.TEST_API_URL || 'http://localhost:5000';
-const db = new Database('./prisma/database.sqlite');
 
 console.log('--- Running Production Email & Password Authentication Integration Tests ---');
 console.log(`Target API: ${BASE_URL}\n`);
@@ -46,13 +45,13 @@ async function runTests() {
   // --------------------------------------------------------------------------
   // Test 2: Database Security Inspection - Ensure Account Created ONLY After Verification
   // --------------------------------------------------------------------------
-  console.log('\n2. Verifying Pending Registration Storage (Checking SQLite Database directly)...');
+  console.log('\n2. Verifying Pending Registration Storage (Checking Database directly)...');
   // Must NOT exist in `users` table yet!
-  const dbUserBefore = db.prepare('SELECT id, email FROM users WHERE email = ?').get(testEmail);
-  assert.equal(dbUserBefore, undefined, 'User record must NOT exist in users table prior to email verification!');
+  const dbUserBefore = await prisma.user.findUnique({ where: { email: testEmail } });
+  assert.equal(dbUserBefore, null, 'User record must NOT exist in users table prior to email verification!');
 
   // Must exist in `pending_registrations` table!
-  const dbPending = db.prepare('SELECT id, email, password, tokenHash, expiresAt, lastSentAt FROM pending_registrations WHERE email = ?').get(testEmail);
+  const dbPending = await prisma.pendingRegistration.findUnique({ where: { email: testEmail } });
   assert(dbPending, 'Pending registration record must exist in pending_registrations table');
 
   // Verify that rawToken is NEVER in the database!
@@ -137,10 +136,17 @@ async function runTests() {
   const expiredRawToken = crypto.randomBytes(32).toString('hex');
   const expiredTokenHash = crypto.createHash('sha256').update(expiredRawToken).digest('hex');
   // Insert expired pending registration record
-  db.prepare(`
-    INSERT INTO pending_registrations (id, name, email, password, prayerCalculationMethod, tokenHash, expiresAt, lastSentAt, createdAt, updatedAt)
-    VALUES (?, ?, ?, ?, ?, ?, datetime('now', '-1 hour'), datetime('now', '-1 hour'), datetime('now'), datetime('now'))
-  `).run(crypto.randomUUID(), 'Expired User', expiredEmail, 'hashedpass', 'Karachi', expiredTokenHash);
+  await prisma.pendingRegistration.create({
+    data: {
+      name: 'Expired User',
+      email: expiredEmail,
+      password: 'hashedpass',
+      prayerCalculationMethod: 'Karachi',
+      tokenHash: expiredTokenHash,
+      expiresAt: new Date(Date.now() - 3600 * 1000),
+      lastSentAt: new Date(Date.now() - 3600 * 1000),
+    },
+  });
 
   const expiredVerifyRes = await fetch(`${BASE_URL}/api/auth/verify-email`, {
     method: 'POST',
@@ -168,13 +174,13 @@ async function runTests() {
   assert.equal(validVerifyData.user.isEmailVerified, true, 'User must now be verified');
 
   // Verify in database: pending_registrations record is deleted (single-use guarantee)
-  const dbPendingAfter = db.prepare('SELECT id FROM pending_registrations WHERE email = ?').get(testEmail);
-  assert.equal(dbPendingAfter, undefined, 'Pending registration must be deleted after verification');
+  const dbPendingAfter = await prisma.pendingRegistration.findUnique({ where: { email: testEmail } });
+  assert.equal(dbPendingAfter, null, 'Pending registration must be deleted after verification');
 
   // users table now contains the verified active account!
-  const dbUserVerified = db.prepare('SELECT isEmailVerified, verificationTokenHash, tokenExpiresAt FROM users WHERE email = ?').get(testEmail);
+  const dbUserVerified = await prisma.user.findUnique({ where: { email: testEmail } });
   assert(dbUserVerified, 'User record must now exist in users table');
-  assert.equal(dbUserVerified.isEmailVerified, 1, 'isEmailVerified must be 1 in users table');
+  assert.equal(dbUserVerified.isEmailVerified, true, 'isEmailVerified must be true in users table');
   console.log('✓ Test 7 Passed: Pending registration converted to active verified User, and pending record removed.');
 
   // --------------------------------------------------------------------------
@@ -326,12 +332,12 @@ async function runTests() {
   assert(autoCookie && autoCookie.includes('auth_token='), 'Must set HttpOnly auth_token session cookie on redirect');
   const cookieValue = autoCookie.split(';')[0];
 
-  // Verify database: pending deleted, active user created with isEmailVerified = 1
-  const dbAutoUser = db.prepare('SELECT id, email, isEmailVerified FROM users WHERE email = ?').get(autoEmail);
+  // Verify database: pending deleted, active user created with isEmailVerified = true
+  const dbAutoUser = await prisma.user.findUnique({ where: { email: autoEmail } });
   assert(dbAutoUser, 'User must now exist in users table');
-  assert.equal(dbAutoUser.isEmailVerified, 1, 'isEmailVerified must be 1');
-  const dbAutoPending = db.prepare('SELECT id FROM pending_registrations WHERE email = ?').get(autoEmail);
-  assert.equal(dbAutoPending, undefined, 'Pending registration must be deleted');
+  assert.equal(dbAutoUser.isEmailVerified, true, 'isEmailVerified must be true');
+  const dbAutoPending = await prisma.pendingRegistration.findUnique({ where: { email: autoEmail } });
+  assert.equal(dbAutoPending, null, 'Pending registration must be deleted');
 
   // Verify the issued session cookie can immediately access protected route /api/auth/me
   const meRes = await fetch(`${BASE_URL}/api/auth/me`, {
@@ -342,10 +348,22 @@ async function runTests() {
   assert.equal(meData.user.email, autoEmail, 'Authenticated user must match verified email');
   console.log(`✓ Test 13 Passed: "Verify My Email" automatically activated account, established session cookie, and redirected to dashboard.`);
 
+  // Cleanup test users from database
+  try {
+    await prisma.pendingRegistration.deleteMany({
+      where: { email: { in: [testEmail, expiredEmail, autoEmail] } },
+    });
+    await prisma.user.deleteMany({
+      where: { email: { in: [testEmail, expiredEmail, autoEmail] } },
+    });
+    await prisma.$disconnect();
+  } catch {}
+
   console.log('\n🎉 ALL 13 EMAIL & PASSWORD AUTHENTICATION TESTS PASSED SUCCESSFULLY! 🎉\n');
 }
 
-runTests().catch((err) => {
+runTests().catch(async (err) => {
   console.error('\n❌ Test failed with error:', err);
+  try { await prisma.$disconnect(); } catch {}
   process.exit(1);
 });

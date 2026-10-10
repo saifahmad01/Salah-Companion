@@ -27,7 +27,7 @@ export async function getVapidPublicKey(req, res) {
  */
 export async function getPreferences(req, res) {
   const userId = req.user?.id || req.query.userId || 'guest_user';
-  const preferences = getUserPreferences(userId);
+  const preferences = await getUserPreferences(userId);
   return res.status(200).json({
     success: true,
     preferences,
@@ -39,7 +39,7 @@ export async function getPreferences(req, res) {
  */
 export async function updatePreferences(req, res) {
   const userId = req.user?.id || req.body.userId || 'guest_user';
-  const updated = saveUserPreferences(userId, req.body);
+  const updated = await saveUserPreferences(userId, req.body);
 
   // Recalculate and trigger scheduled checks immediately with updated preferences
   checkAndSendDueNotifications().catch(() => {});
@@ -65,7 +65,7 @@ export async function subscribePush(req, res) {
     });
   }
 
-  savePushSubscription(userId, subscription, userAgent || req.headers['user-agent']);
+  await savePushSubscription(userId, subscription, userAgent || req.headers['user-agent']);
 
   return res.status(201).json({
     success: true,
@@ -79,7 +79,7 @@ export async function subscribePush(req, res) {
 export async function unsubscribePush(req, res) {
   const { endpoint } = req.body;
   if (endpoint) {
-    removePushSubscription(endpoint);
+    await removePushSubscription(endpoint);
   }
   return res.status(200).json({
     success: true,
@@ -93,7 +93,7 @@ export async function unsubscribePush(req, res) {
 export async function getHistory(req, res) {
   const userId = req.user?.id || req.query.userId || 'guest_user';
   const limit = parseInt(req.query.limit || '25', 10);
-  const history = getNotificationHistory(userId, limit);
+  const history = await getNotificationHistory(userId, limit);
 
   return res.status(200).json({
     success: true,
@@ -113,7 +113,7 @@ export async function markRead(req, res) {
     return res.status(400).json({ success: false, message: 'Invalid notification id' });
   }
 
-  markNotificationRead(notifId, userId);
+  await markNotificationRead(notifId, userId);
   return res.status(200).json({ success: true, message: 'Notification marked as read.' });
 }
 
@@ -121,8 +121,8 @@ export async function markRead(req, res) {
  * POST /api/notifications/mark-all-read
  */
 export async function markAllRead(req, res) {
-  const userId = req.user?.id || req.body.userId || 'guest_user';
-  markAllNotificationsRead(userId);
+  const userId = req.user?.id || req.query.userId || 'guest_user';
+  await markAllNotificationsRead(userId);
   return res.status(200).json({ success: true, message: 'All notifications marked as read.' });
 }
 
@@ -139,7 +139,7 @@ export async function testNotification(req, res) {
   const now = new Date();
   const dateKey = now.toISOString().split('T')[0];
 
-  recordNotificationLog({
+  await recordNotificationLog({
     userId,
     prayerName: prayerName.toLowerCase(),
     date: dateKey,

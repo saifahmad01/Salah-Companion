@@ -91,7 +91,7 @@ export async function logPrayerHandler(req, res, next) {
       });
     }
 
-    const { record, evaluation } = recordPrayerLog({
+    const { record, evaluation } = await recordPrayerLog({
       userId,
       prayerName,
       prayerStartTime,

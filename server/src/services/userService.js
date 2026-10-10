@@ -17,7 +17,7 @@ function getLastNDates(daysCount = 7, referenceDate = new Date()) {
  * Calculates user's prayer completion history for the last 7 days and active streak
  * @param {string} userId
  */
-export function getUserPrayerStats(userId) {
+export async function getUserPrayerStats(userId) {
   if (!userId) {
     throw new Error('userId is required.');
   }
@@ -26,9 +26,9 @@ export function getUserPrayerStats(userId) {
   const ensureUserStmt = db.prepare(`
     INSERT OR IGNORE INTO users (id, name) VALUES (?, ?)
   `);
-  ensureUserStmt.run(userId, `User-${userId.slice(0, 6)}`);
+  await ensureUserStmt.run(userId, `User-${userId.slice(0, 6)}`);
 
-  const user = db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId);
+  const user = (await db.prepare(`SELECT * FROM users WHERE id = ?`).get(userId)) || { id: userId, name: `User-${userId.slice(0, 6)}` };
 
   const PRAYER_NAMES = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
   const last7DaysList = getLastNDates(7); // [today, yesterday, ..., 6 days ago]
@@ -41,7 +41,7 @@ export function getUserPrayerStats(userId) {
     WHERE user_id = ? AND date >= ? AND date <= ?
     ORDER BY date DESC, prayer_start_time ASC
   `);
-  const logs = logsQuery.all(userId, oldestDate, newestDate);
+  const logs = await logsQuery.all(userId, oldestDate, newestDate);
 
   // Group logs by date
   const logsByDate = {};
@@ -111,7 +111,7 @@ export function getUserPrayerStats(userId) {
     WHERE user_id = ? AND (status = 'on_time' OR status = 'late')
     ORDER BY date DESC
   `);
-  const completedDateRows = allUserCompletedDatesQuery.all(userId);
+  const completedDateRows = await allUserCompletedDatesQuery.all(userId);
   const completedDatesSet = new Set(completedDateRows.map((r) => r.date));
 
   let currentStreak = 0;

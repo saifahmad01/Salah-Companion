@@ -83,12 +83,12 @@ export const PRAYER_PENDING_REMINDERS = {
  * Retrieve user's notification preferences with defaults
  * @param {string} userId
  */
-export function getUserPreferences(userId) {
+export async function getUserPreferences(userId) {
   if (!userId) return null;
   const stmt = db.prepare(`
     SELECT * FROM notification_preferences WHERE user_id = ?
   `);
-  const row = stmt.get(userId);
+  const row = await stmt.get(userId);
   if (!row) {
     return {
       userId,
@@ -132,10 +132,10 @@ export function getUserPreferences(userId) {
  * @param {string} userId
  * @param {object} prefs
  */
-export function saveUserPreferences(userId, prefs) {
+export async function saveUserPreferences(userId, prefs) {
   if (!userId) throw new Error('userId is required');
 
-  const current = getUserPreferences(userId) || {};
+  const current = (await getUserPreferences(userId)) || {};
   const merged = { ...current, ...prefs };
 
   const stmt = db.prepare(`
@@ -173,16 +173,16 @@ export function saveUserPreferences(userId, prefs) {
       updated_at = datetime('now')
   `);
 
-  stmt.run(
+  await stmt.run(
     userId,
-    merged.prayerStartEnabled ? 1 : 0,
-    merged.reminder30MinEnabled ? 1 : 0,
-    merged.browserPushEnabled ? 1 : 0,
-    merged.fajrEnabled ? 1 : 0,
-    merged.dhuhrEnabled ? 1 : 0,
-    merged.asrEnabled ? 1 : 0,
-    merged.maghribEnabled ? 1 : 0,
-    merged.ishaEnabled ? 1 : 0,
+    Boolean(merged.prayerStartEnabled),
+    Boolean(merged.reminder30MinEnabled),
+    Boolean(merged.browserPushEnabled),
+    Boolean(merged.fajrEnabled),
+    Boolean(merged.dhuhrEnabled),
+    Boolean(merged.asrEnabled),
+    Boolean(merged.maghribEnabled),
+    Boolean(merged.ishaEnabled),
     merged.latitude,
     merged.longitude,
     merged.timezone,
@@ -190,7 +190,7 @@ export function saveUserPreferences(userId, prefs) {
     merged.madhab
   );
 
-  return getUserPreferences(userId);
+  return await getUserPreferences(userId);
 }
 
 /**
@@ -199,7 +199,7 @@ export function saveUserPreferences(userId, prefs) {
  * @param {object} subscription { endpoint, keys: { p256dh, auth } }
  * @param {string} [userAgent]
  */
-export function savePushSubscription(userId, subscription, userAgent = '') {
+export async function savePushSubscription(userId, subscription, userAgent = '') {
   if (!userId || !subscription?.endpoint || !subscription?.keys?.p256dh || !subscription?.keys?.auth) {
     throw new Error('Invalid Web Push subscription payload');
   }
@@ -215,7 +215,7 @@ export function savePushSubscription(userId, subscription, userAgent = '') {
       updated_at = datetime('now')
   `);
 
-  stmt.run(
+  await stmt.run(
     userId,
     subscription.endpoint,
     subscription.keys.p256dh,
@@ -224,17 +224,17 @@ export function savePushSubscription(userId, subscription, userAgent = '') {
   );
 
   // Automatically enable browser push in user preferences
-  saveUserPreferences(userId, { browserPushEnabled: true });
+  await saveUserPreferences(userId, { browserPushEnabled: true });
 }
 
 /**
  * Remove Web Push subscription by endpoint
  * @param {string} endpoint
  */
-export function removePushSubscription(endpoint) {
+export async function removePushSubscription(endpoint) {
   if (!endpoint) return;
   const stmt = db.prepare(`DELETE FROM push_subscriptions WHERE endpoint = ?`);
-  stmt.run(endpoint);
+  await stmt.run(endpoint);
 }
 
 /**
@@ -243,13 +243,13 @@ export function removePushSubscription(endpoint) {
  * @param {string} prayerName
  * @param {string} dateKey 'YYYY-MM-DD'
  */
-export function isPrayerCompleted(userId, prayerName, dateKey) {
+export async function isPrayerCompleted(userId, prayerName, dateKey) {
   const normPrayer = prayerName.toLowerCase().trim();
   const stmt = db.prepare(`
     SELECT status FROM prayer_logs
     WHERE user_id = ? AND LOWER(prayer_name) = ? AND date = ?
   `);
-  const row = stmt.get(userId, normPrayer, dateKey);
+  const row = await stmt.get(userId, normPrayer, dateKey);
   if (!row) return false;
   const st = (row.status || '').toLowerCase();
   return st === 'on_time' || st === 'late' || st === 'qada';
@@ -262,21 +262,21 @@ export function isPrayerCompleted(userId, prayerName, dateKey) {
  * @param {string} dateKey
  * @param {'start' | 'reminder_30min'} reminderType
  */
-export function hasNotificationBeenDelivered(userId, prayerName, dateKey, reminderType) {
+export async function hasNotificationBeenDelivered(userId, prayerName, dateKey, reminderType) {
   const stmt = db.prepare(`
     SELECT id FROM notification_logs
     WHERE user_id = ? AND prayer_name = ? AND date = ? AND reminder_type = ?
   `);
-  const row = stmt.get(userId, prayerName.toLowerCase(), dateKey, reminderType);
+  const row = await stmt.get(userId, prayerName.toLowerCase(), dateKey, reminderType);
   return Boolean(row);
 }
 
 /**
  * Idempotently record notification delivery in database
  * @param {object} params
- * @returns {boolean} true if newly inserted, false if already existed (idempotent rejection)
+ * @returns {Promise<boolean>} true if newly inserted, false if already existed (idempotent rejection)
  */
-export function recordNotificationLog({
+export async function recordNotificationLog({
   userId,
   prayerName,
   date,
@@ -289,10 +289,10 @@ export function recordNotificationLog({
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO notification_logs (
       user_id, prayer_name, date, reminder_type, title, body, prayer_time, is_read, push_sent, delivered_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, false, ?, datetime('now'))
   `);
 
-  const result = stmt.run(
+  const result = await stmt.run(
     userId,
     prayerName.toLowerCase(),
     date,
@@ -300,10 +300,10 @@ export function recordNotificationLog({
     title,
     body,
     prayerTime,
-    pushSent ? 1 : 0
+    Boolean(pushSent)
   );
 
-  return result.changes > 0;
+  return Boolean(result?.changes > 0 || result?.rowCount > 0);
 }
 
 /**
@@ -311,31 +311,39 @@ export function recordNotificationLog({
  * @param {string} userId
  * @param {number} [limit=25]
  */
-export function getNotificationHistory(userId, limit = 25) {
+export async function getNotificationHistory(userId, limit = 25) {
   const stmt = db.prepare(`
     SELECT
       id,
-      user_id as userId,
-      prayer_name as prayerName,
+      user_id,
+      prayer_name,
       date,
-      reminder_type as reminderType,
+      reminder_type,
       title,
       body,
-      prayer_time as prayerTime,
-      is_read as isRead,
-      push_sent as pushSent,
-      delivered_at as deliveredAt
+      prayer_time,
+      is_read,
+      push_sent,
+      delivered_at
     FROM notification_logs
     WHERE user_id = ? OR user_id = 'guest_user'
     ORDER BY delivered_at DESC
     LIMIT ?
   `);
 
-  const rows = stmt.all(userId, limit);
-  return rows.map((r) => ({
-    ...r,
-    isRead: Boolean(r.isRead),
-    pushSent: Boolean(r.pushSent),
+  const rows = await stmt.all(userId, limit);
+  return (rows || []).map((r) => ({
+    id: r.id,
+    userId: r.user_id,
+    prayerName: r.prayer_name,
+    date: r.date,
+    reminderType: r.reminder_type,
+    title: r.title,
+    body: r.body,
+    prayerTime: r.prayer_time,
+    isRead: Boolean(r.is_read),
+    pushSent: Boolean(r.push_sent),
+    deliveredAt: r.delivered_at,
   }));
 }
 
@@ -344,24 +352,24 @@ export function getNotificationHistory(userId, limit = 25) {
  * @param {number} id
  * @param {string} userId
  */
-export function markNotificationRead(id, userId) {
+export async function markNotificationRead(id, userId) {
   const stmt = db.prepare(`
-    UPDATE notification_logs SET is_read = 1
+    UPDATE notification_logs SET is_read = true
     WHERE id = ? AND (user_id = ? OR user_id = 'guest_user')
   `);
-  stmt.run(id, userId);
+  await stmt.run(id, userId);
 }
 
 /**
  * Mark all notifications as read for a user
  * @param {string} userId
  */
-export function markAllNotificationsRead(userId) {
+export async function markAllNotificationsRead(userId) {
   const stmt = db.prepare(`
-    UPDATE notification_logs SET is_read = 1
+    UPDATE notification_logs SET is_read = true
     WHERE user_id = ? OR user_id = 'guest_user'
   `);
-  stmt.run(userId);
+  await stmt.run(userId);
 }
 
 /**
@@ -373,7 +381,7 @@ export async function sendPushToUser(userId, payload) {
   const stmt = db.prepare(`
     SELECT id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id = ?
   `);
-  const subs = stmt.all(userId);
+  const subs = await stmt.all(userId);
   if (!subs || subs.length === 0) return { delivered: 0, failed: 0 };
 
   const stringPayload = JSON.stringify({

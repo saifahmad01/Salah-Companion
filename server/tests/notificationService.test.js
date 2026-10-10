@@ -20,15 +20,15 @@ async function runTests() {
   const testUserId = `test_user_${Date.now()}`;
 
   // Cleanup test user if exists
-  db.prepare(`DELETE FROM notification_preferences WHERE user_id = ?`).run(testUserId);
-  db.prepare(`DELETE FROM notification_logs WHERE user_id = ?`).run(testUserId);
-  db.prepare(`DELETE FROM prayer_logs WHERE user_id = ?`).run(testUserId);
+  await db.prepare(`DELETE FROM notification_preferences WHERE user_id = ?`).run(testUserId);
+  await db.prepare(`DELETE FROM notification_logs WHERE user_id = ?`).run(testUserId);
+  await db.prepare(`DELETE FROM prayer_logs WHERE user_id = ?`).run(testUserId);
 
   // --------------------------------------------------------------------------
   // Scenario 1: Configure user preferences and verify accurate calculation
   // --------------------------------------------------------------------------
   console.log('Test 1: Setting user location and preferences...');
-  const initialPrefs = saveUserPreferences(testUserId, {
+  const initialPrefs = await saveUserPreferences(testUserId, {
     prayerStartEnabled: true,
     reminder30MinEnabled: true,
     browserPushEnabled: false,
@@ -69,7 +69,7 @@ async function runTests() {
   const result1 = await checkAndSendDueNotifications({ now: simulationTime });
   assert(result1.startDelivered >= 1, 'Should deliver at least one start notification');
 
-  const history1 = getNotificationHistory(testUserId);
+  const history1 = await getNotificationHistory(testUserId);
   const dhuhrStartNotif = history1.find(
     (n) => n.prayerName === 'dhuhr' && n.reminderType === 'start'
   );
@@ -92,7 +92,7 @@ async function runTests() {
     'Duplicate start notification must NOT be delivered on subsequent runs'
   );
 
-  const history2 = getNotificationHistory(testUserId);
+  const history2 = await getNotificationHistory(testUserId);
   const dhuhrCount = history2.filter(
     (n) => n.prayerName === 'dhuhr' && n.reminderType === 'start'
   ).length;
@@ -110,7 +110,7 @@ async function runTests() {
   const result3 = await checkAndSendDueNotifications({ now: thirtyMinBeforeAsr });
   assert(result3.remindersDelivered >= 1, 'Should deliver 30-min reminder for pending Dhuhr');
 
-  const history3 = getNotificationHistory(testUserId);
+  const history3 = await getNotificationHistory(testUserId);
   const dhuhr30MinNotif = history3.find(
     (n) => n.prayerName === 'dhuhr' && n.reminderType === 'reminder_30min'
   );
@@ -130,7 +130,7 @@ async function runTests() {
   const dateKey = thirtyMinBeforeAsr.toISOString().split('T')[0];
 
   // Mark Asr as completed (on_time) before reminder window
-  recordPrayerLog({
+  await recordPrayerLog({
     userId: testUserId,
     prayerName: 'asr',
     prayerStartTime: asrStart.toISOString(),
@@ -139,7 +139,7 @@ async function runTests() {
   });
 
   assert(
-    isPrayerCompleted(testUserId, 'asr', dateKey),
+    await isPrayerCompleted(testUserId, 'asr', dateKey),
     'Asr should now be registered as completed'
   );
 
@@ -147,7 +147,7 @@ async function runTests() {
   const twentyMinBeforeMaghrib = new Date(maghribStart.getTime() - 20 * 60 * 1000);
   const result4 = await checkAndSendDueNotifications({ now: twentyMinBeforeMaghrib });
 
-  const history4 = getNotificationHistory(testUserId);
+  const history4 = await getNotificationHistory(testUserId);
   const asr30MinNotif = history4.find(
     (n) => n.prayerName === 'asr' && n.reminderType === 'reminder_30min'
   );
@@ -158,14 +158,14 @@ async function runTests() {
   // Scenario 6: Disabled notifications are not delivered
   // --------------------------------------------------------------------------
   console.log('Test 6: Verifying disabled notification setting...');
-  saveUserPreferences(testUserId, {
+  await saveUserPreferences(testUserId, {
     maghribEnabled: false, // User disabled Maghrib notifications
   });
 
   const maghribSimulationTime = new Date(maghribStart.getTime() + 60 * 1000);
   await checkAndSendDueNotifications({ now: maghribSimulationTime });
 
-  const history5 = getNotificationHistory(testUserId);
+  const history5 = await getNotificationHistory(testUserId);
   const maghribNotif = history5.find(
     (n) => n.prayerName === 'maghrib' && n.reminderType === 'start'
   );
@@ -177,14 +177,14 @@ async function runTests() {
   // --------------------------------------------------------------------------
   console.log('Test 7: Verifying location update recalculation...');
   // Update location to London
-  saveUserPreferences(testUserId, {
+  await saveUserPreferences(testUserId, {
     latitude: 51.5074,
     longitude: -0.1278,
     timezone: 'Europe/London',
     calculationMethod: 'MWL',
   });
 
-  const londonPrefs = getUserPreferences(testUserId);
+  const londonPrefs = await getUserPreferences(testUserId);
   assert.equal(londonPrefs.calculationMethod, 'MWL');
   assert.equal(londonPrefs.timezone, 'Europe/London');
 
@@ -234,14 +234,14 @@ async function runTests() {
 
   // Fresh user without notifications yet
   const staleTestUser = `stale_user_${Date.now()}`;
-  saveUserPreferences(staleTestUser, {
+  await saveUserPreferences(staleTestUser, {
     latitude: 28.6139,
     longitude: 77.2090,
   });
 
   await checkAndSendDueNotifications({ now: fourHoursPastFajr });
 
-  const staleHistory = getNotificationHistory(staleTestUser);
+  const staleHistory = await getNotificationHistory(staleTestUser);
   const staleFajr = staleHistory.find(
     (n) => n.prayerName === 'fajr' && n.reminderType === 'start'
   );
@@ -256,14 +256,14 @@ async function runTests() {
   // Scenario 10: Server restart simulation (does not duplicate records)
   // --------------------------------------------------------------------------
   console.log('Test 10: Testing server restart safety...');
-  const countBefore = getNotificationHistory(testUserId).filter(
+  const countBefore = (await getNotificationHistory(testUserId)).filter(
     (n) => n.prayerName === 'dhuhr' && n.reminderType === 'start'
   ).length;
 
   // Run scheduler check again after "restart"
   await checkAndSendDueNotifications({ now: simulationTime });
 
-  const countAfter = getNotificationHistory(testUserId).filter(
+  const countAfter = (await getNotificationHistory(testUserId)).filter(
     (n) => n.prayerName === 'dhuhr' && n.reminderType === 'start'
   ).length;
 
@@ -276,20 +276,22 @@ async function runTests() {
   console.log('✓ Test 10: Server restart safety verified');
 
   // Clean up test data
-  db.prepare(`DELETE FROM notification_preferences WHERE user_id IN (?, ?)`).run(
+  await db.prepare(`DELETE FROM notification_preferences WHERE user_id IN (?, ?)`).run(
     testUserId,
     staleTestUser
   );
-  db.prepare(`DELETE FROM notification_logs WHERE user_id IN (?, ?)`).run(
+  await db.prepare(`DELETE FROM notification_logs WHERE user_id IN (?, ?)`).run(
     testUserId,
     staleTestUser
   );
-  db.prepare(`DELETE FROM prayer_logs WHERE user_id = ?`).run(testUserId);
+  await db.prepare(`DELETE FROM prayer_logs WHERE user_id = ?`).run(testUserId);
 
   console.log('\n--- ALL 10 Salah Notification Test Scenarios Passed! ---');
+  await db.close();
 }
 
-runTests().catch((err) => {
+runTests().catch(async (err) => {
   console.error('Test failed with error:', err);
+  try { await db.close(); } catch {}
   process.exit(1);
 });

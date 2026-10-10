@@ -73,7 +73,7 @@ export function evaluatePrayerStatus({
  * @param {string} [params.overrideStatus] Optional status override
  * @param {string} [params.notes]
  */
-export function recordPrayerLog({
+export async function recordPrayerLog({
   userId,
   prayerName,
   prayerStartTime,
@@ -102,7 +102,7 @@ export function recordPrayerLog({
   const ensureUserStmt = db.prepare(`
     INSERT OR IGNORE INTO users (id, name) VALUES (?, ?)
   `);
-  ensureUserStmt.run(userId, `User-${userId.slice(0, 6)}`);
+  await ensureUserStmt.run(userId, `User-${userId.slice(0, 6)}`);
 
   // Evaluate status
   const evaluation = evaluatePrayerStatus({
@@ -131,7 +131,7 @@ export function recordPrayerLog({
       notes = excluded.notes
   `);
 
-  upsertStmt.run(
+  await upsertStmt.run(
     userId,
     normalizedPrayer,
     dateKey,
@@ -146,7 +146,7 @@ export function recordPrayerLog({
   const fetchStmt = db.prepare(`
     SELECT * FROM prayer_logs WHERE user_id = ? AND prayer_name = ? AND date = ?
   `);
-  const savedRecord = fetchStmt.get(userId, normalizedPrayer, dateKey);
+  const savedRecord = await fetchStmt.get(userId, normalizedPrayer, dateKey);
 
   return {
     record: savedRecord,

@@ -1,6 +1,6 @@
 // ============================================================================
 // Prisma Schema for Salah Companion (Prayer Tracker)
-// Optimized for lightweight, production-ready local or cloud deployment
+// Optimized for Supabase PostgreSQL production deployment
 // ============================================================================
 
 generator client {
@@ -8,12 +8,9 @@ generator client {
 }
 
 datasource db {
-  // Using SQLite for lightweight zero-config embedded storage.
-  // To switch to PostgreSQL:
-  // 1. Change provider to "postgresql"
-  // 2. Set DATABASE_URL="postgresql://user:password@localhost:5432/salah_companion?schema=public"
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 // ----------------------------------------------------------------------------
@@ -25,17 +22,17 @@ model User {
   email                   String      @unique
   password                String?     // Hashed with bcrypt (optional for Google OAuth users)
   role                    String      @default("USER") // "USER" | "ADMIN"
-  prayerCalculationMethod String      @default("Karachi") // e.g. "Karachi", "MWL", "ISNA", "Egypt"
+  prayerCalculationMethod String      @default("Karachi") @map("prayer_calculation_method")
   latitude                Float?      // User GPS latitude for prayer calculations
   longitude               Float?      // User GPS longitude for prayer calculations
-  isEmailVerified         Boolean     @default(false)
-  verificationTokenHash   String?     // Cryptographic SHA-256 hash of single-use verification token
-  tokenExpiresAt          DateTime?
-  lastVerificationSentAt  DateTime?   // Rate-limiting timestamp for resend requests
-  googleId                String?     @unique
-  avatarUrl               String?
-  createdAt               DateTime    @default(now())
-  updatedAt               DateTime    @updatedAt
+  isEmailVerified         Boolean     @default(false) @map("is_email_verified")
+  verificationTokenHash   String?     @map("verification_token_hash")
+  tokenExpiresAt          DateTime?   @map("token_expires_at")
+  lastVerificationSentAt  DateTime?   @map("last_verification_sent_at")
+  googleId                String?     @unique @map("google_id")
+  avatarUrl               String?     @map("avatar_url")
+  createdAt               DateTime    @default(now()) @map("created_at")
+  updatedAt               DateTime    @updatedAt @map("updated_at")
 
   // Relations
   prayerLogs              PrayerLog[]
@@ -51,17 +48,17 @@ model User {
 // ----------------------------------------------------------------------------
 model PrayerLog {
   id              String   @id @default(uuid())
-  userId          String
+  userId          String   @map("user_id")
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  prayerName      String   // "Fajr" | "Dhuhr" | "Asr" | "Maghrib" | "Isha"
+  prayerName      String   @map("prayer_name") // "fajr" | "dhuhr" | "asr" | "maghrib" | "isha"
   date            String   // "YYYY-MM-DD"
   status          String   // "on_time" | "late" | "qada" | "missed"
-  prayerStartTime String?  // ISO timestamp string
-  prayerEndTime   String?  // ISO timestamp string
-  loggedAt        DateTime @default(now())
+  prayerStartTime String?  @map("prayer_start_time") // ISO timestamp string
+  prayerEndTime   String?  @map("prayer_end_time") // ISO timestamp string
+  loggedAt        DateTime @default(now()) @map("logged_at")
   notes           String?
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@unique([userId, prayerName, date])
   @@index([userId, date])
@@ -74,13 +71,13 @@ model PrayerLog {
 // ----------------------------------------------------------------------------
 model DeedLog {
   id        String   @id @default(uuid())
-  userId    String
+  userId    String   @map("user_id")
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   date      String   // "YYYY-MM-DD"
-  deedType  String   // "quran" | "deed" | "dhikr" | "learning"
+  deedType  String   @map("deed_type") // "quran" | "deed" | "dhikr" | "learning"
   title     String?
   completed Boolean  @default(true)
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 
   @@unique([userId, deedType, date])
   @@index([userId, date])
@@ -95,16 +92,78 @@ model PendingRegistration {
   name                    String
   email                   String   @unique // Only one active pending registration per email
   password                String   // Pre-hashed with bcrypt (salt rounds: 12)
-  prayerCalculationMethod String   @default("Karachi")
+  prayerCalculationMethod String   @default("Karachi") @map("prayer_calculation_method")
   latitude                Float?
   longitude               Float?
-  tokenHash               String   @unique // Cryptographic SHA-256 hash of verification token
-  expiresAt               DateTime
-  lastSentAt              DateTime @default(now())
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  tokenHash               String   @unique @map("token_hash") // Cryptographic SHA-256 hash of verification token
+  expiresAt               DateTime @map("expires_at")
+  lastSentAt              DateTime @default(now()) @map("last_sent_at")
+  createdAt               DateTime @default(now()) @map("created_at")
+  updatedAt               DateTime @updatedAt @map("updated_at")
 
   @@index([email])
   @@index([tokenHash])
   @@map("pending_registrations")
+}
+
+// ----------------------------------------------------------------------------
+// Notification Preferences Model
+// ----------------------------------------------------------------------------
+model NotificationPreference {
+  userId               String   @id @map("user_id")
+  prayerStartEnabled   Boolean  @default(true) @map("prayer_start_enabled")
+  reminder30minEnabled Boolean  @default(true) @map("reminder_30min_enabled")
+  browserPushEnabled   Boolean  @default(false) @map("browser_push_enabled")
+  fajrEnabled          Boolean  @default(true) @map("fajr_enabled")
+  dhuhrEnabled         Boolean  @default(true) @map("dhuhr_enabled")
+  asrEnabled           Boolean  @default(true) @map("asr_enabled")
+  maghribEnabled       Boolean  @default(true) @map("maghrib_enabled")
+  ishaEnabled          Boolean  @default(true) @map("isha_enabled")
+  latitude             Float?   @default(28.6139)
+  longitude            Float?   @default(77.2090)
+  timezone             String?  @default("Asia/Kolkata")
+  calculationMethod    String?  @default("Karachi") @map("calculation_method")
+  madhab               String?  @default("Hanafi")
+  updatedAt            DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("notification_preferences")
+}
+
+// ----------------------------------------------------------------------------
+// Web Push Subscriptions Model
+// ----------------------------------------------------------------------------
+model PushSubscription {
+  id        Int      @id @default(autoincrement())
+  userId    String   @map("user_id")
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?  @map("user_agent")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("push_subscriptions")
+}
+
+// ----------------------------------------------------------------------------
+// Notification Logs Model (Delivery History & Idempotency)
+// ----------------------------------------------------------------------------
+model NotificationLog {
+  id           Int      @id @default(autoincrement())
+  userId       String   @map("user_id")
+  prayerName   String   @map("prayer_name")
+  date         String
+  reminderType String   @map("reminder_type")
+  title        String
+  body         String
+  prayerTime   String?  @map("prayer_time")
+  isRead       Boolean  @default(false) @map("is_read")
+  pushSent     Boolean  @default(false) @map("push_sent")
+  deliveredAt  DateTime @default(now()) @map("delivered_at")
+
+  @@unique([userId, prayerName, date, reminderType])
+  @@index([userId, date])
+  @@index([userId, isRead])
+  @@map("notification_logs")
 }

@@ -42,7 +42,7 @@ function formatTime12(date) {
 export async function checkAndSendDueNotifications({ now = new Date() } = {}) {
   // 1. Fetch all user notification preferences
   const prefStmt = db.prepare(`SELECT * FROM notification_preferences`);
-  let preferencesList = prefStmt.all();
+  let preferencesList = await prefStmt.all();
 
   // If no preferences are stored yet, provide a default profile for guest_user
   if (!preferencesList || preferencesList.length === 0) {
@@ -154,7 +154,7 @@ export async function checkAndSendDueNotifications({ now = new Date() } = {}) {
         const isFresh = now.getTime() <= prayer.start.getTime() + FRESHNESS_WINDOW_MS;
 
         if (isPastStart && isFresh) {
-          const alreadySent = hasNotificationBeenDelivered(
+          const alreadySent = await hasNotificationBeenDelivered(
             userId,
             prayer.name,
             prayer.date,
@@ -167,7 +167,7 @@ export async function checkAndSendDueNotifications({ now = new Date() } = {}) {
             const title = `${capitalize(prayer.name)} Prayer Time (${formattedTime})`;
             const body = template.reminder;
 
-            const inserted = recordNotificationLog({
+            const inserted = await recordNotificationLog({
               userId,
               prayerName: prayer.name,
               date: prayer.date,
@@ -208,10 +208,10 @@ export async function checkAndSendDueNotifications({ now = new Date() } = {}) {
 
           if (isAtOrPastReminder && isBeforeWindowCloses) {
             // Check if user already offered/completed this prayer
-            const completed = isPrayerCompleted(userId, prayer.name, prayer.date);
+            const completed = await isPrayerCompleted(userId, prayer.name, prayer.date);
 
             if (!completed) {
-              const alreadySent = hasNotificationBeenDelivered(
+              const alreadySent = await hasNotificationBeenDelivered(
                 userId,
                 prayer.name,
                 prayer.date,
@@ -223,7 +223,7 @@ export async function checkAndSendDueNotifications({ now = new Date() } = {}) {
                 const title = `Gentle Reminder: ${capitalize(prayer.name)} (30 min remaining)`;
                 const body = template.reminder;
 
-                const inserted = recordNotificationLog({
+                const inserted = await recordNotificationLog({
                   userId,
                   prayerName: prayer.name,
                   date: prayer.date,
