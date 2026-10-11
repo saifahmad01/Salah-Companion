@@ -20,9 +20,6 @@ const FRONTEND_URL = config.frontendUrl || 'http://localhost:5173';
 export function getEffectiveFrontendUrl(req) {
   const origin = req?.headers?.origin || req?.headers?.referer;
   if (origin) {
-    if (origin.includes('salahcompanion786.netlify.app') || origin.includes('salahcopmanion786.netlify.app')) {
-      return 'https://salahcompanion786.netlify.app';
-    }
     if (origin.includes('salah-companion.mdsaif.workers.dev') || origin.includes('.workers.dev')) {
       try {
         const parsed = new URL(origin);
@@ -31,11 +28,17 @@ export function getEffectiveFrontendUrl(req) {
         return 'https://salah-companion.mdsaif.workers.dev';
       }
     }
-    if (origin.includes('localhost:5173')) return 'http://localhost:5173';
+    if (origin.includes('localhost:5173') || origin.includes('localhost:3000')) {
+      return origin.includes('localhost:3000') ? 'http://localhost:3000' : 'http://localhost:5173';
+    }
+    // Route any legacy Netlify traffic directly to Cloudflare Workers
+    if (origin.includes('netlify.app')) {
+      return 'https://salah-companion.mdsaif.workers.dev';
+    }
   }
-  const configured = config.frontendUrl || FRONTEND_URL;
-  if (configured) {
-    return configured.replace('salahcopmanion', 'salahcompanion');
+  const configured = (config.frontendUrl || FRONTEND_URL || '').replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+  if (configured && !configured.includes('netlify.app')) {
+    return configured;
   }
   return 'https://salah-companion.mdsaif.workers.dev';
 }
@@ -277,7 +280,7 @@ export async function verifyEmail(req, res, next) {
 
     if (!rawToken || typeof rawToken !== 'string') {
       if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/?verified=false&error=missing_token`);
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=missing_token`);
       }
       return res.status(400).json({
         success: false,
@@ -303,7 +306,7 @@ export async function verifyEmail(req, res, next) {
       if (legacyUser) {
         if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
           if (isBrowserRequest) {
-            return res.redirect(`${frontendUrl}/?verified=false&error=token_expired&email=${encodeURIComponent(legacyUser.email)}`);
+            return res.redirect(`${frontendUrl}/verify-email?verified=false&error=token_expired&email=${encodeURIComponent(legacyUser.email)}`);
           }
           return res.status(400).json({
             success: false,
@@ -326,7 +329,7 @@ export async function verifyEmail(req, res, next) {
         setAuthCookie(res, token);
 
         if (isBrowserRequest) {
-          return res.redirect(`${frontendUrl}/app?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+          return res.redirect(`${frontendUrl}/verify-email?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
         }
         return res.status(200).json({
           success: true,
@@ -338,7 +341,7 @@ export async function verifyEmail(req, res, next) {
       }
 
       if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/?verified=false&error=invalid_or_used_token`);
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=invalid_or_used_token`);
       }
       return res.status(400).json({
         success: false,
@@ -350,7 +353,7 @@ export async function verifyEmail(req, res, next) {
     // 2. Check expiration
     if (new Date() > new Date(pending.expiresAt)) {
       if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/?verified=false&error=token_expired&email=${encodeURIComponent(pending.email)}`);
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=token_expired&email=${encodeURIComponent(pending.email)}`);
       }
       return res.status(400).json({
         success: false,
@@ -408,7 +411,7 @@ export async function verifyEmail(req, res, next) {
 
     // If request was from browser, redirect user directly to their app dashboard
     if (isBrowserRequest) {
-      return res.redirect(`${frontendUrl}/app?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+      return res.redirect(`${frontendUrl}/verify-email?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
     }
 
     return res.status(200).json({
@@ -643,8 +646,6 @@ export async function initiateGoogleOAuth(req, res) {
     try {
       const parsed = new URL(referer);
       if (
-        parsed.origin.endsWith('.netlify.app') ||
-        parsed.origin.endsWith('.onrender.com') ||
         parsed.origin.endsWith('.workers.dev') ||
         parsed.origin.includes('salah-companion.mdsaif.workers.dev') ||
         parsed.origin.includes('localhost') ||
@@ -653,6 +654,9 @@ export async function initiateGoogleOAuth(req, res) {
         frontendOrigin = parsed.origin;
       }
     } catch {}
+  }
+  if (frontendOrigin.includes('netlify.app')) {
+    frontendOrigin = 'https://salah-companion.mdsaif.workers.dev';
   }
 
   res.cookie('oauth_frontend', frontendOrigin, {
@@ -716,7 +720,10 @@ export async function handleGoogleOAuthCallback(req, res) {
   const { code, state, error } = req.query;
 
   // Resolve target frontend origin
-  const frontendBase = (req.cookies?.oauth_frontend || getEffectiveFrontendUrl(req)).replace(/\/+$/, '');
+  let frontendBase = (req.cookies?.oauth_frontend || getEffectiveFrontendUrl(req)).replace(/\/+$/, '');
+  if (frontendBase.includes('netlify.app')) {
+    frontendBase = 'https://salah-companion.mdsaif.workers.dev';
+  }
   res.clearCookie('oauth_frontend', { path: '/' });
 
   // Handle user cancellation or Google error

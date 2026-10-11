@@ -11,8 +11,9 @@
 
 [[redirects]]
   from = "/*"
-  to = "/index.html"
-  status = 200
+  to = "https://salah-companion.mdsaif.workers.dev/:splat"
+  status = 301
+  force = true
 
 # Cache all static bundled assets on Netlify edge CDN for 1 year with immutable fingerprinting
 [[headers]]

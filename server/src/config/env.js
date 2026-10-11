@@ -30,10 +30,15 @@ export const config = {
   ),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || '*',
-  frontendUrl: (
-    (process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace('salahcopmanion', 'salahcompanion') : '') ||
-    (process.env.NODE_ENV === 'production' || process.env.RENDER ? 'https://salah-companion.mdsaif.workers.dev' : 'http://localhost:5173')
-  ).replace(/\/+$/, ''),
+  frontendUrl: (() => {
+    const raw = process.env.FRONTEND_URL?.replace('salahcopmanion', 'salahcompanion')?.replace(/\/+$/, '');
+    if (raw && !raw.includes('netlify.app')) {
+      return raw;
+    }
+    return (process.env.NODE_ENV === 'production' || process.env.RENDER)
+      ? 'https://salah-companion.mdsaif.workers.dev'
+      : 'http://localhost:5173';
+  })(),
   dbPath: process.env.DATABASE_PATH || path.resolve(__dirname, '../../database.sqlite'),
   databaseUrl: process.env.DATABASE_URL || '',
   directUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
