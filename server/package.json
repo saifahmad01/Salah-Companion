@@ -11,8 +11,10 @@
     "dev": "node --watch src/server.js",
     "db:setup": "node scripts/initSupabaseTables.js",
     "db:migrate:data": "node scripts/migrateSqliteToSupabase.js",
-    "db:check": "node scripts/checkDatabase.js",
+    "db:list": "node scripts/dbManager.js list",
     "db:studio": "prisma studio",
+    "db:clean": "node scripts/dbManager.js clear-test",
+    "db:manage": "node scripts/dbManager.js",
     "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/emailAuth.test.js && node tests/notificationService.test.js"
   },
   "dependencies": {
