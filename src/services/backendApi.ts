@@ -9,7 +9,8 @@
  */
 export function resolveApiBaseUrl(): string {
   const envUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '').trim();
-  if (envUrl) {
+  // Ensure outdated/deprecated backend URLs (like ja12) are never used
+  if (envUrl && !envUrl.includes('salah-companion-ja12.onrender.com')) {
     const clean = envUrl.replace(/\/+$/, '');
     return clean.endsWith('/api') ? clean : `${clean}/api`;
   }
