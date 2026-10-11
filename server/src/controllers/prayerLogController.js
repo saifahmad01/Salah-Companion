@@ -1,5 +1,6 @@
 import { prisma } from '../db/prisma.js';
 import { getHadithByStatus } from '../services/hadithService.js';
+import { formatDateKey, isValidDateKey, getIsoWeekRange, addDays } from '../utils/dateUtils.js';
 
 const DAILY_PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 
@@ -470,6 +471,234 @@ export async function deletePrayerLog(req, res, next) {
       success: true,
       message: `Prayer log for ${existingLog.prayerName} on ${existingLog.date} has been reset.`,
       deletedLogId: id,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/prayers/weekly
+ * Returns structured 7-day weekly Salah overview for the selected week.
+ * Supports week navigation via ?startDate=YYYY-MM-DD or ?date=YYYY-MM-DD.
+ */
+export async function getWeeklyPrayers(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const { startDate, date } = req.query;
+
+    const requestedDate = (startDate || date || formatDateKey(new Date())).trim();
+
+    if (startDate && !isValidDateKey(startDate)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid startDate parameter. Expected YYYY-MM-DD.',
+      });
+    }
+
+    if (date && !isValidDateKey(date)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid date parameter. Expected YYYY-MM-DD.',
+      });
+    }
+
+    const {
+      startDate: weekStart,
+      endDate: weekEnd,
+      dates,
+      prevWeekStartDate,
+      nextWeekStartDate,
+      weekLabel,
+    } = getIsoWeekRange(requestedDate);
+
+    const todayStr = formatDateKey(new Date());
+    const isCurrentWeek = dates.includes(todayStr);
+
+    // Fetch all logs for this user in the 7-day range
+    const logs = await prisma.prayerLog.findMany({
+      where: {
+        userId,
+        date: { in: dates },
+      },
+      orderBy: [
+        { date: 'asc' },
+        { loggedAt: 'asc' },
+      ],
+    });
+
+    // Map logs by "YYYY-MM-DD" -> "prayerName" (lowercase)
+    const logsMap = {};
+    for (const log of logs) {
+      if (!logsMap[log.date]) {
+        logsMap[log.date] = {};
+      }
+      logsMap[log.date][log.prayerName.toLowerCase()] = log;
+    }
+
+    const dayShortNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const dayFullNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    const prayerDefinitions = [
+      { id: 'fajr', name: 'Fajr' },
+      { id: 'dhuhr', name: 'Dhuhr' },
+      { id: 'asr', name: 'Asr' },
+      { id: 'maghrib', name: 'Maghrib' },
+      { id: 'isha', name: 'Isha' },
+    ];
+
+    let totalCompleted = 0;
+    let onTimeCount = 0;
+    let lateCount = 0;
+    let qadaCount = 0;
+    let missedCount = 0;
+    let activeDaysCount = 0;
+
+    const days = dates.map((dStr, idx) => {
+      const isToday = dStr === todayStr;
+      const isPast = dStr < todayStr;
+      const isFuture = dStr > todayStr;
+      const dayLogs = logsMap[dStr] || {};
+
+      let dayCompleted = 0;
+
+      const prayers = prayerDefinitions.map((pDef) => {
+        const log = dayLogs[pDef.id];
+        let status = 'pending';
+        let isCompleted = false;
+
+        if (log) {
+          status = log.status; // 'on_time' | 'late' | 'qada' | 'missed'
+          isCompleted = status === 'on_time' || status === 'late' || status === 'qada';
+          if (status === 'on_time') onTimeCount++;
+          else if (status === 'late') lateCount++;
+          else if (status === 'qada') qadaCount++;
+          else if (status === 'missed') missedCount++;
+        } else {
+          status = isFuture ? 'future' : 'pending';
+        }
+
+        if (isCompleted) {
+          dayCompleted++;
+          totalCompleted++;
+        }
+
+        return {
+          id: pDef.id,
+          name: pDef.name,
+          status,
+          isCompleted,
+          loggedAt: log?.loggedAt || null,
+          logId: log?.id || null,
+          notes: log?.notes || null,
+        };
+      });
+
+      if (dayCompleted > 0) {
+        activeDaysCount++;
+      }
+
+      const dailyPercentage = Math.round((dayCompleted / 5) * 100);
+
+      return {
+        date: dStr,
+        day: dayShortNames[idx],
+        fullDay: dayFullNames[idx],
+        isToday,
+        isPast,
+        isFuture,
+        completedCount: dayCompleted,
+        total: 5,
+        dailyPercentage,
+        prayers,
+      };
+    });
+
+    const weeklyCompletionRate = Math.min(100, Math.round((totalCompleted / 35) * 100));
+    const pendingCount = 35 - totalCompleted - missedCount;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        startDate: weekStart,
+        endDate: weekEnd,
+        weekLabel,
+        isCurrentWeek,
+        prevWeekStartDate,
+        nextWeekStartDate,
+        statistics: {
+          totalPossiblePrayers: 35,
+          completedPrayers: totalCompleted,
+          weeklyCompletionRate,
+          activeDaysCount,
+          onTimeCount,
+          lateCount,
+          qadaCount,
+          missedCount,
+          pendingCount: Math.max(0, pendingCount),
+        },
+        days,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * PATCH /api/prayers/log/:id
+ * Updates an existing prayer log status or notes with strict ownership check
+ */
+export async function updatePrayerLog(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+    const { status, notes } = req.body;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing prayer log id parameter.',
+      });
+    }
+
+    if (status && !['on_time', 'late', 'qada', 'missed'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'status must be one of: on_time, late, qada, missed',
+      });
+    }
+
+    const existingLog = await prisma.prayerLog.findUnique({
+      where: { id },
+    });
+
+    if (!existingLog) {
+      return res.status(404).json({
+        success: false,
+        error: 'Prayer log not found.',
+      });
+    }
+
+    if (existingLog.userId !== userId) {
+      return res.status(403).json({
+        success: false,
+        error: 'Forbidden. You do not have permission to update this prayer log.',
+      });
+    }
+
+    const updated = await prisma.prayerLog.update({
+      where: { id },
+      data: {
+        ...(status ? { status } : {}),
+        ...(typeof notes !== 'undefined' ? { notes } : {}),
+        loggedAt: new Date(),
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: `Prayer log for ${updated.prayerName} on ${updated.date} updated successfully.`,
+      data: updated,
     });
   } catch (err) {
     next(err);

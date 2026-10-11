@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   ChevronLeft,
   Calendar,
@@ -9,7 +9,14 @@ import {
   RotateCcw,
   X,
 } from 'lucide-react'
-import type { PrayerItem } from '../types'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import type { PrayerItem, PrayerStatus } from '../types'
+import { salahApi, authStorage } from '../services/backendApi'
+import {
+  getIsoWeekDays,
+  computeWeeklyStats,
+  type AllRecords,
+} from '../utils/prayerRecords'
 
 interface MySalahScreenProps {
   prayers: PrayerItem[]
@@ -23,6 +30,12 @@ interface MySalahScreenProps {
   onToggleMadhab?: () => void
   isGPS?: boolean
   coords?: { lat: number; lng: number }
+  allPrayerRecords?: AllRecords
+  onUpdatePrayerStatus?: (
+    prayerId: string,
+    status: PrayerStatus | null,
+    targetDateKey?: string
+  ) => void
 }
 
 export const MySalahScreen: React.FC<MySalahScreenProps> = ({
@@ -37,7 +50,130 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
   onToggleMadhab,
   isGPS,
   coords,
+  allPrayerRecords,
+  onUpdatePrayerStatus,
 }) => {
+  const queryClient = useQueryClient()
+  const defaultWeekMonday = useMemo(() => getIsoWeekDays().startDate, [])
+  const [selectedWeekStart, setSelectedWeekStart] = useState<string>(defaultWeekMonday)
+  const [selectedModalPrayer, setSelectedModalPrayer] = useState<{
+    date: string
+    dayName: string
+    prayerId: 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha'
+    prayerName: string
+    status: string
+  } | null>(null)
+
+  const hasToken = !!authStorage.getToken()
+  const { data: remoteWeeklyData, isLoading: isWeeklyLoading } = useQuery({
+    queryKey: ['weekly-prayers', selectedWeekStart],
+    queryFn: () => salahApi.getWeeklyPrayers({ startDate: selectedWeekStart }),
+    enabled: hasToken,
+    staleTime: 15000,
+  })
+
+  const displayWeek = useMemo(() => {
+    if (remoteWeeklyData?.data) {
+      const d = remoteWeeklyData.data
+      return {
+        startDate: d.startDate,
+        endDate: d.endDate,
+        weekLabel: d.weekLabel,
+        isCurrentWeek: d.isCurrentWeek,
+        prevWeekDate: d.prevWeekStartDate,
+        nextWeekDate: d.nextWeekStartDate,
+        completedPrayers: d.statistics.completedPrayers,
+        totalPossiblePrayers: d.statistics.totalPossiblePrayers || 35,
+        weeklyCompletionRate: d.statistics.weeklyCompletionRate,
+        activeDaysCount: d.statistics.activeDaysCount,
+        onTimeCount: d.statistics.onTimeCount,
+        lateCount: d.statistics.lateCount,
+        qadaCount: d.statistics.qadaCount,
+        missedCount: d.statistics.missedCount,
+        days: d.days.map((day) => ({
+          date: day.date,
+          day: day.day,
+          fullDay: day.fullDay,
+          isToday: day.isToday,
+          isPast: day.isPast,
+          isFuture: day.isFuture,
+          completedCount: day.completedCount,
+          dailyPercentage: day.dailyPercentage,
+          prayers: day.prayers.map((p) => ({
+            id: p.id,
+            name: p.name,
+            status: p.status,
+            isCompleted: p.isCompleted,
+            logId: p.logId,
+          })),
+        })),
+      }
+    }
+
+    // Offline / fallback calculation using local records
+    const localStats = computeWeeklyStats(allPrayerRecords || {}, selectedWeekStart)
+    let activeDays = 0
+    const days = localStats.daysOverview.map((day) => {
+      if (day.completedCount > 0) activeDays++
+      return {
+        date: day.dateKey,
+        day: day.day,
+        fullDay: day.day,
+        isToday: day.isToday,
+        isPast: day.isPast,
+        isFuture: day.isFuture,
+        completedCount: day.completedCount,
+        dailyPercentage: day.dailyPercentage,
+        prayers: day.prayers.map((p) => {
+          let status: 'on_time' | 'late' | 'qada' | 'missed' | 'pending' | 'future' = 'pending'
+          if (p.status === 'ON_TIME') status = 'on_time'
+          else if (p.status === 'LATE') status = 'late'
+          else if (p.status === 'QADA') status = 'qada'
+          else if (p.status === 'MISSED') status = 'missed'
+          else status = day.isFuture ? 'future' : 'pending'
+          return {
+            id: p.id as any,
+            name: p.name,
+            status,
+            isCompleted: status === 'on_time' || status === 'late' || status === 'qada',
+            logId: null,
+          }
+        }),
+      }
+    })
+
+    return {
+      startDate: localStats.startDate,
+      endDate: localStats.endDate,
+      weekLabel: localStats.weekLabel,
+      isCurrentWeek: localStats.isCurrentWeek,
+      prevWeekDate: localStats.prevWeekDate,
+      nextWeekDate: localStats.nextWeekDate,
+      completedPrayers: localStats.offeredCount,
+      totalPossiblePrayers: 35,
+      weeklyCompletionRate: localStats.completionPercent,
+      activeDaysCount: activeDays,
+      onTimeCount: localStats.onTimeCount,
+      lateCount: localStats.lateCount,
+      qadaCount: localStats.qadaCount,
+      missedCount: localStats.missedCount,
+      days,
+    }
+  }, [remoteWeeklyData, allPrayerRecords, selectedWeekStart])
+
+  const handleUpdateWeeklyPrayer = (
+    dateKey: string,
+    prayerId: string,
+    status: PrayerStatus | null
+  ) => {
+    if (onUpdatePrayerStatus) {
+      onUpdatePrayerStatus(prayerId, status, dateKey)
+    }
+    queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+    queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+    setSelectedModalPrayer(null)
+  }
+
   const completedCount = prayers.filter((p) => p.completed).length
   const totalCount = prayers.length
   const progressPercent = Math.round((completedCount / totalCount) * 100)
@@ -50,17 +186,6 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
     maghrib: '/images/salah-maghrib.png',
     isha: '/images/salah-isha.png',
   }
-
-  // Days of the week for streak tracker (Mon - Sun)
-  const weekDays = [
-    { day: 'Mon', completed: true, isToday: false },
-    { day: 'Tue', completed: true, isToday: false },
-    { day: 'Wed', completed: true, isToday: false },
-    { day: 'Thu', completed: false, isToday: true },
-    { day: 'Fri', completed: false, isToday: false },
-    { day: 'Sat', completed: false, isToday: false },
-    { day: 'Sun', completed: false, isToday: false },
-  ]
 
   // Circular ring calculation
   const radius = 34
@@ -233,40 +358,198 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
             </div>
           </div>
 
-          {/* Card 2: This Week Streak Tracker */}
-          <div className="w-full rounded-[22px] bg-white border border-[#ECE7DC] p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <span className="text-base">📊</span>
-                <h3 className="text-[13.5px] font-bold text-[#14261E]">This Week</h3>
+          {/* Card 2: Production-Ready Weekly Salah Overview & Streak Tracker */}
+          <div className="w-full rounded-[22px] bg-white border border-[#ECE7DC] p-3.5 sm:p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)]">
+            {/* Header row with Title, Week Navigation, and Quick Reset */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-3">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-base flex-shrink-0">📊</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-[14px] font-bold text-[#14261E] leading-tight">This Week</h3>
+                    {isWeeklyLoading && (
+                      <span className="text-[9px] text-[#0E543F] bg-[#EBF5EF] px-1.5 py-0.2 rounded font-medium animate-pulse">
+                        Syncing...
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-[11px] font-medium text-[#65766C] block truncate">
+                    {displayWeek.weekLabel}
+                  </span>
+                </div>
               </div>
-              <span className="text-[12px] font-bold text-[#14261E]">
-                2 / 7 <span className="font-normal text-[#697A71]">days</span>
+
+              <div className="flex items-center gap-1.5 self-end sm:self-auto flex-shrink-0">
+                {!displayWeek.isCurrentWeek && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWeekStart(defaultWeekMonday)}
+                    className="text-[10px] font-semibold text-[#0E543F] bg-[#EBF5EF] hover:bg-emerald-100 border border-[#CEE5D8] px-2 py-0.5 rounded-full transition active:scale-95 cursor-pointer mr-0.5"
+                    title="Jump to current week"
+                  >
+                    Today
+                  </button>
+                )}
+                <div className="flex items-center rounded-lg border border-[#E2DDD2] bg-[#FAF8F3] p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWeekStart(displayWeek.prevWeekDate)}
+                    className="p-1 rounded-md text-[#3A4B42] hover:bg-white hover:text-[#14261E] active:scale-90 transition cursor-pointer"
+                    title="Previous week"
+                    aria-label="Previous week"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWeekStart(displayWeek.nextWeekDate)}
+                    className="p-1 rounded-md text-[#3A4B42] hover:bg-white hover:text-[#14261E] active:scale-90 transition cursor-pointer"
+                    title="Next week"
+                    aria-label="Next week"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Weekly Completion Banner & Statistics */}
+            <div className="rounded-xl bg-[#F8FAF7] border border-[#E3ECE5] px-3 py-2 mb-2.5 flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-[13px] font-bold text-[#14261E]">
+                  {displayWeek.completedPrayers} <span className="text-[11px] font-normal text-[#5A6B62]">/ {displayWeek.totalPossiblePrayers} prayers</span>
+                </span>
+                <span className="text-[10.5px] font-bold text-[#0E543F] bg-[#EBF5EF] px-2 py-0.5 rounded-md border border-[#CEE5D8]">
+                  {displayWeek.weeklyCompletionRate}%
+                </span>
+              </div>
+              <span className="text-[11px] font-medium text-[#5E6F66]">
+                {displayWeek.activeDaysCount} / 7 active days
               </span>
             </div>
 
-            <div className="grid grid-cols-7 gap-1.5 text-center">
-              {weekDays.map((item) => (
-                <div
-                  key={item.day}
-                  className={`flex flex-col items-center py-2 rounded-xl transition ${
-                    item.isToday ? 'bg-[#F4F6EE] border border-[#DEE5D4]' : ''
-                  }`}
-                >
-                  <span className="text-[10.5px] font-medium text-[#596961] mb-1.5">
-                    {item.day}
-                  </span>
+            {/* Mini Progress Bar */}
+            <div className="w-full h-1.5 bg-[#E6EFEA] rounded-full overflow-hidden mb-3">
+              <div
+                className="h-full bg-[#0E543F] rounded-full transition-all duration-400 ease-out"
+                style={{ width: `${displayWeek.weeklyCompletionRate}%` }}
+              />
+            </div>
+
+            {/* 7-Day Matrix Grid (Mon - Sun) */}
+            <div className="grid grid-cols-7 gap-1 sm:gap-1.5 text-center">
+              {displayWeek.days.map((day) => {
+                const dayNum = day.date ? day.date.split('-')[2] : ''
+                return (
                   <div
-                    className={`w-6.5 h-6.5 rounded-full flex items-center justify-center transition ${
-                      item.completed
-                        ? 'bg-[#0E543F] text-white shadow-xs'
-                        : 'border border-[#CBD5E1] bg-white'
+                    key={day.date}
+                    className={`flex flex-col items-center py-1.5 sm:py-2 px-0.5 rounded-xl transition border ${
+                      day.isToday
+                        ? 'bg-[#F2F7F2] border-emerald-400 shadow-2xs ring-1 ring-emerald-300/40'
+                        : 'bg-white border-[#EFECE3] hover:border-emerald-200'
                     }`}
                   >
-                    {item.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                    {/* Day Name & Date Number */}
+                    <span className={`text-[10px] sm:text-[11px] font-bold leading-tight ${
+                      day.isToday ? 'text-[#0E543F]' : 'text-[#2D3E35]'
+                    }`}>
+                      {day.day}
+                    </span>
+                    <span className="text-[9px] text-[#6E7F75] font-medium leading-tight mb-1">
+                      {dayNum}
+                    </span>
+
+                    {/* Daily completion count badge */}
+                    <span className={`text-[8.5px] font-bold px-1 py-0.2 rounded-md mb-2 leading-none ${
+                      day.completedCount === 5
+                        ? 'bg-emerald-100 text-[#0E543F]'
+                        : day.completedCount > 0
+                        ? 'bg-amber-50 text-amber-800'
+                        : 'text-[#8A9A90]'
+                    }`}>
+                      {day.completedCount}/5
+                    </span>
+
+                    {/* 5 Stacked Prayer Pills (Fajr, Dhuhr, Asr, Maghrib, Isha) */}
+                    <div className="flex flex-col gap-1 w-full items-center">
+                      {day.prayers.map((prayer) => {
+                        const status = prayer.status
+                        let pillClasses = 'bg-stone-100 text-stone-400 border-stone-200'
+                        const initial = prayer.id[0].toUpperCase()
+
+                        if (status === 'on_time') {
+                          pillClasses = 'bg-[#0E543F] text-white border-[#0B4433] shadow-2xs hover:bg-[#0B4433]'
+                        } else if (status === 'late') {
+                          pillClasses = 'bg-[#D97706] text-white border-[#B45309] shadow-2xs hover:bg-[#B45309]'
+                        } else if (status === 'qada') {
+                          pillClasses = 'bg-[#7C3AED] text-white border-[#6D28D9] shadow-2xs hover:bg-[#6D28D9]'
+                        } else if (status === 'missed') {
+                          pillClasses = 'bg-[#E11D48] text-white border-[#BE123C] shadow-2xs hover:bg-[#BE123C]'
+                        } else if (status === 'pending') {
+                          pillClasses = day.isToday
+                            ? 'bg-[#EBF5EF] text-[#0E543F] border-emerald-300 hover:bg-emerald-100'
+                            : 'bg-[#F5F3EC] text-stone-500 border-stone-200'
+                        } else {
+                          pillClasses = 'bg-[#F9F8F5] text-stone-300 border-stone-200/60'
+                        }
+
+                        return (
+                          <button
+                            key={prayer.id}
+                            type="button"
+                            onClick={() => setSelectedModalPrayer({
+                              date: day.date,
+                              dayName: `${day.fullDay || day.day}, ${day.date}`,
+                              prayerId: prayer.id as any,
+                              prayerName: prayer.name,
+                              status: prayer.status,
+                            })}
+                            className={`w-5.5 h-5 sm:w-6.5 sm:h-5.5 rounded-md text-[9px] sm:text-[9.5px] font-bold flex items-center justify-center border transition-all active:scale-90 cursor-pointer ${pillClasses}`}
+                            title={`${prayer.name} (${day.day}): ${status.replace('_', ' ').toUpperCase()} • Click to update status`}
+                            aria-label={`${prayer.name} on ${day.day}: ${status}`}
+                          >
+                            {status === 'on_time' ? (
+                              <Check className="w-2.5 h-2.5 stroke-[3]" />
+                            ) : status === 'late' ? (
+                              <Clock className="w-2.5 h-2.5 stroke-[2.5]" />
+                            ) : status === 'qada' ? (
+                              <RotateCcw className="w-2.5 h-2.5 stroke-[2.5]" />
+                            ) : status === 'missed' ? (
+                              <X className="w-2.5 h-2.5 stroke-[3]" />
+                            ) : (
+                              initial
+                            )}
+                          </button>
+                        )
+                      })}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
+            </div>
+
+            {/* Status Breakdown & Color Legend */}
+            <div className="mt-3 pt-2.5 border-t border-[#EFECE3] flex flex-wrap items-center justify-between gap-y-1.5 gap-x-2 text-[9.5px] sm:text-[10px] text-[#55675E]">
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-[#0E543F]"></span>
+                <span>On Time ({displayWeek.onTimeCount})</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-[#D97706]"></span>
+                <span>Late ({displayWeek.lateCount})</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-[#7C3AED]"></span>
+                <span>Qada ({displayWeek.qadaCount})</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-[#E11D48]"></span>
+                <span>Missed ({displayWeek.missedCount})</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-[#D2E2D8]"></span>
+                <span>Pending</span>
+              </div>
             </div>
           </div>
 
@@ -460,6 +743,131 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
           })}
         </div>
       </div>
+
+      {/* Interactive Weekly Prayer Status Dialog */}
+      {selectedModalPrayer && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-sm rounded-[24px] bg-white border border-[#E5E0D4] p-5 shadow-2xl animate-scale-up">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[#0E543F] bg-[#EBF5EF] px-2 py-0.5 rounded-md">
+                  Log Weekly Prayer
+                </span>
+                <h3 className="text-base font-bold text-[#14261E] mt-1">
+                  {selectedModalPrayer.prayerName}
+                </h3>
+                <p className="text-xs text-[#5D6F65]">
+                  {selectedModalPrayer.dayName}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedModalPrayer(null)}
+                className="w-7 h-7 rounded-full bg-stone-100 hover:bg-stone-200 flex items-center justify-center text-stone-600 transition cursor-pointer"
+                aria-label="Close dialog"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 mt-4">
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdateWeeklyPrayer(
+                    selectedModalPrayer.date,
+                    selectedModalPrayer.prayerId,
+                    'ON_TIME'
+                  )
+                }
+                className="w-full p-2.5 rounded-xl border border-[#CEE5D8] bg-[#F2F8F4] hover:bg-[#E5F3EB] text-left flex items-center gap-3 transition cursor-pointer active:scale-98"
+              >
+                <div className="w-7 h-7 rounded-full bg-[#0E543F] text-white flex items-center justify-center flex-shrink-0">
+                  <Check className="w-4 h-4 stroke-[3]" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-[#0E543F] block">On Time (وقت پر ادا کی)</span>
+                  <span className="text-[10px] text-[#4F6A5B]">Offered within the prescribed prayer window</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdateWeeklyPrayer(
+                    selectedModalPrayer.date,
+                    selectedModalPrayer.prayerId,
+                    'LATE'
+                  )
+                }
+                className="w-full p-2.5 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] hover:bg-[#FEF3C7] text-left flex items-center gap-3 transition cursor-pointer active:scale-98"
+              >
+                <div className="w-7 h-7 rounded-full bg-[#D97706] text-white flex items-center justify-center flex-shrink-0">
+                  <Clock className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-[#92400E] block">Late (تاخیر سے ادا کی)</span>
+                  <span className="text-[10px] text-[#785421]">Offered with delay before end of window</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdateWeeklyPrayer(
+                    selectedModalPrayer.date,
+                    selectedModalPrayer.prayerId,
+                    'QADA'
+                  )
+                }
+                className="w-full p-2.5 rounded-xl border border-[#E9D5FF] bg-[#FAF5FF] hover:bg-[#F3E8FF] text-left flex items-center gap-3 transition cursor-pointer active:scale-98"
+              >
+                <div className="w-7 h-7 rounded-full bg-[#7C3AED] text-white flex items-center justify-center flex-shrink-0">
+                  <RotateCcw className="w-4 h-4 stroke-[2.5]" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-[#6B21A8] block">Qada (قضا ادا کی)</span>
+                  <span className="text-[10px] text-[#693E8F]">Offered after the prayer window passed</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdateWeeklyPrayer(
+                    selectedModalPrayer.date,
+                    selectedModalPrayer.prayerId,
+                    'MISSED'
+                  )
+                }
+                className="w-full p-2.5 rounded-xl border border-[#FECDD3] bg-[#FFF1F2] hover:bg-[#FFE4E6] text-left flex items-center gap-3 transition cursor-pointer active:scale-98"
+              >
+                <div className="w-7 h-7 rounded-full bg-[#E11D48] text-white flex items-center justify-center flex-shrink-0">
+                  <X className="w-4 h-4 stroke-[3]" />
+                </div>
+                <div>
+                  <span className="text-xs font-bold text-[#BE123C] block">Missed (قضا ہو گئی)</span>
+                  <span className="text-[10px] text-[#8C3446]">Window ended without offering</span>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleUpdateWeeklyPrayer(
+                    selectedModalPrayer.date,
+                    selectedModalPrayer.prayerId,
+                    null
+                  )
+                }
+                className="w-full p-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-600 text-center text-xs font-medium transition cursor-pointer mt-1"
+              >
+                Reset / Clear Status
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import {
   Calendar,
   ChevronDown,
@@ -37,12 +37,14 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
   quranDaysCount = 0,
   deedsCompletedCount = 0,
 }) => {
-  // Use passed stats or compute live from localStorage
+  const [activeWeekDate, setActiveWeekDate] = useState<string | null>(null)
+
+  // Use passed stats or compute live from localStorage / active week
   const stats = useMemo(() => {
-    if (weeklyStats) return weeklyStats
+    if (!activeWeekDate && weeklyStats) return weeklyStats
     const records = loadPrayerRecords()
-    return computeWeeklyStats(records)
-  }, [weeklyStats])
+    return computeWeeklyStats(records, activeWeekDate || undefined)
+  }, [weeklyStats, activeWeekDate])
 
   const quranPercent = Math.min(100, Math.round((quranDaysCount / 7) * 100))
   const deedsPercent = Math.min(100, Math.round((deedsCompletedCount / 21) * 100))
@@ -377,12 +379,35 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
                 <h3 className="text-[14px] font-bold text-[#14261E]">
                   Weekly Prayer Overview
                 </h3>
-                <div className="flex items-center gap-1 text-xs text-[#596961]">
-                  <span className="font-semibold text-[#14261E]">This Week</span>
-                  <button type="button" className="p-0.5 hover:text-black">
+                <div className="flex items-center gap-1.5 text-xs text-[#596961]">
+                  <span className="font-semibold text-[#14261E] text-[11px] sm:text-xs">
+                    {stats.isCurrentWeek ? 'This Week' : stats.weekLabel}
+                  </span>
+                  {!stats.isCurrentWeek && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveWeekDate(null)}
+                      className="text-[10px] font-semibold text-[#0E543F] bg-[#EBF5EF] hover:bg-emerald-100 px-2 py-0.5 rounded-full transition cursor-pointer"
+                    >
+                      Today
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setActiveWeekDate(stats.prevWeekDate)}
+                    className="p-1 rounded-md text-stone-500 hover:text-black hover:bg-stone-100 transition cursor-pointer"
+                    title="Previous week"
+                    aria-label="Previous week"
+                  >
                     <ChevronLeft className="w-3.5 h-3.5" />
                   </button>
-                  <button type="button" className="p-0.5 hover:text-black">
+                  <button
+                    type="button"
+                    onClick={() => setActiveWeekDate(stats.nextWeekDate)}
+                    className="p-1 rounded-md text-stone-500 hover:text-black hover:bg-stone-100 transition cursor-pointer"
+                    title="Next week"
+                    aria-label="Next week"
+                  >
                     <ChevronRight className="w-3.5 h-3.5" />
                   </button>
                 </div>

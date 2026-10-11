@@ -40,10 +40,12 @@ import {
 import {
   getDateKey,
   loadPrayerRecords,
+  saveAllPrayerRecords,
   updatePrayerStatus,
   computeWeeklyStats,
   type AllRecords,
 } from '../utils/prayerRecords'
+import { useQueryClient } from '@tanstack/react-query'
 import { reverseGeocodeCoordinates } from '../utils/geocoding'
 import type { PrayerItem, DeedItem, PrayerStatus } from '../types'
 import { LogOut, Volume2, Shield } from 'lucide-react'
@@ -52,6 +54,7 @@ import { useSalahNotifications } from '../hooks/useSalahNotifications'
 export const AppDashboard = () => {
   const navigate = useNavigate()
   const { user: currentUser, logout, banner, setBanner } = useAuth()
+  const queryClient = useQueryClient()
 
   // Current active Indian city with address persistence
   const [city, setCity] = useState<CityInfo>(() => {
@@ -176,6 +179,47 @@ export const AppDashboard = () => {
     loadPrayerRecords()
   )
 
+  // Remote synchronization on user login
+  useEffect(() => {
+    if (currentUser) {
+      salahApi
+        .getWeeklyPrayers()
+        .then((res) => {
+          if (res?.data?.days) {
+            setAllPrayerRecords((prev) => {
+              const next = { ...prev }
+              let changed = false
+              res.data.days.forEach((day) => {
+                if (!next[day.date]) next[day.date] = {}
+                day.prayers.forEach((p) => {
+                  if (p.status && p.status !== 'pending' && p.status !== 'future') {
+                    const mapped: PrayerStatus =
+                      p.status === 'on_time'
+                        ? 'ON_TIME'
+                        : p.status === 'late'
+                        ? 'LATE'
+                        : p.status === 'qada'
+                        ? 'QADA'
+                        : 'MISSED'
+                    if (next[day.date][p.id] !== mapped) {
+                      next[day.date][p.id] = mapped
+                      changed = true
+                    }
+                  }
+                })
+              })
+              if (changed) {
+                saveAllPrayerRecords(next)
+                return next
+              }
+              return prev
+            })
+          }
+        })
+        .catch(() => {})
+    }
+  }, [currentUser])
+
   const todayDateKey = getDateKey(currentTime)
   const todayRecords = allPrayerRecords[todayDateKey] || {}
 
@@ -196,10 +240,15 @@ export const AppDashboard = () => {
     setIsPrayerStatusModalOpen(true)
   }
 
-  const handleSelectPrayerStatus = (prayerId: string, status: PrayerStatus | null) => {
-    const updated = updatePrayerStatus(todayDateKey, prayerId, status)
+  const handleSelectPrayerStatus = (
+    prayerId: string,
+    status: PrayerStatus | null,
+    targetDateKey?: string
+  ) => {
+    const dateKeyToUse = targetDateKey || todayDateKey
+    const updated = updatePrayerStatus(dateKeyToUse, prayerId, status)
     setAllPrayerRecords(updated)
-    if (selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
+    if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
       setSelectedPrayerDetail({
         ...selectedPrayerDetail,
         prayerStatus: status,
@@ -208,54 +257,50 @@ export const AppDashboard = () => {
     }
 
     // Check for genuine achievement milestone: all 5 prayers completed today
-    const todaysMap = updated[todayDateKey] || {}
-    const allDone = prayerIds.every((pId) => {
-      const s = pId === prayerId ? status : todaysMap[pId]
-      return s === 'ON_TIME' || s === 'LATE' || s === 'QADA'
-    })
+    if (dateKeyToUse === todayDateKey) {
+      const todaysMap = updated[todayDateKey] || {}
+      const allDone = prayerIds.every((pId) => {
+        const s = pId === prayerId ? status : todaysMap[pId]
+        return s === 'ON_TIME' || s === 'LATE' || s === 'QADA'
+      })
 
-    if (allDone) {
-      const milestoneKey = `salah_celebrated_${todayDateKey}`
-      if (!sessionStorage.getItem(milestoneKey)) {
-        sessionStorage.setItem(milestoneKey, 'true')
-        setBanner({
-          type: 'success',
-          message: '🎉 Alhamdulillah! You have completed all 5 prayers today. May Allah accept your salah and bless your day!',
-        })
+      if (allDone) {
+        const milestoneKey = `salah_celebrated_${todayDateKey}`
+        if (!sessionStorage.getItem(milestoneKey)) {
+          sessionStorage.setItem(milestoneKey, 'true')
+          setBanner({
+            type: 'success',
+            message: '🎉 Alhamdulillah! You have completed all 5 prayers today. May Allah accept your salah and bless your day!',
+          })
+        }
       }
     }
 
     // Sync with backend API
     if (status) {
-      const mappedStatus = status === 'ON_TIME' ? 'on_time' : status === 'LATE' ? 'late' : 'missed'
-      const prayerDate = prayerData ? (prayerData as any)[prayerId] : null
-      const nextPrayerMap: Record<string, string> = {
-        fajr: 'sunrise',
-        dhuhr: 'asr',
-        asr: 'maghrib',
-        maghrib: 'isha',
-        isha: 'tomorrowFajr',
-      }
-      const nextKey = nextPrayerMap[prayerId] || prayerId
-      const nextPrayerDate = prayerData ? (prayerData as any)[nextKey] : null
-
-      const startTime = prayerDate instanceof Date && !isNaN(prayerDate.getTime())
-        ? prayerDate.toISOString()
-        : new Date().toISOString()
-      const endTime = nextPrayerDate instanceof Date && !isNaN(nextPrayerDate.getTime())
-        ? nextPrayerDate.toISOString()
-        : new Date(Date.now() + 2 * 3600 * 1000).toISOString()
+      const mappedStatus =
+        status === 'ON_TIME'
+          ? 'on_time'
+          : status === 'LATE'
+          ? 'late'
+          : status === 'QADA'
+          ? 'qada'
+          : 'missed'
 
       salahApi
-        .logPrayer({
-          userId: currentUser?.id || 'guest_user',
+        .upsertPrayerLog({
           prayerName: prayerId,
-          prayerStartTime: startTime,
-          prayerEndTime: endTime,
-          logTimestamp: new Date().toISOString(),
+          date: dateKeyToUse,
           status: mappedStatus as any,
         })
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+          queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+        })
         .catch(() => {})
+    } else {
+      queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+      queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
     }
   }
 
@@ -694,6 +739,8 @@ export const AppDashboard = () => {
               onToggleMadhab={handleToggleMadhab}
               isGPS={!!city.isGPS}
               coords={{ lat: city.lat, lng: city.lng }}
+              allPrayerRecords={allPrayerRecords}
+              onUpdatePrayerStatus={handleSelectPrayerStatus}
             />
           )}
 
