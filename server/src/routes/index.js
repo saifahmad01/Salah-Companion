@@ -6,6 +6,7 @@ import { progressRouter } from './progressRoutes.js';
 import { hadithRouter } from './hadithRoutes.js';
 import { userRouter } from './userRoutes.js';
 import { notificationRouter } from './notificationRoutes.js';
+import { adminRouter } from './adminRoutes.js';
 
 import { checkDbHealth } from '../db/connection.js';
 
@@ -44,4 +45,7 @@ apiRouter.use(userRouter);
 
 // Production-ready Salah Notifications (/api/notifications/...)
 apiRouter.use('/notifications', notificationRouter);
+
+// Admin Dashboard & Operations (/api/admin/...)
+apiRouter.use('/admin', adminRouter);
 

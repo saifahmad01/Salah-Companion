@@ -2,12 +2,14 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { PublicOnlyRoute } from './components/PublicOnlyRoute'
+import { AdminRoute } from './components/AdminRoute'
 import { ServerWarmupNotice } from './components/ServerWarmupNotice'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import AppDashboard from './pages/AppDashboard'
+import AdminDashboard from './pages/AdminDashboard'
 
 export default function App() {
   return (
@@ -61,6 +63,16 @@ export default function App() {
               <ProtectedRoute>
                 <AppDashboard />
               </ProtectedRoute>
+            }
+          />
+
+          {/* Admin Portal (Protected + RBAC: Role === 'ADMIN' only) */}
+          <Route
+            path="/admin"
+            element={
+              <AdminRoute>
+                <AdminDashboard />
+              </AdminRoute>
             }
           />
 

@@ -1,5 +1,5 @@
 import React from 'react'
-import { Bell, User, Calendar, Moon, Wifi, MapPin, ChevronDown } from 'lucide-react'
+import { Bell, User, Calendar, Moon, Wifi, MapPin, ChevronDown, Shield } from 'lucide-react'
 
 interface HeaderProps {
   currentTimeStr: string
@@ -10,6 +10,8 @@ interface HeaderProps {
   coords?: { lat: number; lng: number }
   userName?: string
   unreadCount?: number
+  isAdmin?: boolean
+  onOpenAdmin?: () => void
   onOpenNotifications?: () => void
   onOpenProfile?: () => void
   onOpenLocation?: () => void
@@ -26,6 +28,8 @@ export const Header: React.FC<HeaderProps> = ({
   coords,
   userName,
   unreadCount = 0,
+  isAdmin,
+  onOpenAdmin,
   onOpenNotifications,
   onOpenProfile,
   onOpenLocation,
@@ -104,6 +108,19 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Right actions */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Admin Dashboard Shield Button */}
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={onOpenAdmin}
+              aria-label="Admin Dashboard"
+              title="Open Admin Dashboard"
+              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-300 shadow-sm flex items-center justify-center text-amber-700 transition-transform active:scale-95 cursor-pointer"
+            >
+              <Shield className="w-[18px] h-[18px] stroke-[2]" />
+            </button>
+          )}
+
           {/* Notification Button with Unread Badge */}
           <button
             type="button"

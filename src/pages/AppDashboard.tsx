@@ -46,7 +46,7 @@ import {
 } from '../utils/prayerRecords'
 import { reverseGeocodeCoordinates } from '../utils/geocoding'
 import type { PrayerItem, DeedItem, PrayerStatus } from '../types'
-import { LogOut, Volume2 } from 'lucide-react'
+import { LogOut, Volume2, Shield } from 'lucide-react'
 import { useSalahNotifications } from '../hooks/useSalahNotifications'
 
 export const AppDashboard = () => {
@@ -485,6 +485,17 @@ export const AppDashboard = () => {
 
         {/* Right: User Greeting & Sign Out */}
         <div className="flex items-center gap-2 sm:gap-3">
+          {currentUser?.role === 'ADMIN' && (
+            <button
+              type="button"
+              onClick={() => navigate('/admin')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold shadow-xs transition cursor-pointer"
+              title="Open Administrative Dashboard"
+            >
+              <Shield className="w-3.5 h-3.5 text-amber-600" />
+              <span>Admin Panel</span>
+            </button>
+          )}
           {currentUser?.name && (
             <span className="hidden lg:inline text-xs font-medium text-stone-600 bg-white/80 px-3 py-1.5 rounded-full border border-stone-200/60 shadow-2xs">
               Salam, <strong className="text-emerald-900 font-semibold">{currentUser.name.split(' ')[0]}</strong>
@@ -604,6 +615,8 @@ export const AppDashboard = () => {
                 coords={{ lat: city.lat, lng: city.lng }}
                 userName={currentUser?.name}
                 unreadCount={notifUnreadCount}
+                isAdmin={currentUser?.role === 'ADMIN'}
+                onOpenAdmin={() => navigate('/admin')}
                 onOpenNotifications={() => setIsNotificationsOpen(true)}
                 onOpenProfile={() => setIsAuthModalOpen(true)}
                 onOpenLocation={() => setIsLocationOpen(true)}

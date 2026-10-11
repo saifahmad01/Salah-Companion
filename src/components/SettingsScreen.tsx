@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   User,
   ChevronRight,
@@ -57,6 +58,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   browserPermission = 'default',
   onSendTestNotification,
 }) => {
+  const navigate = useNavigate()
   // Theme state
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('light')
 
@@ -190,6 +192,35 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               </div>
               <ChevronRight className="w-4 h-4 text-stone-400" />
             </div>
+
+            {/* Admin Portal Shortcut Card (Rendered for ADMIN role) */}
+            {user?.role === 'ADMIN' && (
+              <div
+                onClick={() => navigate('/admin')}
+                className="w-full rounded-[22px] bg-gradient-to-r from-[#07241A] via-[#0C382B] to-[#114E3C] border border-amber-400/40 p-4 shadow-md flex items-center justify-between cursor-pointer hover:border-amber-300 transition group select-none"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 shadow-inner">
+                    <Shield className="w-5 h-5 stroke-[2]" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-[14px] font-bold text-white leading-tight">Admin Dashboard</h4>
+                      <span className="text-[9px] font-bold uppercase tracking-wider bg-amber-400 text-[#07241A] px-1.5 py-0.5 rounded-full shadow-2xs">
+                        Admin Privileges
+                      </span>
+                    </div>
+                    <p className="text-[11.5px] text-emerald-100/70 mt-0.5 leading-tight">
+                      Manage users, view system metrics & broadcast alerts
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 text-amber-300 text-xs font-semibold group-hover:translate-x-1 transition-transform">
+                  <span className="hidden sm:inline">Open</span>
+                  <ChevronRight className="w-4 h-4" />
+                </div>
+              </div>
+            )}
 
             {/* Section 1: Prayer Settings */}
             <div className="w-full rounded-[24px] bg-white border border-[#EDE8DC] p-4 shadow-xs">

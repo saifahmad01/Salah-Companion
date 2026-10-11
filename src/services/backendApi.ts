@@ -601,6 +601,86 @@ export const salahApi = {
   },
 };
 
+export interface AdminOverviewData {
+  kpis: {
+    totalUsers: number;
+    verifiedUsers: number;
+    unverifiedUsers: number;
+    pendingRegistrations: number;
+    totalPrayersLogged: number;
+    prayersLoggedToday: number;
+    weeklyActiveUsers: number;
+  };
+  todayBreakdown: {
+    fajr: number;
+    dhuhr: number;
+    asr: number;
+    maghrib: number;
+    isha: number;
+  };
+  system: {
+    status: string;
+    databaseProvider: string;
+    databaseLatencyMs: number;
+    environment: string;
+    serverUptimeSec: number;
+    nodeVersion: string;
+  };
+}
+
+export interface AdminUserData {
+  id: string;
+  name: string;
+  email: string;
+  role: 'USER' | 'ADMIN';
+  isEmailVerified: boolean;
+  prayerCalculationMethod: string;
+  createdAt: string;
+  _count: {
+    prayerLogs: number;
+    deedLogs: number;
+  };
+}
+
+export const adminApi = {
+  async getOverview(): Promise<{ success: boolean; data: AdminOverviewData }> {
+    return await fetchWithAuth('/admin/overview', { method: 'GET' });
+  },
+
+  async getUsers(params: { q?: string; role?: string; verified?: string; page?: number; limit?: number } = {}): Promise<{
+    success: boolean;
+    data: AdminUserData[];
+    pagination: { total: number; page: number; limit: number; totalPages: number };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params.q) searchParams.set('q', params.q);
+    if (params.role) searchParams.set('role', params.role);
+    if (params.verified) searchParams.set('verified', params.verified);
+    if (params.page) searchParams.set('page', params.page.toString());
+    if (params.limit) searchParams.set('limit', params.limit.toString());
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return await fetchWithAuth(`/admin/users${query}`, { method: 'GET' });
+  },
+
+  async updateUserRole(userId: string, role: 'USER' | 'ADMIN'): Promise<{ success: boolean; message: string; data: any }> {
+    return await fetchWithAuth(`/admin/users/${userId}/role`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    });
+  },
+
+  async deleteUser(userId: string): Promise<{ success: boolean; message: string }> {
+    return await fetchWithAuth(`/admin/users/${userId}`, { method: 'DELETE' });
+  },
+
+  async broadcastNotification(payload: { title: string; body: string; type?: string }): Promise<{ success: boolean; message: string }> {
+    return await fetchWithAuth('/admin/broadcast', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+};
+
 export interface NotificationPreferences {
   userId?: string;
   prayerStartEnabled: boolean;

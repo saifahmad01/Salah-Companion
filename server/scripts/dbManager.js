@@ -142,6 +142,25 @@ async function main() {
       break;
     }
 
+    case 'make-admin': {
+      if (!targetEmail) {
+        console.error('❌ Please specify an email: node scripts/dbManager.js make-admin <email>');
+        process.exit(1);
+      }
+      const normEmail = targetEmail.trim().toLowerCase();
+      const user = await prisma.user.findUnique({ where: { email: normEmail } });
+      if (!user) {
+        console.error(`❌ User not found: ${normEmail}`);
+        process.exit(1);
+      }
+      await prisma.user.update({
+        where: { email: normEmail },
+        data: { role: 'ADMIN', isEmailVerified: true },
+      });
+      console.log(`👑 SUCCESS: User ${normEmail} has been granted the ADMIN role!`);
+      break;
+    }
+
     case 'clear-test': {
       console.log('🧹 Cleaning up automated test accounts (*@example.com, *+autotest*, test_user_*)...');
       const delPending = await query(`
