@@ -15,7 +15,7 @@ const JWT_EXPIRES_IN = config.jwtExpiresIn || process.env.JWT_EXPIRES_IN || '7d'
 const FRONTEND_URL = config.frontendUrl || 'http://localhost:5173';
 
 /**
- * Resolves the active frontend domain dynamically, supporting both Netlify site domains
+ * Resolves the active frontend domain dynamically, prioritizing Cloudflare Workers production domain
  */
 export function getEffectiveFrontendUrl(req) {
   const origin = req?.headers?.origin || req?.headers?.referer;
@@ -639,7 +639,7 @@ export async function initiateGoogleOAuth(req, res) {
     path: '/',
   });
 
-  // Track the frontend origin that initiated the login (Netlify, localhost, etc.)
+  // Track the frontend origin that initiated the login (Cloudflare Workers, localhost, etc.)
   const referer = req.query.redirect_to || req.headers.referer;
   let frontendOrigin = getEffectiveFrontendUrl(req);
   if (referer) {

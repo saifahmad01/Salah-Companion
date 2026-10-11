@@ -37,7 +37,6 @@ const devAllowedOrigins = [
 
 // Production origins
 const prodAllowedOrigins = [
-  'https://salahcompanion786.netlify.app',
   'https://salah-companion.mdsaif.workers.dev',
 ];
 
@@ -74,11 +73,9 @@ app.use(
         }
       }
 
-      // 3. Production profile: allow Netlify and Cloudflare Workers frontend domains
+      // 3. Production profile: allow Cloudflare Workers frontend domains
       if (
         allowedOrigins.includes(origin) ||
-        origin === 'https://salahcompanion786.netlify.app' ||
-        origin.endsWith('.netlify.app') ||
         origin === 'https://salah-companion.mdsaif.workers.dev' ||
         origin.endsWith('.workers.dev')
       ) {

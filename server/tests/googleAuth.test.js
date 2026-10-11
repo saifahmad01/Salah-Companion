@@ -180,8 +180,6 @@ async function runTests() {
     WHERE email LIKE '%@salahcompanion.internal' 
        OR email IN ('automated.test.user@example.com', 'test.user@example.com', 'user.google@gmail.com', 'direct@gmail.com')
   `);
-  console.log('✓ Test Database Cleanup: Removed temporary test accounts.');
-
   console.log('\n🎉 ALL 9 GOOGLE AUTHENTICATION INTEGRATION & SAFETY TESTS PASSED SUCCESSFULLY! 🎉\n');
 }
 
