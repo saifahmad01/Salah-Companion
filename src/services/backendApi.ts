@@ -3,7 +3,17 @@
  * Connects to http://localhost:4000/api with JWT Authentication support
  */
 
-const PRIMARY_BASE_URL = import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api';
+/**
+ * Normalizes backend API base URL ensuring /api is properly appended
+ */
+export function resolveApiBaseUrl(): string {
+  const envUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '').trim();
+  if (!envUrl) return 'http://localhost:5000/api';
+  const clean = envUrl.replace(/\/+$/, '');
+  return clean.endsWith('/api') ? clean : `${clean}/api`;
+}
+
+export const PRIMARY_BASE_URL = resolveApiBaseUrl();
 const FALLBACK_BASE_URL = 'http://localhost:4000/api';
 const TOKEN_KEY = 'salah_auth_token';
 

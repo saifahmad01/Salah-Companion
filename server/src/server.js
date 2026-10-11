@@ -17,6 +17,14 @@ const app = express();
 app.use(cookieParser());
 
 // CORS configuration supporting HttpOnly cookies and credentials
+const defaultAllowedOrigins = [
+  'https://salahcompanion786.netlify.app',
+  'http://localhost:5173',
+  'http://localhost:5000',
+  'http://localhost:3000',
+  'http://127.0.0.1:5173',
+];
+
 const configuredOrigins = (config.corsOrigin || '')
   .split(',')
   .map((o) => o.trim())
@@ -26,21 +34,26 @@ const allowedOrigins = Array.from(
   new Set([
     config.frontendUrl,
     ...configuredOrigins,
-    'http://localhost:5173',
-    'http://localhost:3000',
-    'http://127.0.0.1:5173',
+    ...defaultAllowedOrigins,
   ].filter(Boolean))
 );
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or same-origin)
-      if (!origin || allowedOrigins.includes(origin) || config.corsOrigin === '*') {
-        callback(null, origin || true);
-      } else {
-        callback(null, origin);
+      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      if (!origin) {
+        return callback(null, true);
       }
+      if (
+        allowedOrigins.includes(origin) ||
+        config.corsOrigin === '*' ||
+        origin.endsWith('.netlify.app') ||
+        origin.endsWith('.onrender.com')
+      ) {
+        return callback(null, origin);
+      }
+      return callback(null, origin);
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],

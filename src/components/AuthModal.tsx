@@ -672,7 +672,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     <div>
                       <span className="text-stone-500 font-medium block">Authorized redirect URIs (Must match exactly):</span>
                       <code className="block bg-blue-50 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[10px] select-all mt-0.5 font-semibold">
-                        http://localhost:5000/api/auth/google/callback
+                        {`${salahApi.getGoogleOAuthUrl()}/callback`}
                       </code>
                     </div>
                   </div>

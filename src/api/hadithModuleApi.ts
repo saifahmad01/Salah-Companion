@@ -4,8 +4,7 @@ import type {
   VerifiedBook,
 } from '../types/hadithModule';
 
-const PRIMARY_BASE_URL =
-  import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000/api';
+import { PRIMARY_BASE_URL } from '../services/backendApi';
 const FALLBACK_BASE_URL = 'http://localhost:4000/api';
 
 /**
