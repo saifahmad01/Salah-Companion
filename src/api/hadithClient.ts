@@ -10,7 +10,7 @@ import type {
  * with fallbacks to environment variable or port 4000
  */
 import { PRIMARY_BASE_URL } from '../services/backendApi';
-const FALLBACK_BASE_URL = 'http://localhost:4000/api';
+const FALLBACK_BASE_URL = 'https://salah-companion-z3i4.onrender.com/api';
 
 /**
  * Robust fetcher with error normalization and automatic server fallback

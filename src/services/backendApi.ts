@@ -5,16 +5,22 @@
 
 /**
  * Normalizes backend API base URL ensuring /api is properly appended
+ * In production builds, defaults directly to https://salah-companion-z3i4.onrender.com/api
  */
 export function resolveApiBaseUrl(): string {
   const envUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '').trim();
-  if (!envUrl) return 'http://localhost:5000/api';
-  const clean = envUrl.replace(/\/+$/, '');
-  return clean.endsWith('/api') ? clean : `${clean}/api`;
+  if (envUrl) {
+    const clean = envUrl.replace(/\/+$/, '');
+    return clean.endsWith('/api') ? clean : `${clean}/api`;
+  }
+  if (import.meta.env.DEV) {
+    return 'http://localhost:5000/api';
+  }
+  return 'https://salah-companion-z3i4.onrender.com/api';
 }
 
 export const PRIMARY_BASE_URL = resolveApiBaseUrl();
-const FALLBACK_BASE_URL = 'http://localhost:4000/api';
+const FALLBACK_BASE_URL = 'https://salah-companion-z3i4.onrender.com/api';
 const TOKEN_KEY = 'salah_auth_token';
 
 // Token persistence helpers
@@ -32,7 +38,7 @@ export const authStorage = {
 
 /**
  * Common fetch helper that automatically attaches Bearer token if logged in
- * With automatic port 5000 -> 4000 fallback resilience
+ * With AbortController timeout protection and detailed error reporting
  */
 async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promise<any> {
   const token = authStorage.getToken();
@@ -50,27 +56,38 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promi
     headers.set('Authorization', `Bearer ${token}`);
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 25000);
+
   let response: Response;
   try {
     response = await fetch(`${PRIMARY_BASE_URL}${endpoint}`, {
       ...options,
+      signal: options.signal || controller.signal,
       credentials: 'include',
       headers,
     });
-  } catch {
-    if (import.meta.env.DEV) {
+  } catch (err: any) {
+    console.error(`[API Network Error] ${endpoint}:`, err);
+    if (err.name === 'AbortError') {
+      throw new Error('Connection timed out. The server is taking longer than expected to respond.');
+    }
+    if (import.meta.env.DEV && PRIMARY_BASE_URL.includes('localhost')) {
       try {
         response = await fetch(`${FALLBACK_BASE_URL}${endpoint}`, {
           ...options,
           credentials: 'include',
           headers,
         });
-      } catch {
+      } catch (fallbackErr: any) {
+        console.error(`[API Fallback Error] ${endpoint}:`, fallbackErr);
         throw new Error('Unable to connect to Salah Companion backend server. Please check your connection.');
       }
     } else {
       throw new Error('Unable to connect to Salah Companion backend server. Please check your connection.');
     }
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   const data = await response.json().catch(() => ({}));

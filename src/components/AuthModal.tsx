@@ -146,18 +146,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         longitude: currentCoords?.lng,
       })
 
-      if (res.requiresEmailVerification) {
+      if (res?.requiresEmailVerification || res?.success) {
         setVerificationPendingEmail(email)
         setDevPreviewUrl(res.previewUrl || null)
         setSuccessMessage('Account created! Please check your email to verify.')
-      } else if (res.user) {
+      } else if (res?.user) {
         setSuccessMessage('Account created successfully! Welcome to Salah Companion.')
         setTimeout(() => {
           onAuthSuccess(res.user!)
           onClose()
         }, 500)
+      } else {
+        setVerificationPendingEmail(email)
+        setSuccessMessage('Account created! Please check your email to verify.')
       }
     } catch (err: any) {
+      console.error('[AuthModal Register Error]:', err)
       setErrorMessage(err.message || 'Registration failed. Please check your inputs.')
       if (err.code) {
         setErrorCode(err.code)

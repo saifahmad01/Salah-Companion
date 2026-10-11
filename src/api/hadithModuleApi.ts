@@ -5,7 +5,7 @@ import type {
 } from '../types/hadithModule';
 
 import { PRIMARY_BASE_URL } from '../services/backendApi';
-const FALLBACK_BASE_URL = 'http://localhost:4000/api';
+const FALLBACK_BASE_URL = 'https://salah-companion-z3i4.onrender.com/api';
 
 /**
  * Resilient fetcher with automatic fallback to port 4000

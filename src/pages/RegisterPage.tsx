@@ -49,17 +49,21 @@ export const RegisterPage: React.FC = () => {
         prayerCalculationMethod: calculationMethod,
       })
 
-      if (res.requiresEmailVerification) {
+      if (res?.requiresEmailVerification || res?.success) {
         setVerificationPending(true)
         setRegisteredEmail(res.email || email.trim().toLowerCase())
         if (res.previewUrl) {
           setDevPreviewUrl(res.previewUrl)
         }
-      } else if (res.user) {
+      } else if (res?.user) {
         navigate('/app', { replace: true })
+      } else {
+        setVerificationPending(true)
+        setRegisteredEmail(email.trim().toLowerCase())
       }
     } catch (err: any) {
-      setError(err.message || 'Registration failed. Please check your information.')
+      console.error('[Register Submit Error]:', err)
+      setError(err.message || 'Registration failed. Please check your network connection and try again.')
     } finally {
       setLoading(false)
     }
