@@ -20,15 +20,16 @@ const FRONTEND_URL = config.frontendUrl || 'http://localhost:5173';
 export function getEffectiveFrontendUrl(req) {
   const origin = req?.headers?.origin || req?.headers?.referer;
   if (origin) {
-    if (origin.includes('salahcopmanion786.netlify.app')) return 'https://salahcopmanion786.netlify.app';
-    if (origin.includes('salahcompanion786.netlify.app')) return 'https://salahcompanion786.netlify.app';
+    if (origin.includes('salahcompanion786.netlify.app') || origin.includes('salahcopmanion786.netlify.app')) {
+      return 'https://salahcompanion786.netlify.app';
+    }
     if (origin.includes('localhost:5173')) return 'http://localhost:5173';
   }
   const configured = config.frontendUrl || FRONTEND_URL;
-  if (configured && configured.includes('salahcompanion786.netlify.app')) {
-    return 'https://salahcopmanion786.netlify.app';
+  if (configured) {
+    return configured.replace('salahcopmanion', 'salahcompanion');
   }
-  return configured || 'https://salahcopmanion786.netlify.app';
+  return 'https://salahcompanion786.netlify.app';
 }
 
 /**
@@ -317,7 +318,7 @@ export async function verifyEmail(req, res, next) {
         setAuthCookie(res, token);
 
         if (isBrowserRequest) {
-          return res.redirect(`${frontendUrl}/?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+          return res.redirect(`${frontendUrl}/app?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
         }
         return res.status(200).json({
           success: true,
@@ -397,9 +398,9 @@ export async function verifyEmail(req, res, next) {
     const token = signToken(verifiedUser);
     setAuthCookie(res, token);
 
-    // If request was from browser, redirect user to frontend
+    // If request was from browser, redirect user directly to their app dashboard
     if (isBrowserRequest) {
-      return res.redirect(`${frontendUrl}/?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+      return res.redirect(`${frontendUrl}/app?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
     }
 
     return res.status(200).json({

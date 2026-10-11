@@ -242,11 +242,14 @@ function getVerificationEmailHtml(name, verificationUrl, directApiUrl) {
  * @param {string} token Verification hex token
  */
 export async function sendVerificationEmail(to, name, token, clientOrigin = null) {
-  let frontendBase = config.frontendUrl || 'https://salahcopmanion786.netlify.app';
-  if (clientOrigin && (clientOrigin.includes('salahcopmanion786.netlify.app') || clientOrigin.includes('salahcompanion786.netlify.app') || clientOrigin.includes('localhost'))) {
-    frontendBase = clientOrigin.replace(/\/+$/, '');
-  } else if (frontendBase.includes('salahcompanion786.netlify.app')) {
-    frontendBase = 'https://salahcopmanion786.netlify.app';
+  let frontendBase = config.frontendUrl || 'https://salahcompanion786.netlify.app';
+  if (clientOrigin) {
+    const sanitized = clientOrigin.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+    if (sanitized.includes('salahcompanion786.netlify.app') || sanitized.includes('localhost')) {
+      frontendBase = sanitized;
+    }
+  } else if (frontendBase) {
+    frontendBase = frontendBase.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
   }
 
   const directApiUrl = `${config.appUrl}/api/auth/verify-email?token=${token}`;

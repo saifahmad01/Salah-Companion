@@ -108,15 +108,41 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return
       }
 
-      // 2. Email verification param
+      // 2. Email verification callback
       if (verifiedParam === 'true') {
-        if (tokenParam) authStorage.setToken(tokenParam)
-        await refreshUser()
+        try {
+          if (tokenParam) {
+            authStorage.setToken(tokenParam)
+          }
+          const profile = await refreshUser()
+          setBanner({
+            type: 'success',
+            message: profile?.name
+              ? `🎉 Assalamu Alaikum ${profile.name}! Your email has been verified and you are now signed in.`
+              : '🎉 Welcome to Salah Companion! Your email has been verified and you are now signed in.',
+          })
+        } finally {
+          const targetPath = window.location.pathname.startsWith('/app') ? window.location.pathname : '/app'
+          window.history.replaceState({}, document.title, targetPath)
+          setLoading(false)
+        }
+        return
+      }
+
+      if (verifiedParam === 'false') {
+        const error = params.get('error')
+        let msg = 'Verification failed. The link may be invalid or expired.'
+        if (error === 'token_expired') {
+          msg = 'Your verification link has expired (links are valid for 24 hours). Please request a new link.'
+        } else if (error === 'invalid_or_used_token') {
+          msg = 'This verification link is invalid or has already been used. If you already verified, please log in.'
+        }
         setBanner({
-          type: 'success',
-          message: '🎉 Welcome to Salah Companion! Your email has been verified and you are now signed in.',
+          type: 'error',
+          message: msg,
         })
-        window.history.replaceState({}, document.title, window.location.pathname || '/')
+        const targetPath = window.location.pathname.includes('/verify-email') ? window.location.pathname : '/login'
+        window.history.replaceState({}, document.title, targetPath)
         setLoading(false)
         return
       }

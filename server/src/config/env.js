@@ -12,9 +12,8 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || '*',
   frontendUrl: (
-    process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('salahcopmanion786.netlify.app')
-      ? process.env.FRONTEND_URL
-      : (process.env.NODE_ENV === 'production' ? 'https://salahcompanion786.netlify.app' : 'http://localhost:5173')
+    (process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace('salahcopmanion', 'salahcompanion') : '') ||
+    (process.env.NODE_ENV === 'production' || process.env.RENDER ? 'https://salahcompanion786.netlify.app' : 'http://localhost:5173')
   ).replace(/\/+$/, ''),
   dbPath: process.env.DATABASE_PATH || path.resolve(__dirname, '../../database.sqlite'),
   databaseUrl: process.env.DATABASE_URL || '',
@@ -42,7 +41,7 @@ export const config = {
   appUrl: (
     process.env.APP_URL && !process.env.APP_URL.includes('salah-companion-ja12.onrender.com')
       ? process.env.APP_URL
-      : (process.env.NODE_ENV === 'production' ? 'https://salah-companion-z3i4.onrender.com' : `http://localhost:${process.env.PORT || '5000'}`)
+      : (process.env.NODE_ENV === 'production' || process.env.RENDER ? 'https://salah-companion-z3i4.onrender.com' : `http://localhost:${process.env.PORT || '5000'}`)
   ).replace(/\/+$/, ''),
 
   // Email Configuration (SMTP / Transactional Service)
