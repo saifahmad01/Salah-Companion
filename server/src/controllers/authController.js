@@ -15,6 +15,23 @@ const JWT_EXPIRES_IN = config.jwtExpiresIn || process.env.JWT_EXPIRES_IN || '7d'
 const FRONTEND_URL = config.frontendUrl || 'http://localhost:5173';
 
 /**
+ * Resolves the active frontend domain dynamically, supporting both Netlify site domains
+ */
+export function getEffectiveFrontendUrl(req) {
+  const origin = req?.headers?.origin || req?.headers?.referer;
+  if (origin) {
+    if (origin.includes('salahcopmanion786.netlify.app')) return 'https://salahcopmanion786.netlify.app';
+    if (origin.includes('salahcompanion786.netlify.app')) return 'https://salahcompanion786.netlify.app';
+    if (origin.includes('localhost:5173')) return 'http://localhost:5173';
+  }
+  const configured = config.frontendUrl || FRONTEND_URL;
+  if (configured && configured.includes('salahcompanion786.netlify.app')) {
+    return 'https://salahcopmanion786.netlify.app';
+  }
+  return configured || 'https://salahcopmanion786.netlify.app';
+}
+
+/**
  * Helper to generate signed JWT token
  * @param {object} user
  */
@@ -165,7 +182,8 @@ export async function register(req, res, next) {
     const tokenExpiresAt = new Date(Date.now() + config.verificationTokenTtlHours * 60 * 60 * 1000);
 
     // 5. Send verification email via Nodemailer with the RAW token
-    const emailResult = await sendVerificationEmail(normalizedEmail, name || existingPending?.name || 'Brother/Sister', rawToken);
+    const clientOrigin = getEffectiveFrontendUrl(req);
+    const emailResult = await sendVerificationEmail(normalizedEmail, name || existingPending?.name || 'Brother/Sister', rawToken, clientOrigin);
 
     // 6. Upsert into PendingRegistration so the registration is safely recorded
     if (existingPending) {
@@ -244,10 +262,11 @@ export async function verifyEmail(req, res, next) {
       (req.headers.accept && req.headers.accept.includes('application/json') && !req.headers.accept.includes('text/html'))
     );
     const isBrowserRequest = req.method === 'GET' && !isApiRequest;
+    const frontendUrl = getEffectiveFrontendUrl(req);
 
     if (!rawToken || typeof rawToken !== 'string') {
       if (isBrowserRequest) {
-        return res.redirect(`${FRONTEND_URL}/?verified=false&error=missing_token`);
+        return res.redirect(`${frontendUrl}/?verified=false&error=missing_token`);
       }
       return res.status(400).json({
         success: false,
@@ -273,7 +292,7 @@ export async function verifyEmail(req, res, next) {
       if (legacyUser) {
         if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
           if (isBrowserRequest) {
-            return res.redirect(`${FRONTEND_URL}/?verified=false&error=token_expired&email=${encodeURIComponent(legacyUser.email)}`);
+            return res.redirect(`${frontendUrl}/?verified=false&error=token_expired&email=${encodeURIComponent(legacyUser.email)}`);
           }
           return res.status(400).json({
             success: false,
@@ -296,7 +315,7 @@ export async function verifyEmail(req, res, next) {
         setAuthCookie(res, token);
 
         if (isBrowserRequest) {
-          return res.redirect(`${FRONTEND_URL}/?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+          return res.redirect(`${frontendUrl}/?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
         }
         return res.status(200).json({
           success: true,
@@ -308,7 +327,7 @@ export async function verifyEmail(req, res, next) {
       }
 
       if (isBrowserRequest) {
-        return res.redirect(`${FRONTEND_URL}/?verified=false&error=invalid_or_used_token`);
+        return res.redirect(`${frontendUrl}/?verified=false&error=invalid_or_used_token`);
       }
       return res.status(400).json({
         success: false,
@@ -320,7 +339,7 @@ export async function verifyEmail(req, res, next) {
     // 2. Check expiration
     if (new Date() > new Date(pending.expiresAt)) {
       if (isBrowserRequest) {
-        return res.redirect(`${FRONTEND_URL}/?verified=false&error=token_expired&email=${encodeURIComponent(pending.email)}`);
+        return res.redirect(`${frontendUrl}/?verified=false&error=token_expired&email=${encodeURIComponent(pending.email)}`);
       }
       return res.status(400).json({
         success: false,
@@ -378,7 +397,7 @@ export async function verifyEmail(req, res, next) {
 
     // If request was from browser, redirect user to frontend
     if (isBrowserRequest) {
-      return res.redirect(`${FRONTEND_URL}/?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+      return res.redirect(`${frontendUrl}/?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
     }
 
     return res.status(200).json({
@@ -452,7 +471,8 @@ export async function resendVerification(req, res, next) {
     const recipientName = pending ? pending.name : user.name;
 
     // Send verification email FIRST
-    const emailResult = await sendVerificationEmail(normalizedEmail, recipientName, rawToken);
+    const clientOrigin = getEffectiveFrontendUrl(req);
+    const emailResult = await sendVerificationEmail(normalizedEmail, recipientName, rawToken, clientOrigin);
 
     if (!emailResult.success) {
       return res.status(502).json({
@@ -606,7 +626,7 @@ export async function initiateGoogleOAuth(req, res) {
 
   // Track the frontend origin that initiated the login (Netlify, localhost, etc.)
   const referer = req.query.redirect_to || req.headers.referer;
-  let frontendOrigin = FRONTEND_URL;
+  let frontendOrigin = getEffectiveFrontendUrl(req);
   if (referer) {
     try {
       const parsed = new URL(referer);
@@ -682,7 +702,7 @@ export async function handleGoogleOAuthCallback(req, res) {
   const { code, state, error } = req.query;
 
   // Resolve target frontend origin
-  const frontendBase = (req.cookies?.oauth_frontend || FRONTEND_URL).replace(/\/+$/, '');
+  const frontendBase = (req.cookies?.oauth_frontend || getEffectiveFrontendUrl(req)).replace(/\/+$/, '');
   res.clearCookie('oauth_frontend', { path: '/' });
 
   // Handle user cancellation or Google error

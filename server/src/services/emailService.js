@@ -241,9 +241,16 @@ function getVerificationEmailHtml(name, verificationUrl, directApiUrl) {
  * @param {string} name Recipient name
  * @param {string} token Verification hex token
  */
-export async function sendVerificationEmail(to, name, token) {
+export async function sendVerificationEmail(to, name, token, clientOrigin = null) {
+  let frontendBase = config.frontendUrl || 'https://salahcopmanion786.netlify.app';
+  if (clientOrigin && (clientOrigin.includes('salahcopmanion786.netlify.app') || clientOrigin.includes('salahcompanion786.netlify.app') || clientOrigin.includes('localhost'))) {
+    frontendBase = clientOrigin.replace(/\/+$/, '');
+  } else if (frontendBase.includes('salahcompanion786.netlify.app')) {
+    frontendBase = 'https://salahcopmanion786.netlify.app';
+  }
+
   const directApiUrl = `${config.appUrl}/api/auth/verify-email?token=${token}`;
-  const verificationUrl = `${config.frontendUrl}/verify-email?token=${token}`;
+  const verificationUrl = `${frontendBase}/verify-email?token=${token}`;
 
   const htmlContent = getVerificationEmailHtml(name, verificationUrl, directApiUrl);
   const textContent = `Assalamu Alaikum ${name},\n\nPlease verify your email and activate your Salah Companion account by clicking this link:\n${directApiUrl}\n\nThis will automatically log you into your account and take you directly to your prayer dashboard.\n\nThis link will expire in ${config.verificationTokenTtlHours} hours.\n\nSalah Companion Team`;
