@@ -11,7 +11,11 @@ export const config = {
   port: parseInt(process.env.PORT || '5000', 10),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || '*',
-  frontendUrl: (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, ''),
+  frontendUrl: (
+    process.env.FRONTEND_URL && !process.env.FRONTEND_URL.includes('salahcopmanion786.netlify.app')
+      ? process.env.FRONTEND_URL
+      : (process.env.NODE_ENV === 'production' ? 'https://salahcompanion786.netlify.app' : 'http://localhost:5173')
+  ).replace(/\/+$/, ''),
   dbPath: process.env.DATABASE_PATH || path.resolve(__dirname, '../../database.sqlite'),
   databaseUrl: process.env.DATABASE_URL || '',
   directUrl: process.env.DIRECT_URL || process.env.DATABASE_URL || '',
@@ -35,7 +39,11 @@ export const config = {
   jwtSecret: process.env.JWT_SECRET || 'super_secret_salah_companion_jwt_key_2026_secure',
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
 
-  appUrl: (process.env.APP_URL || `http://localhost:${process.env.PORT || '5000'}`).replace(/\/+$/, ''),
+  appUrl: (
+    process.env.APP_URL && !process.env.APP_URL.includes('salah-companion-ja12.onrender.com')
+      ? process.env.APP_URL
+      : (process.env.NODE_ENV === 'production' ? 'https://salah-companion-z3i4.onrender.com' : `http://localhost:${process.env.PORT || '5000'}`)
+  ).replace(/\/+$/, ''),
 
   // Email Configuration (SMTP / Transactional Service)
   emailService: process.env.EMAIL_SERVICE || 'gmail',
@@ -53,7 +61,11 @@ export const config = {
   // Google OAuth 2.0 Credentials
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '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',
-  googleCallbackUrl: (process.env.GOOGLE_CALLBACK_URL || '').replace(/\/+$/, ''),
+  googleCallbackUrl: (
+    process.env.GOOGLE_CALLBACK_URL && !process.env.GOOGLE_CALLBACK_URL.includes('salah-companion-ja12.onrender.com')
+      ? process.env.GOOGLE_CALLBACK_URL
+      : 'https://salah-companion-z3i4.onrender.com/api/auth/google/callback'
+  ).replace(/\/+$/, ''),
 
   // Web Push VAPID Configuration
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || 'BK0MvxYd3ZDZoa05l-2e7qSdFFyUl1OVAtvwVIRf96sWxNAwbS7yifAb9gxTG5YDfHWUlXu_rGn5guso0O6pvvc',
