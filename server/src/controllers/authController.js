@@ -595,7 +595,32 @@ export async function initiateGoogleOAuth(req, res) {
   res.cookie('oauth_state', state, {
     httpOnly: true,
     secure: isProd,
-    sameSite: 'lax',
+    sameSite: isProd ? 'none' : 'lax',
+    maxAge: 10 * 60 * 1000,
+    path: '/',
+  });
+
+  // Track the frontend origin that initiated the login (Netlify, localhost, etc.)
+  const referer = req.query.redirect_to || req.headers.referer;
+  let frontendOrigin = FRONTEND_URL;
+  if (referer) {
+    try {
+      const parsed = new URL(referer);
+      if (
+        parsed.origin.endsWith('.netlify.app') ||
+        parsed.origin.endsWith('.onrender.com') ||
+        parsed.origin.includes('localhost') ||
+        parsed.origin.includes('127.0.0.1')
+      ) {
+        frontendOrigin = parsed.origin;
+      }
+    } catch {}
+  }
+
+  res.cookie('oauth_frontend', frontendOrigin, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
     maxAge: 10 * 60 * 1000,
     path: '/',
   });
@@ -618,17 +643,29 @@ export async function initiateGoogleOAuth(req, res) {
   }
 
   // Google OAuth is not configured: strictly reject and redirect to login with actionable error
-  return res.redirect(`${FRONTEND_URL}/login?auth_error=GOOGLE_NOT_CONFIGURED`);
+  return res.redirect(`${frontendOrigin}/login?auth_error=GOOGLE_NOT_CONFIGURED`);
 }
 
 /**
  * Helper to determine OAuth callback URL consistently
+ * Dynamically resolves live host in cloud environments so stale env vars don't break OAuth
  */
 export function getOAuthCallbackUrl(req) {
+  const reqHost = req?.get ? req.get('host') : null;
+  const reqProto = (req?.headers && req.headers['x-forwarded-proto']) || req?.protocol || 'https';
+
+  // In cloud deployments (e.g. Render), ensure callback URL matches the active service host
+  if (reqHost && !reqHost.includes('localhost') && !reqHost.includes('127.0.0.1')) {
+    if (config.googleCallbackUrl && config.googleCallbackUrl.includes(reqHost)) {
+      return config.googleCallbackUrl;
+    }
+    return `${reqProto}://${reqHost}/api/auth/google/callback`;
+  }
+
   if (config.googleCallbackUrl) {
     return config.googleCallbackUrl;
   }
-  const baseUrl = config.appUrl ? config.appUrl.replace(/\/+$/, '') : `http://${req?.get ? req.get('host') : 'localhost:5000'}`;
+  const baseUrl = config.appUrl ? config.appUrl.replace(/\/+$/, '') : `http://${reqHost || 'localhost:5000'}`;
   return `${baseUrl}/api/auth/google/callback`;
 }
 
@@ -640,9 +677,13 @@ export function getOAuthCallbackUrl(req) {
 export async function handleGoogleOAuthCallback(req, res) {
   const { code, state, error } = req.query;
 
+  // Resolve target frontend origin
+  const frontendBase = (req.cookies?.oauth_frontend || FRONTEND_URL).replace(/\/+$/, '');
+  res.clearCookie('oauth_frontend', { path: '/' });
+
   // Handle user cancellation or Google error
   if (error) {
-    return res.redirect(`${FRONTEND_URL}/login?auth_error=${encodeURIComponent(String(error))}`);
+    return res.redirect(`${frontendBase}/login?auth_error=${encodeURIComponent(String(error))}`);
   }
 
   // CSRF validation
@@ -651,7 +692,7 @@ export async function handleGoogleOAuthCallback(req, res) {
     if (!savedState && state && typeof state === 'string' && state.length === 64) {
       console.warn('[GoogleAuth] oauth_state cookie not attached by browser, falling back to query state');
     } else {
-      return res.redirect(`${FRONTEND_URL}/login?auth_error=CSRF_STATE_MISMATCH`);
+      return res.redirect(`${frontendBase}/login?auth_error=CSRF_STATE_MISMATCH`);
     }
   }
 
@@ -668,7 +709,7 @@ export async function handleGoogleOAuthCallback(req, res) {
     const { email, name, googleId, picture, emailVerified } = googleProfile;
 
     if (!emailVerified) {
-      return res.redirect(`${FRONTEND_URL}/login?auth_error=EMAIL_NOT_VERIFIED`);
+      return res.redirect(`${frontendBase}/login?auth_error=EMAIL_NOT_VERIFIED`);
     }
 
     // Check if user exists with googleId or email
@@ -710,13 +751,13 @@ export async function handleGoogleOAuthCallback(req, res) {
     setAuthCookie(res, token);
 
     // Redirect authenticated user to frontend dashboard with token for seamless cross-domain & mobile authorization
-    return res.redirect(`${FRONTEND_URL}/app?auth=google_success&token=${encodeURIComponent(token)}`);
+    return res.redirect(`${frontendBase}/app?auth=google_success&token=${encodeURIComponent(token)}`);
   } catch (err) {
     console.error('[GoogleAuth] Callback error:', err.message);
     const errCode = err.message?.includes('GOOGLE_NOT_CONFIGURED')
       ? 'GOOGLE_NOT_CONFIGURED'
       : (err.message || 'AUTH_FAILED');
-    return res.redirect(`${FRONTEND_URL}/login?auth_error=${encodeURIComponent(errCode)}`);
+    return res.redirect(`${frontendBase}/login?auth_error=${encodeURIComponent(errCode)}`);
   }
 }
 

@@ -18,6 +18,7 @@ app.use(cookieParser());
 
 // CORS configuration supporting HttpOnly cookies and credentials
 const defaultAllowedOrigins = [
+  'https://salahcopmanion786.netlify.app',
   'https://salahcompanion786.netlify.app',
   'http://localhost:5173',
   'http://localhost:5000',
