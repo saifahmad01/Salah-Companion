@@ -37,7 +37,7 @@ export function getEffectiveFrontendUrl(req) {
   if (configured) {
     return configured.replace('salahcopmanion', 'salahcompanion');
   }
-  return 'https://salahcompanion786.netlify.app';
+  return 'https://salah-companion.mdsaif.workers.dev';
 }
 
 /**

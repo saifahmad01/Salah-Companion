@@ -32,7 +32,7 @@ export const config = {
   corsOrigin: process.env.CORS_ORIGIN || '*',
   frontendUrl: (
     (process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace('salahcopmanion', 'salahcompanion') : '') ||
-    (process.env.NODE_ENV === 'production' || process.env.RENDER ? 'https://salahcompanion786.netlify.app' : 'http://localhost:5173')
+    (process.env.NODE_ENV === 'production' || process.env.RENDER ? 'https://salah-companion.mdsaif.workers.dev' : 'http://localhost:5173')
   ).replace(/\/+$/, ''),
   dbPath: process.env.DATABASE_PATH || path.resolve(__dirname, '../../database.sqlite'),
   databaseUrl: process.env.DATABASE_URL || '',

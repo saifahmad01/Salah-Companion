@@ -266,7 +266,7 @@ function getVerificationEmailHtml(name, verificationUrl, directApiUrl) {
 
         <!-- Button -->
         <div class="btn-container">
-          <a href="${directApiUrl}" class="btn" target="_blank">Verify My Email &amp; Launch Dashboard</a>
+          <a href="${verificationUrl}" class="btn" target="_blank">Verify My Email &amp; Launch Dashboard</a>
         </div>
 
         <div class="info-card">
@@ -280,11 +280,11 @@ function getVerificationEmailHtml(name, verificationUrl, directApiUrl) {
 
         <!-- Fallback Link -->
         <div class="backup-link">
-          If the button above does not work, copy and paste this URL into your browser:<br>
-          <a href="${directApiUrl}" target="_blank">${directApiUrl}</a>
-          <br><br>
-          Or verify via client app:<br>
+          If the button above does not work, copy and paste this verification URL into your browser:<br>
           <a href="${verificationUrl}" target="_blank">${verificationUrl}</a>
+          <br><br>
+          Alternative direct API link:<br>
+          <a href="${directApiUrl}" target="_blank">${directApiUrl}</a>
         </div>
       </div>
 
@@ -307,10 +307,14 @@ function getVerificationEmailHtml(name, verificationUrl, directApiUrl) {
  * @param {string} token Verification hex token
  */
 export async function sendVerificationEmail(to, name, token, clientOrigin = null) {
-  let frontendBase = config.frontendUrl || 'https://salahcompanion786.netlify.app';
+  let frontendBase = config.frontendUrl || 'https://salah-companion.mdsaif.workers.dev';
   if (clientOrigin) {
     const sanitized = clientOrigin.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
-    if (sanitized.includes('salahcompanion786.netlify.app') || sanitized.includes('localhost')) {
+    if (
+      sanitized.includes('workers.dev') ||
+      sanitized.includes('salahcompanion786.netlify.app') ||
+      sanitized.includes('localhost')
+    ) {
       frontendBase = sanitized;
     }
   } else if (frontendBase) {
@@ -321,7 +325,7 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
   const verificationUrl = `${frontendBase}/verify-email?token=${token}`;
 
   const htmlContent = getVerificationEmailHtml(name, verificationUrl, directApiUrl);
-  const textContent = `Assalamu Alaikum ${name},\n\nPlease verify your email and activate your Salah Companion account by clicking this link:\n${directApiUrl}\n\nThis will automatically log you into your account and take you directly to your prayer dashboard.\n\nThis link will expire in ${config.verificationTokenTtlHours} hours.\n\nSalah Companion Team`;
+  const textContent = `Assalamu Alaikum ${name},\n\nPlease verify your email and activate your Salah Companion account by clicking this link:\n${verificationUrl}\n\nThis will take you to your Salah Companion dashboard.\n\nAlternative direct verification link:\n${directApiUrl}\n\nThis link will expire in ${config.verificationTokenTtlHours} hours.\n\nSalah Companion Team`;
 
   try {
     // 1. First attempt HTTPS REST API if configured (bypasses Render SMTP port blocking)
@@ -335,8 +339,8 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
       return {
         success: true,
         messageId: httpApiResult.messageId,
-        previewUrl: directApiUrl,
-        verificationUrl: directApiUrl,
+        previewUrl: verificationUrl,
+        verificationUrl,
       };
     }
 
