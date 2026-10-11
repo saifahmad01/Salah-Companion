@@ -20,4 +20,8 @@ export const logPrayerInputSchema = z.object({
     required_error: 'status must be one of: on_time, late, qada, missed',
   }),
   notes: z.string().max(500).optional().nullable(),
+  latitude: z.number().min(-90).max(90).optional().nullable(),
+  longitude: z.number().min(-180).max(180).optional().nullable(),
+  calculationMethod: z.string().optional().nullable(),
+  madhab: z.string().optional().nullable(),
 });

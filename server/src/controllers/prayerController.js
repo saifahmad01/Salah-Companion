@@ -109,6 +109,19 @@ export async function logPrayerHandler(req, res, next) {
       });
     }
 
+    const startTimeMs = new Date(prayerStartTime).getTime();
+    const nowMs = Date.now();
+    if (!isNaN(startTimeMs) && nowMs < startTimeMs) {
+      return res.status(409).json({
+        success: false,
+        code: 'PRAYER_TIME_NOT_STARTED',
+        error: `Prayer ${prayerName} has not started yet. You can mark this prayer as completed once its prayer time begins.`,
+        message: `Prayer ${prayerName} has not started yet. You can mark this prayer as completed once its prayer time begins.`,
+        availableAt: new Date(startTimeMs).toISOString(),
+        currentTime: new Date(nowMs).toISOString(),
+      });
+    }
+
     const { record, evaluation } = await recordPrayerLog({
       userId,
       prayerName,

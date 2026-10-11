@@ -166,6 +166,22 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
     prayerId: string,
     status: PrayerStatus | null
   ) => {
+    // Strictly forbid marking future date or unstarted prayer as completed (ON_TIME, LATE, QADA)
+    if (status === 'ON_TIME' || status === 'LATE' || status === 'QADA') {
+      const todayKey = new Date().toISOString().split('T')[0]
+      if (dateKey > todayKey) {
+        alert('Cannot mark prayer as completed for a future date. Prayer time has not started yet.')
+        return
+      }
+      if (dateKey === todayKey) {
+        const matching = prayers.find((p) => p.id === prayerId)
+        if (matching && (matching.isUpcoming || matching.statusBadge === 'upcoming') && !matching.completed) {
+          alert(`${matching.name} prayer time has not started yet. Available at ${matching.time}.`)
+          return
+        }
+      }
+    }
+
     if (onUpdatePrayerStatus) {
       onUpdatePrayerStatus(prayerId, status, dateKey)
     }
@@ -477,6 +493,13 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         let pillClasses = 'bg-stone-100 text-stone-400 border-stone-200'
                         const initial = prayer.id[0].toUpperCase()
 
+                        const matchingCurrent = prayers.find((p) => p.id === prayer.id)
+                        const isUpcomingPrayer =
+                          day.isFuture ||
+                          (day.isToday &&
+                            (matchingCurrent?.isUpcoming || matchingCurrent?.statusBadge === 'upcoming') &&
+                            !prayer.isCompleted)
+
                         if (status === 'on_time') {
                           pillClasses = 'bg-[#0E543F] text-white border-[#0B4433] shadow-2xs hover:bg-[#0B4433]'
                         } else if (status === 'late') {
@@ -493,20 +516,34 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                           pillClasses = 'bg-[#F9F8F5] text-stone-300 border-stone-200/60'
                         }
 
+                        const tooltip = isUpcomingPrayer
+                          ? day.isFuture
+                            ? `${prayer.name} (${day.day}): Future date - prayer time has not started yet`
+                            : `${prayer.name} (${day.day}): Prayer time has not started yet. Available at ${matchingCurrent?.time || 'prayer time'}.`
+                          : `${prayer.name} (${day.day}): ${status.replace('_', ' ').toUpperCase()} • Click to update status`
+
                         return (
                           <button
                             key={prayer.id}
                             type="button"
-                            onClick={() => setSelectedModalPrayer({
-                              date: day.date,
-                              dayName: `${day.fullDay || day.day}, ${day.date}`,
-                              prayerId: prayer.id as any,
-                              prayerName: prayer.name,
-                              status: prayer.status,
-                            })}
-                            className={`w-5.5 h-5 sm:w-6.5 sm:h-5.5 rounded-md text-[9px] sm:text-[9.5px] font-bold flex items-center justify-center border transition-all active:scale-90 cursor-pointer ${pillClasses}`}
-                            title={`${prayer.name} (${day.day}): ${status.replace('_', ' ').toUpperCase()} • Click to update status`}
-                            aria-label={`${prayer.name} on ${day.day}: ${status}`}
+                            disabled={isUpcomingPrayer}
+                            onClick={() => {
+                              if (isUpcomingPrayer) return
+                              setSelectedModalPrayer({
+                                date: day.date,
+                                dayName: `${day.fullDay || day.day}, ${day.date}`,
+                                prayerId: prayer.id as any,
+                                prayerName: prayer.name,
+                                status: prayer.status,
+                              })
+                            }}
+                            className={`w-5.5 h-5 sm:w-6.5 sm:h-5.5 rounded-md text-[9px] sm:text-[9.5px] font-bold flex items-center justify-center border transition-all ${
+                              isUpcomingPrayer
+                                ? 'opacity-40 cursor-not-allowed bg-stone-100 text-stone-300 border-stone-200/60'
+                                : `active:scale-90 cursor-pointer ${pillClasses}`
+                            }`}
+                            title={tooltip}
+                            aria-label={tooltip}
                           >
                             {status === 'on_time' ? (
                               <Check className="w-2.5 h-2.5 stroke-[3]" />
@@ -717,10 +754,11 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                     ) : (
                       <button
                         type="button"
-                        onClick={() => onTogglePrayer(prayer.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F5F2EB] text-[#63736A] text-[11px] font-medium active:scale-95 transition cursor-pointer"
+                        disabled={true}
+                        title={`${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#F5F2EB] text-[#8E9B93] text-[10.5px] font-medium cursor-not-allowed opacity-80"
                       >
-                        <span>🕒 Upcoming</span>
+                        <span>🔒 Available at {prayer.time}</span>
                       </button>
                     )}
 
@@ -770,101 +808,167 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
               </button>
             </div>
 
-            <div className="space-y-2 mt-4">
-              <button
-                type="button"
-                onClick={() =>
-                  handleUpdateWeeklyPrayer(
-                    selectedModalPrayer.date,
-                    selectedModalPrayer.prayerId,
-                    'ON_TIME'
-                  )
-                }
-                className="w-full p-2.5 rounded-xl border border-[#CEE5D8] bg-[#F2F8F4] hover:bg-[#E5F3EB] text-left flex items-center gap-3 transition cursor-pointer active:scale-98"
-              >
-                <div className="w-7 h-7 rounded-full bg-[#0E543F] text-white flex items-center justify-center flex-shrink-0">
-                  <Check className="w-4 h-4 stroke-[3]" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-[#0E543F] block">On Time (وقت پر ادا کی)</span>
-                  <span className="text-[10px] text-[#4F6A5B]">Offered within the prescribed prayer window</span>
-                </div>
-              </button>
+            {(() => {
+              const todayKey = new Date().toISOString().split('T')[0]
+              const isFutureDate = selectedModalPrayer.date > todayKey
+              const match = prayers.find((p) => p.id === selectedModalPrayer.prayerId)
+              const isUnstartedToday =
+                selectedModalPrayer.date === todayKey &&
+                (match?.isUpcoming || match?.statusBadge === 'upcoming') &&
+                !match?.completed
+              const isUpcomingBlocked = isFutureDate || isUnstartedToday
 
-              <button
-                type="button"
-                onClick={() =>
-                  handleUpdateWeeklyPrayer(
-                    selectedModalPrayer.date,
-                    selectedModalPrayer.prayerId,
-                    'LATE'
-                  )
-                }
-                className="w-full p-2.5 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] hover:bg-[#FEF3C7] text-left flex items-center gap-3 transition cursor-pointer active:scale-98"
-              >
-                <div className="w-7 h-7 rounded-full bg-[#D97706] text-white flex items-center justify-center flex-shrink-0">
-                  <Clock className="w-4 h-4 stroke-[2.5]" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-[#92400E] block">Late (تاخیر سے ادا کی)</span>
-                  <span className="text-[10px] text-[#785421]">Offered with delay before end of window</span>
-                </div>
-              </button>
+              return (
+                <>
+                  {isUpcomingBlocked && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 mb-2">
+                      <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <p className="text-[11px] leading-tight">
+                        {isFutureDate
+                          ? 'This date is in the future. Prayer time has not started yet.'
+                          : `${selectedModalPrayer.prayerName} prayer time has not started yet. Available at ${match?.time}.`}
+                      </p>
+                    </div>
+                  )}
 
-              <button
-                type="button"
-                onClick={() =>
-                  handleUpdateWeeklyPrayer(
-                    selectedModalPrayer.date,
-                    selectedModalPrayer.prayerId,
-                    'QADA'
-                  )
-                }
-                className="w-full p-2.5 rounded-xl border border-[#E9D5FF] bg-[#FAF5FF] hover:bg-[#F3E8FF] text-left flex items-center gap-3 transition cursor-pointer active:scale-98"
-              >
-                <div className="w-7 h-7 rounded-full bg-[#7C3AED] text-white flex items-center justify-center flex-shrink-0">
-                  <RotateCcw className="w-4 h-4 stroke-[2.5]" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-[#6B21A8] block">Qada (قضا ادا کی)</span>
-                  <span className="text-[10px] text-[#693E8F]">Offered after the prayer window passed</span>
-                </div>
-              </button>
+                  <div className="space-y-2 mt-3">
+                    <button
+                      type="button"
+                      disabled={isUpcomingBlocked}
+                      title={isUpcomingBlocked ? 'Prayer time has not started yet' : undefined}
+                      onClick={() =>
+                        handleUpdateWeeklyPrayer(
+                          selectedModalPrayer.date,
+                          selectedModalPrayer.prayerId,
+                          'ON_TIME'
+                        )
+                      }
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition ${
+                        isUpcomingBlocked
+                          ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
+                          : 'border-[#CEE5D8] bg-[#F2F8F4] hover:bg-[#E5F3EB] cursor-pointer active:scale-98'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        isUpcomingBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#0E543F] text-white'
+                      }`}>
+                        <Check className="w-4 h-4 stroke-[3]" />
+                      </div>
+                      <div>
+                        <span className={`text-xs font-bold block ${isUpcomingBlocked ? 'text-stone-500' : 'text-[#0E543F]'}`}>
+                          On Time (وقت پر ادا کی)
+                        </span>
+                        <span className="text-[10px] text-[#4F6A5B]">Offered within the prescribed prayer window</span>
+                      </div>
+                    </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  handleUpdateWeeklyPrayer(
-                    selectedModalPrayer.date,
-                    selectedModalPrayer.prayerId,
-                    'MISSED'
-                  )
-                }
-                className="w-full p-2.5 rounded-xl border border-[#FECDD3] bg-[#FFF1F2] hover:bg-[#FFE4E6] text-left flex items-center gap-3 transition cursor-pointer active:scale-98"
-              >
-                <div className="w-7 h-7 rounded-full bg-[#E11D48] text-white flex items-center justify-center flex-shrink-0">
-                  <X className="w-4 h-4 stroke-[3]" />
-                </div>
-                <div>
-                  <span className="text-xs font-bold text-[#BE123C] block">Missed (قضا ہو گئی)</span>
-                  <span className="text-[10px] text-[#8C3446]">Window ended without offering</span>
-                </div>
-              </button>
+                    <button
+                      type="button"
+                      disabled={isUpcomingBlocked}
+                      title={isUpcomingBlocked ? 'Prayer time has not started yet' : undefined}
+                      onClick={() =>
+                        handleUpdateWeeklyPrayer(
+                          selectedModalPrayer.date,
+                          selectedModalPrayer.prayerId,
+                          'LATE'
+                        )
+                      }
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition ${
+                        isUpcomingBlocked
+                          ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
+                          : 'border-[#FDE68A] bg-[#FFFBEB] hover:bg-[#FEF3C7] cursor-pointer active:scale-98'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        isUpcomingBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#D97706] text-white'
+                      }`}>
+                        <Clock className="w-4 h-4 stroke-[2.5]" />
+                      </div>
+                      <div>
+                        <span className={`text-xs font-bold block ${isUpcomingBlocked ? 'text-stone-500' : 'text-[#92400E]'}`}>
+                          Late (تاخیر سے ادا کی)
+                        </span>
+                        <span className="text-[10px] text-[#785421]">Offered with delay before end of window</span>
+                      </div>
+                    </button>
 
-              <button
-                type="button"
-                onClick={() =>
-                  handleUpdateWeeklyPrayer(
-                    selectedModalPrayer.date,
-                    selectedModalPrayer.prayerId,
-                    null
-                  )
-                }
-                className="w-full p-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-600 text-center text-xs font-medium transition cursor-pointer mt-1"
-              >
-                Reset / Clear Status
-              </button>
-            </div>
+                    <button
+                      type="button"
+                      disabled={isUpcomingBlocked}
+                      title={isUpcomingBlocked ? 'Prayer time has not started yet' : undefined}
+                      onClick={() =>
+                        handleUpdateWeeklyPrayer(
+                          selectedModalPrayer.date,
+                          selectedModalPrayer.prayerId,
+                          'QADA'
+                        )
+                      }
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition ${
+                        isUpcomingBlocked
+                          ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
+                          : 'border-[#E9D5FF] bg-[#FAF5FF] hover:bg-[#F3E8FF] cursor-pointer active:scale-98'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        isUpcomingBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#7C3AED] text-white'
+                      }`}>
+                        <RotateCcw className="w-4 h-4 stroke-[2.5]" />
+                      </div>
+                      <div>
+                        <span className={`text-xs font-bold block ${isUpcomingBlocked ? 'text-stone-500' : 'text-[#6B21A8]'}`}>
+                          Qada (قضا ادا کی)
+                        </span>
+                        <span className="text-[10px] text-[#693E8F]">Offered after the prayer window passed</span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={isUpcomingBlocked}
+                      title={isUpcomingBlocked ? 'Prayer time has not started yet' : undefined}
+                      onClick={() =>
+                        handleUpdateWeeklyPrayer(
+                          selectedModalPrayer.date,
+                          selectedModalPrayer.prayerId,
+                          'MISSED'
+                        )
+                      }
+                      className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition ${
+                        isUpcomingBlocked
+                          ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
+                          : 'border-[#FECDD3] bg-[#FFF1F2] hover:bg-[#FFE4E6] cursor-pointer active:scale-98'
+                      }`}
+                    >
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
+                        isUpcomingBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#E11D48] text-white'
+                      }`}>
+                        <X className="w-4 h-4 stroke-[3]" />
+                      </div>
+                      <div>
+                        <span className={`text-xs font-bold block ${isUpcomingBlocked ? 'text-stone-500' : 'text-[#BE123C]'}`}>
+                          Missed (قضا ہو گئی)
+                        </span>
+                        <span className="text-[10px] text-[#8C3446]">Window ended without offering</span>
+                      </div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdateWeeklyPrayer(
+                          selectedModalPrayer.date,
+                          selectedModalPrayer.prayerId,
+                          null
+                        )
+                      }
+                      className="w-full p-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-600 text-center text-xs font-medium transition cursor-pointer mt-1"
+                    >
+                      Reset / Clear Status
+                    </button>
+                  </div>
+                </>
+              )
+            })()}
           </div>
         </div>
       )}

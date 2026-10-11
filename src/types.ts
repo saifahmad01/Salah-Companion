@@ -13,6 +13,8 @@ export interface PrayerItem {
   statusBadgeText?: string
   subtitle?: string
   windowText?: string
+  isUpcoming?: boolean
+  availableAtMessage?: string
 }
 
 export interface DeedItem {

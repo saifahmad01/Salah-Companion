@@ -39,7 +39,10 @@ export function evaluatePrayerStatus({
   let status = 'on_time';
   let message = '';
 
-  if (logged > end) {
+  if (logged < start) {
+    status = 'not_started';
+    message = `Prayer time has not started yet (starts in ${Math.abs(minutesSinceStart)} minutes).`;
+  } else if (logged > end) {
     // Logged after the prayer window has closed
     status = 'missed';
     message = `Logged ${Math.abs(minutesUntilEnd)} minutes after the prayer window ended.`;
@@ -112,6 +115,13 @@ export async function recordPrayerLog({
     prayerEndTime,
     logTimestamp,
   });
+
+  if (evaluation.status === 'not_started') {
+    const err = new Error('Prayer time has not started yet. You cannot mark this prayer as completed.');
+    err.code = 'PRAYER_TIME_NOT_STARTED';
+    err.statusCode = 409;
+    throw err;
+  }
 
   const finalStatus = (overrideStatus && ['on_time', 'late', 'missed'].includes(overrideStatus.toLowerCase()))
     ? overrideStatus.toLowerCase()

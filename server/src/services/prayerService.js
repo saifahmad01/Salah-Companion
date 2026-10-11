@@ -5,6 +5,7 @@ import {
   Madhab,
   Prayer,
 } from 'adhan';
+import { formatDateKey, isValidDateKey } from '../utils/dateUtils.js';
 
 /**
  * Resolves CalculationMethod object from string identifier
@@ -191,5 +192,142 @@ export function calculatePrayers({
       timeRemainingSeconds,
       timeRemainingFormatted: formatRemaining(timeRemainingMs),
     },
+  };
+}
+
+/**
+ * Authoritatively validates whether a prayer can be marked as completed or logged.
+ * Enforces the rule: A user must not be able to mark a prayer as completed before that prayer's valid time window begins.
+ *
+ * @param {object} params
+ * @param {string} params.prayerName e.g. 'Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'
+ * @param {string} [params.date] target date in 'YYYY-MM-DD'
+ * @param {string} [params.status] 'on_time' | 'late' | 'qada' | 'missed'
+ * @param {number} [params.latitude]
+ * @param {number} [params.longitude]
+ * @param {string} [params.method]
+ * @param {string} [params.madhab]
+ * @param {Date}   [params.now=new Date()] trusted server timestamp
+ * @returns {object} { isValid: boolean, code?: string, statusCode?: number, message?: string, availableAt?: string, prayerStartTime?: string, prayerEndTime?: string, isWithinWindow?: boolean, isPassed?: boolean }
+ */
+export function validatePrayerTiming({
+  prayerName,
+  date,
+  status,
+  latitude,
+  longitude,
+  method = 'Karachi',
+  madhab = 'Hanafi',
+  now = new Date(),
+}) {
+  const normPrayer = (prayerName || '').toLowerCase().trim();
+  const validPrayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+
+  if (!validPrayers.includes(normPrayer)) {
+    return {
+      isValid: false,
+      code: 'INVALID_PRAYER_NAME',
+      statusCode: 400,
+      message: `Invalid prayer name "${prayerName}". Must be one of: Fajr, Dhuhr, Asr, Maghrib, Isha.`,
+    };
+  }
+
+  // Trusted server date
+  const todayStr = formatDateKey(now);
+  const targetDateStr = date || todayStr;
+
+  if (!isValidDateKey(targetDateStr)) {
+    return {
+      isValid: false,
+      code: 'INVALID_DATE',
+      statusCode: 400,
+      message: `Invalid date format "${targetDateStr}". Expected YYYY-MM-DD format.`,
+    };
+  }
+
+  // 1. Strictly forbid logging any completion for future dates (e.g. tomorrow or beyond)
+  if (targetDateStr > todayStr) {
+    return {
+      isValid: false,
+      code: 'PRAYER_TIME_NOT_STARTED',
+      statusCode: 409,
+      message: `Cannot mark ${capitalize(normPrayer)} as completed for future dates. Prayer time has not started yet.`,
+      availableAt: null,
+      currentTime: now.toISOString(),
+    };
+  }
+
+  // Resolve coordinates (fallback to standard coordinates if not provided)
+  const lat = typeof latitude === 'number' && !isNaN(latitude) ? latitude : 28.6139;
+  const lng = typeof longitude === 'number' && !isNaN(longitude) ? longitude : 77.2090;
+
+  // Calculate authoritative prayer timetable for the target date
+  const [y, m, d] = targetDateStr.split('-').map(Number);
+  const targetDateObj = new Date(y, m - 1, d, 12, 0, 0);
+
+  const timetable = calculatePrayers({
+    latitude: lat,
+    longitude: lng,
+    method,
+    madhab,
+    targetDate: targetDateObj,
+  });
+
+  const prayerStartTimeStr = timetable.times[normPrayer];
+  const prayerStartTime = new Date(prayerStartTimeStr);
+
+  let prayerEndTimeStr = null;
+  if (normPrayer === 'fajr') prayerEndTimeStr = timetable.times.sunrise;
+  else if (normPrayer === 'dhuhr') prayerEndTimeStr = timetable.times.asr;
+  else if (normPrayer === 'asr') prayerEndTimeStr = timetable.times.maghrib;
+  else if (normPrayer === 'maghrib') prayerEndTimeStr = timetable.times.isha;
+  else if (normPrayer === 'isha') {
+    const nextDay = new Date(targetDateObj);
+    nextDay.setDate(nextDay.getDate() + 1);
+    const nextDayTimetable = calculatePrayers({
+      latitude: lat,
+      longitude: lng,
+      method,
+      madhab,
+      targetDate: nextDay,
+    });
+    prayerEndTimeStr = nextDayTimetable.times.fajr;
+  }
+  const prayerEndTime = new Date(prayerEndTimeStr);
+
+  const nowMs = now.getTime();
+  const startMs = prayerStartTime.getTime();
+  const endMs = prayerEndTime.getTime();
+
+  // 2. If the prayer is for TODAY:
+  if (targetDateStr === todayStr) {
+    // If current time is strictly before the prayer start time:
+    if (nowMs < startMs) {
+      const timeFormatted = prayerStartTime.toLocaleTimeString('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: true,
+      });
+
+      return {
+        isValid: false,
+        code: 'PRAYER_TIME_NOT_STARTED',
+        statusCode: 409,
+        message: `${capitalize(normPrayer)} prayer time has not started yet. You can mark this prayer as completed once its prayer time begins at ${timeFormatted}.`,
+        availableAt: prayerStartTime.toISOString(),
+        currentTime: now.toISOString(),
+        prayerStartTime: prayerStartTime.toISOString(),
+        prayerEndTime: prayerEndTime.toISOString(),
+      };
+    }
+  }
+
+  return {
+    isValid: true,
+    prayerStartTime: prayerStartTime.toISOString(),
+    prayerEndTime: prayerEndTime.toISOString(),
+    isWithinWindow: nowMs >= startMs && nowMs < endMs,
+    isPassed: nowMs >= endMs,
   };
 }

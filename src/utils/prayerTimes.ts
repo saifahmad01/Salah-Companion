@@ -339,6 +339,7 @@ export interface PrayerStatusDetails {
   statusBadge: 'completed' | 'active' | 'upcoming' | 'passed'
   statusBadgeText: string
   subtitle: string
+  availableAtMessage: string
 }
 
 export function getPrayerStatusDetails(
@@ -392,6 +393,10 @@ export function getPrayerStatusDetails(
     subtitle = `Starts in ${formatDuration(startsInSec)}`
   }
 
+  const availableAtMessage = isUpcoming
+    ? `Available at ${timeFormatted}`
+    : 'Available now'
+
   return {
     id: prayerId,
     name: item.name,
@@ -406,6 +411,7 @@ export function getPrayerStatusDetails(
     statusBadge,
     statusBadgeText,
     subtitle,
+    availableAtMessage,
   }
 }
 

@@ -1,6 +1,7 @@
 import { prisma } from '../db/prisma.js';
 import { getHadithByStatus } from '../services/hadithService.js';
 import { formatDateKey, isValidDateKey, getIsoWeekRange, addDays } from '../utils/dateUtils.js';
+import { validatePrayerTiming } from '../services/prayerService.js';
 
 const DAILY_PRAYERS = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 
@@ -36,10 +37,81 @@ function getLastNDates(daysCount = 7, referenceDate = new Date()) {
 export async function logPrayer(req, res, next) {
   try {
     const userId = req.user.id;
-    const { prayerName, date, status, notes } = req.body;
+    const {
+      prayerName,
+      date,
+      status,
+      notes,
+      latitude,
+      longitude,
+      calculationMethod,
+      madhab,
+    } = req.body;
 
     const normalizedPrayer = normalizePrayerName(prayerName);
-    const targetDate = date || new Date().toISOString().split('T')[0];
+    const targetDate = date || formatDateKey(new Date());
+
+    // Retrieve user's saved location & calculation preferences if not explicitly in request
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: {
+        latitude: true,
+        longitude: true,
+        prayerCalculationMethod: true,
+      },
+    });
+
+    const lat = typeof latitude === 'number' ? latitude : user?.latitude;
+    const lng = typeof longitude === 'number' ? longitude : user?.longitude;
+    const method = calculationMethod || user?.prayerCalculationMethod || 'Karachi';
+    const madhabName = madhab || 'Hanafi';
+
+    // Authoritative prayer start time validation:
+    // User must NOT be able to mark a prayer as completed before that prayer's valid time window begins.
+    const timingValidation = validatePrayerTiming({
+      prayerName: normalizedPrayer,
+      date: targetDate,
+      status,
+      latitude: lat,
+      longitude: lng,
+      method,
+      madhab: madhabName,
+      now: new Date(),
+    });
+
+    if (!timingValidation.isValid) {
+      return res.status(timingValidation.statusCode || 409).json({
+        success: false,
+        code: timingValidation.code || 'PRAYER_TIME_NOT_STARTED',
+        error: timingValidation.message,
+        message: timingValidation.message,
+        availableAt: timingValidation.availableAt || null,
+        currentTime: timingValidation.currentTime || new Date().toISOString(),
+      });
+    }
+
+    // Check for duplicate submission
+    const existingLog = await prisma.prayerLog.findUnique({
+      where: {
+        userId_prayerName_date: {
+          userId,
+          prayerName: normalizedPrayer,
+          date: targetDate,
+        },
+      },
+    });
+
+    if (existingLog && existingLog.status === status) {
+      const hadithInfo = getHadithByStatus(status);
+      return res.status(200).json({
+        success: true,
+        message: `Prayer ${normalizedPrayer} is already recorded as "${status}".`,
+        data: {
+          log: existingLog,
+          hadith: hadithInfo.hadith,
+        },
+      });
+    }
 
     // Upsert: Create if not exists, otherwise update status and timestamp
     const log = await prisma.prayerLog.upsert({
@@ -53,6 +125,8 @@ export async function logPrayer(req, res, next) {
       update: {
         status,
         loggedAt: new Date(),
+        prayerStartTime: timingValidation.prayerStartTime || undefined,
+        prayerEndTime: timingValidation.prayerEndTime || undefined,
         notes: typeof notes !== 'undefined' ? notes : undefined,
       },
       create: {
@@ -60,6 +134,8 @@ export async function logPrayer(req, res, next) {
         prayerName: normalizedPrayer,
         date: targetDate,
         status,
+        prayerStartTime: timingValidation.prayerStartTime || null,
+        prayerEndTime: timingValidation.prayerEndTime || null,
         notes: notes || null,
       },
     });
@@ -684,6 +760,38 @@ export async function updatePrayerLog(req, res, next) {
         success: false,
         error: 'Forbidden. You do not have permission to update this prayer log.',
       });
+    }
+
+    if (status) {
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          latitude: true,
+          longitude: true,
+          prayerCalculationMethod: true,
+        },
+      });
+
+      const timingValidation = validatePrayerTiming({
+        prayerName: existingLog.prayerName,
+        date: existingLog.date,
+        status,
+        latitude: user?.latitude,
+        longitude: user?.longitude,
+        method: user?.prayerCalculationMethod || 'Karachi',
+        now: new Date(),
+      });
+
+      if (!timingValidation.isValid) {
+        return res.status(timingValidation.statusCode || 409).json({
+          success: false,
+          code: timingValidation.code || 'PRAYER_TIME_NOT_STARTED',
+          error: timingValidation.message,
+          message: timingValidation.message,
+          availableAt: timingValidation.availableAt || null,
+          currentTime: timingValidation.currentTime || new Date().toISOString(),
+        });
+      }
     }
 
     const updated = await prisma.prayerLog.update({

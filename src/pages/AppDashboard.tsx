@@ -246,6 +246,29 @@ export const AppDashboard = () => {
     targetDateKey?: string
   ) => {
     const dateKeyToUse = targetDateKey || todayDateKey
+
+    // Strictly forbid marking future date or unstarted prayer as completed (ON_TIME, LATE, QADA)
+    if (status === 'ON_TIME' || status === 'LATE' || status === 'QADA') {
+      if (dateKeyToUse > todayDateKey) {
+        setBanner({
+          type: 'error',
+          message: 'Cannot mark prayer as completed for a future date. Prayer time has not started yet.',
+        })
+        return
+      }
+      if (dateKeyToUse === todayDateKey) {
+        const matched = prayers.find((p) => p.id === prayerId)
+        if (matched && (matched.isUpcoming || matched.statusBadge === 'upcoming') && !matched.completed) {
+          setBanner({
+            type: 'error',
+            message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
+          })
+          return
+        }
+      }
+    }
+
+    const previousRecords = { ...allPrayerRecords }
     const updated = updatePrayerStatus(dateKeyToUse, prayerId, status)
     setAllPrayerRecords(updated)
     if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
@@ -292,12 +315,26 @@ export const AppDashboard = () => {
           prayerName: prayerId,
           date: dateKeyToUse,
           status: mappedStatus as any,
+          latitude: city.lat,
+          longitude: city.lng,
+          calculationMethod,
+          madhab,
         })
         .then(() => {
           queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
           queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
         })
-        .catch(() => {})
+        .catch((err: any) => {
+          // Rollback local state on backend rejection (e.g. 409 PRAYER_TIME_NOT_STARTED)
+          setAllPrayerRecords(previousRecords)
+          saveAllPrayerRecords(previousRecords)
+          queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+          queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+          setBanner({
+            type: 'error',
+            message: err?.message || 'Prayer time has not started yet. Cannot mark completed.',
+          })
+        })
     } else {
       queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
       queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
@@ -339,12 +376,21 @@ export const AppDashboard = () => {
       statusBadgeText: status.statusBadgeText,
       subtitle: status.subtitle,
       windowText: status.windowFormatted,
+      isUpcoming: status.isUpcoming,
+      availableAtMessage: status.availableAtMessage,
     }
   })
 
   const handleTogglePrayer = (id: string) => {
     const matched = prayers.find((p) => p.id === id)
     if (matched) {
+      if ((matched.statusBadge === 'upcoming' || matched.isUpcoming) && !matched.completed) {
+        setBanner({
+          type: 'error',
+          message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
+        })
+        return
+      }
       handleOpenPrayerStatusModal(matched)
     }
   }

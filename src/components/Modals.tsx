@@ -472,10 +472,14 @@ export const PrayerDetailModal: React.FC<{
     fazeelatEnglish: 'Salah is the pillar of faith and the believer\'s direct communion with Allah.',
   }
 
+  const isUpcoming = (prayer.statusBadge === 'upcoming' || prayer.isUpcoming) && !prayer.completed
+
   const statusLabel = prayer.prayerStatus
     ? prayer.prayerStatus.replace('_', ' ')
     : prayer.completed
     ? 'Completed'
+    : isUpcoming
+    ? `Available at ${prayer.time}`
     : 'Log Status'
 
   const statusBadgeColor =
@@ -489,6 +493,8 @@ export const PrayerDetailModal: React.FC<{
       ? 'bg-rose-600 text-white'
       : prayer.completed
       ? 'bg-white/20 text-white'
+      : isUpcoming
+      ? 'bg-stone-200 text-stone-600'
       : 'bg-[#F5DC96] text-[#0C4535]'
 
   return (
@@ -514,17 +520,33 @@ export const PrayerDetailModal: React.FC<{
           </div>
           <button
             type="button"
+            disabled={isUpcoming}
+            title={isUpcoming ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.` : undefined}
             onClick={() => {
+              if (isUpcoming) return
               if (onOpenStatusModal) {
                 onOpenStatusModal(prayer)
               } else {
                 onTogglePrayer(prayer.id)
               }
             }}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition active:scale-95 cursor-pointer ${statusBadgeColor}`}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+              isUpcoming
+                ? 'opacity-60 cursor-not-allowed bg-stone-200 text-stone-600'
+                : `active:scale-95 cursor-pointer ${statusBadgeColor}`
+            }`}
           >
-            <CheckCircle className="w-3.5 h-3.5" />
-            <span>{statusLabel}</span>
+            {isUpcoming ? (
+              <>
+                <Clock className="w-3.5 h-3.5" />
+                <span>Available at {prayer.time}</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>{statusLabel}</span>
+              </>
+            )}
           </button>
         </div>
 
@@ -703,7 +725,10 @@ export const PrayerDetailModal: React.FC<{
         {/* Mark status toggle button */}
         <button
           type="button"
+          disabled={isUpcoming}
+          title={isUpcoming ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.` : undefined}
           onClick={() => {
+            if (isUpcoming) return
             if (onOpenStatusModal) {
               onOpenStatusModal(prayer)
             } else {
@@ -711,14 +736,27 @@ export const PrayerDetailModal: React.FC<{
               onClose()
             }
           }}
-          className="w-full py-2.5 rounded-xl bg-[#0C4535] hover:bg-[#083327] active:scale-[0.98] text-white text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm cursor-pointer transition"
+          className={`w-full py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition ${
+            isUpcoming
+              ? 'bg-stone-200 text-stone-500 cursor-not-allowed opacity-75'
+              : 'bg-[#0C4535] hover:bg-[#083327] active:scale-[0.98] text-white cursor-pointer'
+          }`}
         >
-          <CheckCircle className="w-4 h-4" />
-          <span>
-            {prayer.prayerStatus
-              ? `Update Status (${prayer.prayerStatus.replace('_', ' ')})`
-              : 'Log Prayer Status (کیفیت درج کریں)'}
-          </span>
+          {isUpcoming ? (
+            <>
+              <Clock className="w-4 h-4" />
+              <span>Available at {prayer.time} (Time not started)</span>
+            </>
+          ) : (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              <span>
+                {prayer.prayerStatus
+                  ? `Update Status (${prayer.prayerStatus.replace('_', ' ')})`
+                  : 'Log Prayer Status (کیفیت درج کریں)'}
+              </span>
+            </>
+          )}
         </button>
       </div>
     </ModalWrapper>
@@ -734,6 +772,7 @@ export const PrayerStatusModal: React.FC<{
   if (!prayer) return null
 
   const current = prayer.prayerStatus
+  const isUpcoming = (prayer.statusBadge === 'upcoming' || prayer.isUpcoming) && !prayer.completed
 
   const options: Array<{
     status: PrayerStatus
@@ -813,45 +852,70 @@ export const PrayerStatusModal: React.FC<{
           )}
         </div>
 
+        {/* Timing Not Started Warning Banner */}
+        {isUpcoming && (
+          <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5">
+            <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+            <div>
+              <p className="font-bold">Prayer time has not started yet</p>
+              <p className="text-[11px] text-amber-800 leading-tight mt-0.5">
+                {prayer.name} prayer can only be marked after its valid time window begins at {prayer.time}.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 4 Status Options Cards */}
         <div className="space-y-2">
           {options.map((opt) => {
             const Icon = opt.icon
             const isSelected = current === opt.status
+            const isDisabled = isUpcoming
 
             return (
               <button
                 key={opt.status}
                 type="button"
+                disabled={isDisabled}
+                title={isDisabled ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.` : undefined}
                 onClick={() => {
+                  if (isDisabled) return
                   onSelectStatus(prayer.id, opt.status)
                   onClose()
                 }}
-                className={`w-full p-3 rounded-2xl border text-left transition-all flex items-start gap-3 cursor-pointer active:scale-[0.99] ${
-                  isSelected
+                className={`w-full p-3 rounded-2xl border text-left transition-all flex items-start gap-3 ${
+                  isDisabled
+                    ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
+                    : isSelected
                     ? opt.bgActive
-                    : 'bg-white border-[#EBE7DE] hover:border-stone-400 shadow-2xs'
+                    : 'bg-white border-[#EBE7DE] hover:border-stone-400 shadow-2xs cursor-pointer active:scale-[0.99]'
                 }`}
               >
                 <div
                   className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
-                    isSelected ? 'bg-white shadow-2xs' : 'bg-stone-100'
+                    isDisabled ? 'bg-stone-200' : isSelected ? 'bg-white shadow-2xs' : 'bg-stone-100'
                   }`}
                 >
-                  <Icon className={`w-5 h-5 ${opt.colorClass}`} />
+                  <Icon className={`w-5 h-5 ${isDisabled ? 'text-stone-400' : opt.colorClass}`} />
                 </div>
 
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className={`text-[13px] font-bold ${opt.colorClass}`}>
+                      <span className={`text-[13px] font-bold ${isDisabled ? 'text-stone-400' : opt.colorClass}`}>
                         {opt.title}
                       </span>
-                      <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-md ${opt.badgeClass}`}>
-                        {opt.urdu}
-                      </span>
+                      {isDisabled ? (
+                        <span className="text-[10px] font-semibold px-2 py-0.2 rounded-md bg-stone-200 text-stone-600">
+                          🔒 Available at {prayer.time}
+                        </span>
+                      ) : (
+                        <span className={`text-[10px] font-semibold px-2 py-0.2 rounded-md ${opt.badgeClass}`}>
+                          {opt.urdu}
+                        </span>
+                      )}
                     </div>
-                    {isSelected && (
+                    {isSelected && !isDisabled && (
                       <span className="w-5 h-5 rounded-full bg-[#0C4535] text-white flex items-center justify-center text-xs font-bold">
                         ✓
                       </span>
@@ -861,7 +925,7 @@ export const PrayerStatusModal: React.FC<{
                     {opt.roman}
                   </p>
                   <p className="text-[10.5px] text-[#788A80] leading-tight mt-0.5">
-                    {opt.description}
+                    {isDisabled ? `Cannot mark before ${prayer.time}.` : opt.description}
                   </p>
                 </div>
               </button>

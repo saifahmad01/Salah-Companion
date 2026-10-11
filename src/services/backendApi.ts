@@ -104,12 +104,13 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promi
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const error: any = new Error(data.error || response.statusText || 'Request failed');
+    const error: any = new Error(data.message || data.error || response.statusText || 'Request failed');
     error.status = response.status;
     error.code = data.code;
     error.details = data.details;
     error.retryAfter = data.retryAfter;
     error.email = data.email;
+    error.availableAt = data.availableAt;
     throw error;
   }
 
@@ -479,6 +480,10 @@ export const salahApi = {
     prayerName: string;
     date?: string;
     status: 'on_time' | 'late' | 'qada' | 'missed';
+    latitude?: number;
+    longitude?: number;
+    calculationMethod?: string;
+    madhab?: string;
     notes?: string;
   }) {
     return await fetchWithAuth('/prayers/log', {
