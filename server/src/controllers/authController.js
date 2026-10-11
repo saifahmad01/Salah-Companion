@@ -23,6 +23,14 @@ export function getEffectiveFrontendUrl(req) {
     if (origin.includes('salahcompanion786.netlify.app') || origin.includes('salahcopmanion786.netlify.app')) {
       return 'https://salahcompanion786.netlify.app';
     }
+    if (origin.includes('salah-companion.mdsaif.workers.dev') || origin.includes('.workers.dev')) {
+      try {
+        const parsed = new URL(origin);
+        return parsed.origin;
+      } catch {
+        return 'https://salah-companion.mdsaif.workers.dev';
+      }
+    }
     if (origin.includes('localhost:5173')) return 'http://localhost:5173';
   }
   const configured = config.frontendUrl || FRONTEND_URL;
@@ -637,6 +645,8 @@ export async function initiateGoogleOAuth(req, res) {
       if (
         parsed.origin.endsWith('.netlify.app') ||
         parsed.origin.endsWith('.onrender.com') ||
+        parsed.origin.endsWith('.workers.dev') ||
+        parsed.origin.includes('salah-companion.mdsaif.workers.dev') ||
         parsed.origin.includes('localhost') ||
         parsed.origin.includes('127.0.0.1')
       ) {
