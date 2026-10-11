@@ -1,14 +1,33 @@
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
-// Load .env relative to server root
+// Load .env relative to server root with active environment profile support
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, '../../.env') });
+
+const activeEnv = process.env.NODE_ENV || 'development';
+
+// Cascade load environment files: profile-specific files take priority over default .env
+const candidateEnvPaths = [
+  path.resolve(__dirname, `../../.env.${activeEnv}`),
+  path.resolve(__dirname, '../../.env'),
+  path.resolve(__dirname, `../../../.env.${activeEnv}`),
+  path.resolve(__dirname, '../../../.env'),
+];
+
+for (const envPath of candidateEnvPaths) {
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath });
+  }
+}
 
 export const config = {
-  port: parseInt(process.env.PORT || '5000', 10),
+  port: parseInt(
+    process.env.PORT || (process.env.NODE_ENV === 'production' ? '10000' : '8080'),
+    10
+  ),
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || '*',
   frontendUrl: (
@@ -39,9 +58,8 @@ export const config = {
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || '7d',
 
   appUrl: (
-    process.env.APP_URL && !process.env.APP_URL.includes('salah-companion-ja12.onrender.com')
-      ? process.env.APP_URL
-      : (process.env.NODE_ENV === 'production' || process.env.RENDER ? 'https://salah-companion-z3i4.onrender.com' : `http://localhost:${process.env.PORT || '5000'}`)
+    (process.env.APP_URL && !process.env.APP_URL.includes('salah-companion-ja12.onrender.com') ? process.env.APP_URL : '') ||
+    (process.env.NODE_ENV === 'production' || process.env.RENDER ? 'https://salah-companion-z3i4.onrender.com' : `http://localhost:${process.env.PORT || '8080'}`)
   ).replace(/\/+$/, ''),
 
   // Email Configuration (SMTP / Transactional Service)

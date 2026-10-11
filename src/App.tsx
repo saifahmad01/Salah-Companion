@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { PublicOnlyRoute } from './components/PublicOnlyRoute'
+import { ServerWarmupNotice } from './components/ServerWarmupNotice'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -12,6 +13,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ServerWarmupNotice />
         <Routes>
           {/* Public Landing Page (accessible to logged-out visitors; authenticated users redirected to /app) */}
           <Route

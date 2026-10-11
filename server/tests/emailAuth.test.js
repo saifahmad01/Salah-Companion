@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { prisma } from '../src/db/prisma.js';
+import { config } from '../src/config/env.js';
 
-const BASE_URL = process.env.TEST_API_URL || 'http://localhost:5000';
+const BASE_URL = process.env.TEST_API_URL || `http://localhost:${config.port || 8080}`;
 
 console.log('--- Running Production Email & Password Authentication Integration Tests ---');
 console.log(`Target API: ${BASE_URL}\n`);

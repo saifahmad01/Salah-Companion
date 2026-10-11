@@ -1,0 +1,24 @@
+name: Keep Render Backend Warm
+
+on:
+  schedule:
+    # Run every 14 minutes between 03:00 UTC and 21:00 UTC
+    # Keeps Render active during peak prayer tracking hours across all timezones without hitting GitHub Actions monthly free quota
+    - cron: '*/14 3-21 * * *'
+  workflow_dispatch:
+
+jobs:
+  ping-health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping Salah Companion Backend Health Endpoint
+        run: |
+          echo "Pinging Salah Companion backend on Render..."
+          STATUS_CODE=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 "https://salah-companion-z3i4.onrender.com/api/health")
+          echo "HTTP response status: $STATUS_CODE"
+          if [ "$STATUS_CODE" -eq 200 ] || [ "$STATUS_CODE" -eq 503 ]; then
+            echo "Render instance reached successfully (status $STATUS_CODE)."
+          else
+            echo "Unexpected status code: $STATUS_CODE, but ping successfully triggered spin-up."
+          fi

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { config } from '../src/config/env.js';
 import { query } from '../src/db/connection.js';
 
-const BASE_URL = process.env.TEST_API_URL || 'http://localhost:5000';
+const BASE_URL = process.env.TEST_API_URL || `http://localhost:${config.port || 8080}`;
 const TEST_SECRET = config.jwtSecret;
 
 console.log('--- Running Google OAuth & Session Management Integration Tests ---');

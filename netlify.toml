@@ -4,14 +4,21 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  VITE_BACKEND_URL = "https://salah-companion-z3i4.onrender.com"
   VITE_API_URL = "https://salah-companion-z3i4.onrender.com/api"
+  VITE_API_BASE_URL = "https://salah-companion-z3i4.onrender.com/api"
+  VITE_BACKEND_URL = "https://salah-companion-z3i4.onrender.com"
   VITE_GOOGLE_CLIENT_ID = "520110657430-7cbd1c04pahgar6o59bp2s0lkub9b29q.apps.googleusercontent.com"
 
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
+
+# Cache all static bundled assets on Netlify edge CDN for 1 year with immutable fingerprinting
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
 
 [[headers]]
   for = "/*"

@@ -2,6 +2,9 @@ import { calculatePrayers } from '../services/prayerService.js';
 import { recordPrayerLog } from '../services/logService.js';
 import { getHadithByStatus } from '../services/hadithService.js';
 
+// In-memory cache to prevent repetitive astronomical recalculation
+const prayerCalculationCache = new Map();
+
 /**
  * Controller to calculate prayer times using adhan
  * GET /api/prayers?lat={lat}&lng={lng}&method={method}&madhab={madhab}&date={date}
@@ -35,15 +38,30 @@ export async function getPrayerTimesHandler(req, res, next) {
     }
 
     const targetDate = date ? new Date(date) : new Date();
+    const dateStr = targetDate.toISOString().slice(0, 10);
+    const selectedMethod = method || 'Karachi';
+    const selectedMadhab = madhab || 'Hanafi';
+    const cacheKey = `${latitude.toFixed(2)}_${longitude.toFixed(2)}_${selectedMethod}_${selectedMadhab}_${dateStr}`;
 
-    const result = calculatePrayers({
-      latitude,
-      longitude,
-      method: method || 'Karachi',
-      madhab: madhab || 'Hanafi',
-      targetDate,
-    });
+    let result = prayerCalculationCache.get(cacheKey);
+    if (!result) {
+      result = calculatePrayers({
+        latitude,
+        longitude,
+        method: selectedMethod,
+        madhab: selectedMadhab,
+        targetDate,
+      });
 
+      // Maintain reasonable cache size limit (max 2,000 entries)
+      if (prayerCalculationCache.size > 2000) {
+        prayerCalculationCache.clear();
+      }
+      prayerCalculationCache.set(cacheKey, result);
+    }
+
+    // Set client and CDN edge cache headers (1 hour browser, 24 hour edge)
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400');
     return res.status(200).json({
       success: true,
       data: result,

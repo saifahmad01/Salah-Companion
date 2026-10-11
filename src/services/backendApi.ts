@@ -8,15 +8,25 @@
  * In production builds, defaults directly to https://salah-companion-z3i4.onrender.com/api
  */
 export function resolveApiBaseUrl(): string {
-  const envUrl = (import.meta.env.VITE_API_URL || import.meta.env.VITE_BACKEND_URL || '').trim();
-  // Ensure outdated/deprecated backend URLs (like ja12) are never used
+  const envUrl = (
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    import.meta.env.VITE_BACKEND_URL ||
+    ''
+  ).trim();
+
+  // Strip deprecated backend URLs (like ja12)
   if (envUrl && !envUrl.includes('salah-companion-ja12.onrender.com')) {
     const clean = envUrl.replace(/\/+$/, '');
     return clean.endsWith('/api') ? clean : `${clean}/api`;
   }
+
+  // Development profile: default to local backend on port 8080
   if (import.meta.env.DEV) {
-    return 'http://localhost:5000/api';
+    return 'http://localhost:8080/api';
   }
+
+  // Production profile: default to live Render backend
   return 'https://salah-companion-z3i4.onrender.com/api';
 }
 
@@ -58,7 +68,7 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promi
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 25000);
+  const timeoutId = setTimeout(() => controller.abort(), 35000);
 
   let response: Response;
   try {
@@ -581,6 +591,13 @@ export const salahApi = {
       method: 'POST',
       body: JSON.stringify({ prayerName, userId }),
     });
+  },
+
+  /**
+   * Health check and cold-start warmup probe
+   */
+  async getHealth(): Promise<{ success: boolean; status: string; service?: string; database?: any }> {
+    return await fetchWithAuth('/health', { method: 'GET' });
   },
 };
 

@@ -19,6 +19,7 @@ export async function getHadithsController(req, res, next) {
       paginate: paginate ? parseInt(paginate, 10) : 10,
     });
 
+    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400');
     res.status(200).json({
       success: true,
       data: result.hadiths,
@@ -35,6 +36,7 @@ export async function getHadithsController(req, res, next) {
  * Returns list of verified Hadith collections with metadata
  */
 export function getVerifiedBooksController(req, res) {
+  res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=604800, stale-while-revalidate=86400');
   res.status(200).json({
     success: true,
     data: VERIFIED_BOOKS,

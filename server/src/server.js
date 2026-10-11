@@ -16,44 +16,75 @@ const app = express();
 // Cookie parser for secure HttpOnly sessions
 app.use(cookieParser());
 
-// CORS configuration supporting HttpOnly cookies and credentials
-const defaultAllowedOrigins = [
-  'https://salahcompanion786.netlify.app',
+// ============================================================================
+// Dynamic CORS Configuration (Development vs. Production Profiles)
+// ============================================================================
+
+const isDev = config.nodeEnv === 'development';
+const isProd = config.nodeEnv === 'production' || Boolean(process.env.RENDER);
+
+// Development origins (Vite, Next.js, local ports)
+const devAllowedOrigins = [
   'http://localhost:5173',
-  'http://localhost:5000',
   'http://localhost:3000',
+  'http://localhost:8080',
+  'http://localhost:5000',
   'http://127.0.0.1:5173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:8080',
+  'http://127.0.0.1:5000',
+];
+
+// Production origins
+const prodAllowedOrigins = [
+  'https://salahcompanion786.netlify.app',
 ];
 
 const configuredOrigins = (config.corsOrigin || '')
   .split(',')
   .map((o) => o.trim().replace(/\/+$/, ''))
-  .filter(Boolean);
+  .filter((o) => Boolean(o) && o !== '*');
 
 const allowedOrigins = Array.from(
   new Set([
     config.frontendUrl ? config.frontendUrl.replace(/\/+$/, '') : null,
+    ...(isDev ? [...devAllowedOrigins, ...prodAllowedOrigins] : prodAllowedOrigins),
     ...configuredOrigins,
-    ...defaultAllowedOrigins,
   ].filter(Boolean))
 );
 
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or server-to-server)
+      // 1. Allow non-browser requests (mobile apps, server-to-server pings, curl)
       if (!origin) {
         return callback(null, true);
       }
+
+      // 2. Development profile: allow localhost and wildcard
+      if (isDev) {
+        if (
+          config.corsOrigin === '*' ||
+          origin.includes('localhost') ||
+          origin.includes('127.0.0.1') ||
+          allowedOrigins.includes(origin)
+        ) {
+          return callback(null, origin);
+        }
+      }
+
+      // 3. Production profile: restrict to trusted Netlify frontend
       if (
         allowedOrigins.includes(origin) ||
-        config.corsOrigin === '*' ||
-        origin.endsWith('.netlify.app') ||
-        origin.endsWith('.onrender.com')
+        origin === 'https://salahcompanion786.netlify.app' ||
+        origin.endsWith('.netlify.app')
       ) {
         return callback(null, origin);
       }
-      return callback(null, origin);
+
+      // Block unauthorized origins
+      console.warn(`[CORS Blocked] Unauthorized origin: ${origin}`);
+      return callback(new Error(`CORS Policy: Origin ${origin} is not allowed.`));
     },
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
