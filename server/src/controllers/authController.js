@@ -9,6 +9,7 @@ import {
   getGoogleProfileFromCode,
 } from '../services/googleAuthService.js';
 import { config } from '../config/env.js';
+import { isPermanentAdmin } from '../constants/admins.js';
 
 const JWT_SECRET = config.jwtSecret || process.env.JWT_SECRET || 'fallback_secret_for_dev_only_change_in_production';
 const JWT_EXPIRES_IN = config.jwtExpiresIn || process.env.JWT_EXPIRES_IN || '7d';
@@ -378,6 +379,7 @@ export async function verifyEmail(req, res, next) {
             isEmailVerified: true,
             verificationTokenHash: null,
             tokenExpiresAt: null,
+            ...(isPermanentAdmin(pending.email) ? { role: 'ADMIN' } : {}),
           },
         });
       } else {
@@ -386,7 +388,7 @@ export async function verifyEmail(req, res, next) {
             name: pending.name,
             email: pending.email,
             password: pending.password, // already bcrypt-hashed
-            role: 'USER',
+            role: isPermanentAdmin(pending.email) ? 'ADMIN' : 'USER',
             prayerCalculationMethod: pending.prayerCalculationMethod || 'Karachi',
             latitude: pending.latitude,
             longitude: pending.longitude,
@@ -783,6 +785,7 @@ export async function handleGoogleOAuthCallback(req, res) {
           googleId: user.googleId || googleId,
           avatarUrl: picture || user.avatarUrl,
           isEmailVerified: true,
+          ...(isPermanentAdmin(email) ? { role: 'ADMIN' } : {}),
         },
       });
     } else {
@@ -795,7 +798,7 @@ export async function handleGoogleOAuthCallback(req, res) {
           password: null,
           isEmailVerified: true,
           prayerCalculationMethod: 'Karachi',
-          role: 'USER',
+          role: isPermanentAdmin(email) ? 'ADMIN' : 'USER',
         },
       });
     }
@@ -853,6 +856,7 @@ export async function googleAuth(req, res, next) {
           googleId: user.googleId || googleId,
           avatarUrl: picture || user.avatarUrl,
           isEmailVerified: true,
+          ...(isPermanentAdmin(email) ? { role: 'ADMIN' } : {}),
         },
       });
     } else {
@@ -867,7 +871,7 @@ export async function googleAuth(req, res, next) {
           prayerCalculationMethod: prayerCalculationMethod || 'Karachi',
           latitude: latitude ?? null,
           longitude: longitude ?? null,
-          role: 'USER',
+          role: isPermanentAdmin(email) ? 'ADMIN' : 'USER',
         },
       });
     }

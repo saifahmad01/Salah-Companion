@@ -6,6 +6,7 @@ import { apiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
 import { db, checkDbHealth } from './db/connection.js';
 import { startNotificationScheduler, stopNotificationScheduler } from './services/notificationScheduler.js';
+import { ensurePermanentAdmins } from './services/adminBootstrapService.js';
 
 const app = express();
 
@@ -154,6 +155,11 @@ const server = app.listen(config.port, '0.0.0.0', () => {
 
   // Start background notification scheduler
   startNotificationScheduler();
+
+  // Guarantee permanent administrators exist in database with ADMIN role
+  ensurePermanentAdmins().catch((err) => {
+    console.error('[Server] Admin bootstrap check failed:', err.message);
+  });
 });
 
 // Graceful cleanup on shutdown

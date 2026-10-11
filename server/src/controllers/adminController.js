@@ -1,6 +1,7 @@
 import { prisma } from '../db/prisma.js';
 import { checkDbHealth } from '../db/connection.js';
 import { config } from '../config/env.js';
+import { isPermanentAdmin } from '../constants/admins.js';
 
 /**
  * GET /api/admin/overview
@@ -163,6 +164,22 @@ export async function updateUserRole(req, res, next) {
       });
     }
 
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found.',
+      });
+    }
+
+    // Permanent super administrators cannot be demoted
+    if (isPermanentAdmin(targetUser.email) && role !== 'ADMIN') {
+      return res.status(403).json({
+        success: false,
+        error: 'Cannot modify role of a permanent system administrator.',
+      });
+    }
+
     const updated = await prisma.user.update({
       where: { id },
       data: { role },
@@ -192,6 +209,22 @@ export async function deleteUser(req, res, next) {
       return res.status(400).json({
         success: false,
         error: 'You cannot delete your own admin account while logged in.',
+      });
+    }
+
+    const targetUser = await prisma.user.findUnique({ where: { id } });
+    if (!targetUser) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found.',
+      });
+    }
+
+    // Permanent super administrators cannot be deleted
+    if (isPermanentAdmin(targetUser.email)) {
+      return res.status(403).json({
+        success: false,
+        error: 'Cannot delete a permanent system administrator account.',
       });
     }
 
