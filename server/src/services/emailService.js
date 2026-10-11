@@ -26,11 +26,17 @@ async function getTransporter() {
   }
 
   // 2. Production / Configured SMTP (Gmail, SendGrid, Amazon SES, Brevo, or custom SMTP)
-  const isGmail = config.emailService === 'gmail' || (config.emailHost && config.emailHost.includes('gmail.com'));
+  const port = Number(config.emailPort) || 465;
+  const isSecure = config.emailSecure !== undefined ? Boolean(config.emailSecure) : (port === 465);
+
   const transportOptions = {
     host: config.emailHost || 'smtp.gmail.com',
-    port: config.emailPort || (config.emailSecure ? 465 : 587),
-    secure: config.emailSecure ?? true,
+    port,
+    secure: isSecure,
+    family: 4, // CRITICAL: Forces IPv4 DNS resolution to prevent ENETUNREACH errors on cloud hosts like Render
+    connectionTimeout: 8000,
+    greetingTimeout: 8000,
+    socketTimeout: 10000,
     auth: {
       user: config.emailUser,
       pass: config.emailPass,
@@ -39,10 +45,6 @@ async function getTransporter() {
       rejectUnauthorized: false,
     },
   };
-
-  if (isGmail) {
-    transportOptions.service = 'gmail';
-  }
 
   transporter = nodemailer.createTransport(transportOptions);
   return transporter;
@@ -267,7 +269,43 @@ export async function sendVerificationEmail(to, name, token) {
       verificationUrl,
     };
   } catch (err) {
-    console.error(`[EmailService] SMTP delivery failed for ${to}:`, err.message);
+    console.error(`[EmailService] Primary SMTP delivery failed for ${to}:`, err.message);
+
+    // If primary port failed on Gmail, attempt fallback port (465 <-> 587) with family: 4
+    if (config.emailHost?.includes('gmail.com') || config.emailService === 'gmail' || !config.emailHost) {
+      try {
+        const primaryPort = Number(config.emailPort) || 465;
+        const fallbackPort = primaryPort === 465 ? 587 : 465;
+        console.log(`[EmailService] Retrying via fallback Gmail port ${fallbackPort} (IPv4)...`);
+        const fallbackTransporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: fallbackPort,
+          secure: fallbackPort === 465,
+          family: 4,
+          connectionTimeout: 8000,
+          greetingTimeout: 8000,
+          socketTimeout: 10000,
+          auth: {
+            user: config.emailUser,
+            pass: config.emailPass,
+          },
+          tls: {
+            rejectUnauthorized: false,
+          },
+        });
+        const info = await fallbackTransporter.sendMail(mailOptions);
+        console.log(`[EmailService] Verification email successfully sent via fallback port ${fallbackPort} to ${to}: ${info.messageId}`);
+        transporter = fallbackTransporter;
+        return {
+          success: true,
+          messageId: info.messageId,
+          previewUrl: verificationUrl,
+          verificationUrl,
+        };
+      } catch (fallbackErr) {
+        console.error(`[EmailService] Fallback port delivery also failed:`, fallbackErr.message);
+      }
+    }
 
     let friendlyError = err.message;
     if (err.message?.includes('535') || err.message?.includes('BadCredentials')) {
@@ -278,6 +316,7 @@ export async function sendVerificationEmail(to, name, token) {
       success: false,
       error: friendlyError,
       previewUrl: verificationUrl,
+      verificationUrl,
     };
   }
 }
@@ -291,10 +330,33 @@ export async function verifyEmailTransport() {
     await mailer.verify();
     return { connected: true };
   } catch (err) {
-    let friendlyError = err.message;
-    if (err.message?.includes('535') || err.message?.includes('BadCredentials')) {
-      friendlyError = 'Gmail SMTP authentication rejected. Gmail requires a 16-character App Password (not your personal account password). Please generate an App Password at Google Account > Security > 2-Step Verification > App passwords.';
+    console.warn(`[EmailService] Primary transport verification failed: ${err.message}. Trying port 587 fallback...`);
+    try {
+      const fallbackTransporter = nodemailer.createTransport({
+        host: 'smtp.gmail.com',
+        port: 587,
+        secure: false,
+        family: 4,
+        connectionTimeout: 8000,
+        greetingTimeout: 8000,
+        socketTimeout: 10000,
+        auth: {
+          user: config.emailUser,
+          pass: config.emailPass,
+        },
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+      await fallbackTransporter.verify();
+      transporter = fallbackTransporter;
+      return { connected: true, fallbackUsed: true };
+    } catch (fallbackErr) {
+      let friendlyError = fallbackErr.message;
+      if (fallbackErr.message?.includes('535') || fallbackErr.message?.includes('BadCredentials')) {
+        friendlyError = 'Gmail SMTP authentication rejected. Gmail requires a 16-character App Password (not your personal account password). Please generate an App Password at Google Account > Security > 2-Step Verification > App passwords.';
+      }
+      return { connected: false, error: friendlyError };
     }
-    return { connected: false, error: friendlyError };
   }
 }

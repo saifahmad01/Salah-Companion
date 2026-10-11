@@ -164,20 +164,10 @@ export async function register(req, res, next) {
     const { rawToken, tokenHash } = generateVerificationToken();
     const tokenExpiresAt = new Date(Date.now() + config.verificationTokenTtlHours * 60 * 60 * 1000);
 
-    // 5. Send verification email via Nodemailer with the RAW token (FIRST, before saving state)
+    // 5. Send verification email via Nodemailer with the RAW token
     const emailResult = await sendVerificationEmail(normalizedEmail, name || existingPending?.name || 'Brother/Sister', rawToken);
 
-    // CRITICAL: Never report success if email delivery fails!
-    if (!emailResult.success) {
-      return res.status(502).json({
-        success: false,
-        error: emailResult.error || 'Failed to deliver verification email. Please verify your email configuration.',
-        code: 'EMAIL_DELIVERY_FAILED',
-        email: normalizedEmail,
-      });
-    }
-
-    // 6. Email sent successfully -> Upsert into PendingRegistration
+    // 6. Upsert into PendingRegistration so the registration is safely recorded
     if (existingPending) {
       await prisma.pendingRegistration.update({
         where: { id: existingPending.id },
@@ -205,6 +195,20 @@ export async function register(req, res, next) {
           expiresAt: tokenExpiresAt,
           lastSentAt: new Date(),
         },
+      });
+    }
+
+    // 7. If email delivery failed, return 201 with warning & fallback verification link rather than blocking account creation with 502
+    if (!emailResult.success) {
+      console.warn(`[AuthController] Email delivery warning for ${normalizedEmail}: ${emailResult.error}`);
+      return res.status(201).json({
+        success: true,
+        message: 'Account registered! Your verification email is queued or encountering a delay. You may use the direct link or click Resend in a moment.',
+        requiresEmailVerification: true,
+        email: normalizedEmail,
+        emailWarning: emailResult.error,
+        previewUrl: emailResult.previewUrl,
+        verificationUrl: emailResult.verificationUrl,
       });
     }
 
