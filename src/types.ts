@@ -15,6 +15,7 @@ export interface PrayerItem {
   windowText?: string
   isUpcoming?: boolean
   availableAtMessage?: string
+  isWindowExpired?: boolean
 }
 
 export interface DeedItem {

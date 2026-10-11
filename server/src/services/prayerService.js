@@ -245,13 +245,25 @@ export function validatePrayerTiming({
     };
   }
 
-  // 1. Strictly forbid logging any completion for future dates (e.g. tomorrow or beyond)
+  // 1. Strictly forbid logging completion for past dates (previous days are read-only)
+  if (targetDateStr < todayStr) {
+    return {
+      isValid: false,
+      code: 'PRAYER_DATE_NOT_TODAY',
+      statusCode: 409,
+      message: `Cannot mark Salah as completed for past dates (${targetDateStr}). Salah completion is strictly permitted only for today's local calendar date (${todayStr}). Previous records are read-only.`,
+      availableAt: null,
+      currentTime: now.toISOString(),
+    };
+  }
+
+  // 2. Strictly forbid logging any completion for future dates (e.g. tomorrow or beyond)
   if (targetDateStr > todayStr) {
     return {
       isValid: false,
-      code: 'PRAYER_TIME_NOT_STARTED',
+      code: 'PRAYER_DATE_NOT_TODAY',
       statusCode: 409,
-      message: `Cannot mark ${capitalize(normPrayer)} as completed for future dates. Prayer time has not started yet.`,
+      message: `Cannot mark ${capitalize(normPrayer)} as completed for future dates (${targetDateStr}). Prayer time has not started yet.`,
       availableAt: null,
       currentTime: now.toISOString(),
     };
@@ -299,28 +311,49 @@ export function validatePrayerTiming({
   const startMs = prayerStartTime.getTime();
   const endMs = prayerEndTime.getTime();
 
-  // 2. If the prayer is for TODAY:
-  if (targetDateStr === todayStr) {
-    // If current time is strictly before the prayer start time:
-    if (nowMs < startMs) {
-      const timeFormatted = prayerStartTime.toLocaleTimeString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-      });
+  // 3. For TODAY's prayers:
+  // A. If current time is strictly before the prayer start time:
+  if (nowMs < startMs) {
+    const timeFormatted = prayerStartTime.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
 
-      return {
-        isValid: false,
-        code: 'PRAYER_TIME_NOT_STARTED',
-        statusCode: 409,
-        message: `${capitalize(normPrayer)} prayer time has not started yet. You can mark this prayer as completed once its prayer time begins at ${timeFormatted}.`,
-        availableAt: prayerStartTime.toISOString(),
-        currentTime: now.toISOString(),
-        prayerStartTime: prayerStartTime.toISOString(),
-        prayerEndTime: prayerEndTime.toISOString(),
-      };
-    }
+    return {
+      isValid: false,
+      code: 'PRAYER_TIME_NOT_STARTED',
+      statusCode: 409,
+      message: `${capitalize(normPrayer)} prayer time has not started yet. You can mark this prayer as completed once its prayer time begins at ${timeFormatted}.`,
+      availableAt: prayerStartTime.toISOString(),
+      currentTime: now.toISOString(),
+      prayerStartTime: prayerStartTime.toISOString(),
+      prayerEndTime: prayerEndTime.toISOString(),
+    };
+  }
+
+  // B. If current time is past the prayer window end time:
+  const isCompletionAttempt = !status || ['on_time', 'late', 'qada', 'completed'].includes(status.toLowerCase());
+  if (nowMs >= endMs && isCompletionAttempt) {
+    const endTimeFormatted = prayerEndTime.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+
+    return {
+      isValid: false,
+      code: 'PRAYER_WINDOW_EXPIRED',
+      statusCode: 409,
+      message: `${capitalize(normPrayer)} prayer window ended at ${endTimeFormatted}. It cannot be marked as completed after its valid window expires.`,
+      availableAt: null,
+      currentTime: now.toISOString(),
+      prayerStartTime: prayerStartTime.toISOString(),
+      prayerEndTime: prayerEndTime.toISOString(),
+      isExpired: true,
+    };
   }
 
   return {

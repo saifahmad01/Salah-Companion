@@ -82,11 +82,11 @@ async function runTests() {
     console.log('✓ Test 2 Passed: Empty week returns 7 days with 0/35 completed and 0% rate.');
 
     // ------------------------------------------------------------------------
-    // Test 3: Log prayers across different days including 'qada'
+    // Test 3: Historical prayer rejection & database persistence
     // ------------------------------------------------------------------------
-    console.log('\n3. Testing logging prayers for user A (on_time, late, qada)...');
-    // Log Fajr on Monday (2026-10-05) as on_time
-    const log1 = await fetch(`${BASE_URL}/api/prayers/log`, {
+    console.log('\n3. Testing strict same-day enforcement and historical records...');
+    // Attempting to log a previous date via API must be rejected with 409 PRAYER_DATE_NOT_TODAY
+    const prevDateRes = await fetch(`${BASE_URL}/api/prayers/log`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -98,55 +98,25 @@ async function runTests() {
         status: 'on_time',
       }),
     });
-    assert.equal(log1.status, 200, 'Logging Fajr must return 200');
+    assert.equal(prevDateRes.status, 409, 'Logging prayer for past date must return 409');
+    const prevDateJson = await prevDateRes.json();
+    assert.equal(prevDateJson.code, 'PRAYER_DATE_NOT_TODAY');
+    console.log('✓ Strict Same-Day Verified: Previous date completion rejected with 409 PRAYER_DATE_NOT_TODAY.');
 
-    // Log Dhuhr on Monday (2026-10-05) as late
-    const log2 = await fetch(`${BASE_URL}/api/prayers/log`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${tokenA}`,
-      },
-      body: JSON.stringify({
-        prayerName: 'Dhuhr',
-        date: '2026-10-05',
-        status: 'late',
-      }),
+    // Seed historical persisted records directly in database for user A
+    await prisma.prayerLog.createMany({
+      data: [
+        { userId: userA.id, prayerName: 'fajr', date: '2026-10-05', status: 'on_time' },
+        { userId: userA.id, prayerName: 'dhuhr', date: '2026-10-05', status: 'late' },
+        { userId: userA.id, prayerName: 'asr', date: '2026-10-05', status: 'qada' },
+        { userId: userA.id, prayerName: 'maghrib', date: '2026-10-06', status: 'on_time' },
+      ],
     });
-    assert.equal(log2.status, 200, 'Logging Dhuhr must return 200');
-
-    // Log Asr on Monday (2026-10-05) as qada
-    const log3 = await fetch(`${BASE_URL}/api/prayers/log`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${tokenA}`,
-      },
-      body: JSON.stringify({
-        prayerName: 'Asr',
-        date: '2026-10-05',
-        status: 'qada',
-      }),
+    const maghribLog = await prisma.prayerLog.findFirst({
+      where: { userId: userA.id, prayerName: 'maghrib', date: '2026-10-06' },
     });
-    assert.equal(log3.status, 200, 'Logging Asr as qada must return 200');
-
-    // Log Maghrib on Tuesday (2026-10-06) as on_time
-    const log4 = await fetch(`${BASE_URL}/api/prayers/log`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${tokenA}`,
-      },
-      body: JSON.stringify({
-        prayerName: 'Maghrib',
-        date: '2026-10-06',
-        status: 'on_time',
-      }),
-    });
-    assert.equal(log4.status, 200, 'Logging Maghrib must return 200');
-    const log4Json = await log4.json();
-    const maghribLogId = log4Json.data.log.id;
-    console.log('✓ Test 3 Passed: Successfully logged 4 prayers across 2 days.');
+    const maghribLogId = maghribLog.id;
+    console.log('✓ Test 3 Passed: Successfully seeded 4 historical prayers across 2 days.');
 
     // ------------------------------------------------------------------------
     // Test 4: Verify weekly statistics reflect the persisted records
@@ -183,7 +153,7 @@ async function runTests() {
     // ------------------------------------------------------------------------
     // Test 5: Update prayer status via PATCH /api/prayers/log/:id
     // ------------------------------------------------------------------------
-    console.log('\n5. Testing PATCH /api/prayers/log/:id (updating prayer record)...');
+    console.log('\n5. Testing PATCH /api/prayers/log/:id (updating prayer record notes)...');
     const patchRes = await fetch(`${BASE_URL}/api/prayers/log/${maghribLogId}`, {
       method: 'PATCH',
       headers: {
@@ -191,23 +161,13 @@ async function runTests() {
         Authorization: `Bearer ${tokenA}`,
       },
       body: JSON.stringify({
-        status: 'late',
-        notes: 'Offered right before Isha time started',
+        notes: 'Offered with congregation in mosque',
       }),
     });
     assert.equal(patchRes.status, 200);
     const patchJson = await patchRes.json();
-    assert.equal(patchJson.data.status, 'late');
-    assert.equal(patchJson.data.notes, 'Offered right before Isha time started');
-
-    // Confirm update in weekly overview
-    const weekAfterPatch = await fetch(`${BASE_URL}/api/prayers/weekly?startDate=2026-10-05`, {
-      headers: { Authorization: `Bearer ${tokenA}` },
-    });
-    const weekAfterPatchJson = await weekAfterPatch.json();
-    assert.equal(weekAfterPatchJson.data.statistics.lateCount, 2);
-    assert.equal(weekAfterPatchJson.data.statistics.onTimeCount, 1);
-    console.log('✓ Test 5 Passed: Successfully updated prayer status and verified in weekly stats.');
+    assert.equal(patchJson.data.notes, 'Offered with congregation in mosque');
+    console.log('✓ Test 5 Passed: Successfully updated prayer notes via PATCH.');
 
     // ------------------------------------------------------------------------
     // Test 6: User Isolation (User B cannot see or alter User A's logs)

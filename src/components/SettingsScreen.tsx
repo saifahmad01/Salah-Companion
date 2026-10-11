@@ -19,12 +19,14 @@ import {
   Smartphone,
   Loader2,
   BellRing,
+  Compass,
 } from 'lucide-react'
 import type { UserProfile, NotificationPreferences } from '../services/backendApi'
 
 interface SettingsScreenProps {
   cityName: string
   onOpenLocation: () => void
+  onOpenQibla?: () => void
   calculationMethod: string
   onChangeCalculationMethod: (method: string) => void
   madhab: string
@@ -44,6 +46,7 @@ interface SettingsScreenProps {
 export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   cityName,
   onOpenLocation,
+  onOpenQibla,
   calculationMethod,
   onChangeCalculationMethod,
   madhab,
@@ -255,6 +258,23 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
                   </div>
                 </div>
+
+                {/* Qibla Direction */}
+                {onOpenQibla && (
+                  <div
+                    onClick={onOpenQibla}
+                    className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                  >
+                    <div className="flex items-center gap-2.5 text-[#24352D]">
+                      <Compass className="w-4 h-4 text-[#0E543F]" />
+                      <span className="font-medium">Qibla Direction (قبلہ نما)</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 text-stone-500">
+                      <span className="font-semibold text-[#0E543F]">Open Compass</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </div>
+                  </div>
+                )}
 
                 {/* Calculation Method */}
                 <div

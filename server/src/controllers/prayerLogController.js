@@ -66,8 +66,35 @@ export async function logPrayer(req, res, next) {
     const method = calculationMethod || user?.prayerCalculationMethod || 'Karachi';
     const madhabName = madhab || 'Hanafi';
 
-    // Authoritative prayer start time validation:
-    // User must NOT be able to mark a prayer as completed before that prayer's valid time window begins.
+    // Check for existing record / duplicate completion first
+    const existingLog = await prisma.prayerLog.findUnique({
+      where: {
+        userId_prayerName_date: {
+          userId,
+          prayerName: normalizedPrayer,
+          date: targetDate,
+        },
+      },
+    });
+
+    const isCompletedStatus = (s) => ['on_time', 'late', 'qada', 'completed'].includes(s?.toLowerCase());
+    if (existingLog && isCompletedStatus(existingLog.status) && isCompletedStatus(status)) {
+      return res.status(409).json({
+        success: false,
+        code: 'PRAYER_ALREADY_COMPLETED',
+        error: `${normalizedPrayer} has already been recorded as completed for today. Duplicate completion is not permitted.`,
+        message: `${normalizedPrayer} has already been recorded as completed for today. Duplicate completion is not permitted.`,
+        data: {
+          log: existingLog,
+        },
+      });
+    }
+
+    // Authoritative prayer start and window timing validation:
+    // A user can mark a Salah as completed only when:
+    // 1. Current local calendar date (today)
+    // 2. Start time has arrived
+    // 3. Valid completion window has not ended
     const timingValidation = validatePrayerTiming({
       prayerName: normalizedPrayer,
       date: targetDate,
@@ -89,17 +116,6 @@ export async function logPrayer(req, res, next) {
         currentTime: timingValidation.currentTime || new Date().toISOString(),
       });
     }
-
-    // Check for duplicate submission
-    const existingLog = await prisma.prayerLog.findUnique({
-      where: {
-        userId_prayerName_date: {
-          userId,
-          prayerName: normalizedPrayer,
-          date: targetDate,
-        },
-      },
-    });
 
     if (existingLog && existingLog.status === status) {
       const hadithInfo = getHadithByStatus(status);

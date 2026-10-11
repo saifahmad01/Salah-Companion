@@ -1,5 +1,4 @@
-import React from 'react'
-import { Bell, User, Calendar, Moon, Wifi, MapPin, ChevronDown, Shield } from 'lucide-react'
+import { Bell, User, Calendar, Moon, Wifi, MapPin, ChevronDown, Shield, Compass } from 'lucide-react'
 
 interface HeaderProps {
   currentTimeStr: string
@@ -17,6 +16,7 @@ interface HeaderProps {
   onOpenLocation?: () => void
   onOpenEnglishCalendar?: () => void
   onOpenArabicCalendar?: () => void
+  onOpenQibla?: () => void
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -35,6 +35,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenLocation,
   onOpenEnglishCalendar,
   onOpenArabicCalendar,
+  onOpenQibla,
 }) => {
   return (
     <header className="relative w-full overflow-hidden select-none">
@@ -118,6 +119,19 @@ export const Header: React.FC<HeaderProps> = ({
               className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-amber-50 hover:bg-amber-100 border border-amber-300 shadow-sm flex items-center justify-center text-amber-700 transition-transform active:scale-95 cursor-pointer"
             >
               <Shield className="w-[18px] h-[18px] stroke-[2]" />
+            </button>
+          )}
+
+          {/* Qibla Compass Button */}
+          {onOpenQibla && (
+            <button
+              type="button"
+              onClick={onOpenQibla}
+              aria-label="Qibla Compass"
+              title="Open Qibla Direction (قبلہ نما)"
+              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/90 hover:bg-emerald-50 border border-[#E5E2D9] shadow-sm flex items-center justify-center text-[#0C4535] transition-transform active:scale-95 cursor-pointer"
+            >
+              <Compass className="w-[18px] h-[18px] stroke-[1.8] text-[#0C4535]" />
             </button>
           )}
 

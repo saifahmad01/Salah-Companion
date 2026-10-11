@@ -48,8 +48,9 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { reverseGeocodeCoordinates } from '../utils/geocoding'
 import type { PrayerItem, DeedItem, PrayerStatus } from '../types'
-import { LogOut, Volume2, Shield } from 'lucide-react'
+import { LogOut, Volume2, Shield, Compass, ChevronRight } from 'lucide-react'
 import { useSalahNotifications } from '../hooks/useSalahNotifications'
+import { QiblaCompassModal } from '../components/QiblaCompassModal'
 
 export const AppDashboard = () => {
   const navigate = useNavigate()
@@ -247,7 +248,7 @@ export const AppDashboard = () => {
   ) => {
     const dateKeyToUse = targetDateKey || todayDateKey
 
-    // Strictly forbid marking future date or unstarted prayer as completed (ON_TIME, LATE, QADA)
+    // Strictly forbid marking future date, past date, unstarted, or expired prayer as completed
     if (status === 'ON_TIME' || status === 'LATE' || status === 'QADA') {
       if (dateKeyToUse > todayDateKey) {
         setBanner({
@@ -256,14 +257,37 @@ export const AppDashboard = () => {
         })
         return
       }
+      if (dateKeyToUse < todayDateKey) {
+        setBanner({
+          type: 'error',
+          message: 'Past prayer records cannot be modified through normal tracking.',
+        })
+        return
+      }
       if (dateKeyToUse === todayDateKey) {
         const matched = prayers.find((p) => p.id === prayerId)
-        if (matched && (matched.isUpcoming || matched.statusBadge === 'upcoming') && !matched.completed) {
-          setBanner({
-            type: 'error',
-            message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
-          })
-          return
+        if (matched) {
+          if (matched.completed) {
+            setBanner({
+              type: 'error',
+              message: `${matched.name} prayer is already completed.`,
+            })
+            return
+          }
+          if ((matched.isUpcoming || matched.statusBadge === 'upcoming')) {
+            setBanner({
+              type: 'error',
+              message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
+            })
+            return
+          }
+          if (matched.isWindowExpired) {
+            setBanner({
+              type: 'error',
+              message: `${matched.name} prayer window has expired. Cannot mark as completed on time.`,
+            })
+            return
+          }
         }
       }
     }
@@ -377,6 +401,7 @@ export const AppDashboard = () => {
       subtitle: status.subtitle,
       windowText: status.windowFormatted,
       isUpcoming: status.isUpcoming,
+      isWindowExpired: status.isWindowExpired,
       availableAtMessage: status.availableAtMessage,
     }
   })
@@ -384,10 +409,24 @@ export const AppDashboard = () => {
   const handleTogglePrayer = (id: string) => {
     const matched = prayers.find((p) => p.id === id)
     if (matched) {
-      if ((matched.statusBadge === 'upcoming' || matched.isUpcoming) && !matched.completed) {
+      if (matched.completed) {
+        setBanner({
+          type: 'success',
+          message: `${matched.name} is already completed. Alhamdulillah!`,
+        })
+        return
+      }
+      if ((matched.statusBadge === 'upcoming' || matched.isUpcoming)) {
         setBanner({
           type: 'error',
           message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
+        })
+        return
+      }
+      if (matched.isWindowExpired) {
+        setBanner({
+          type: 'error',
+          message: `${matched.name} prayer window has expired.`,
         })
         return
       }
@@ -421,6 +460,7 @@ export const AppDashboard = () => {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('gregorian')
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [isQiblaOpen, setIsQiblaOpen] = useState(false)
 
   const handleToggleDeed = (id: string) => {
     setDeeds((prev) =>
@@ -719,6 +759,7 @@ export const AppDashboard = () => {
                   setCalendarMode('hijri')
                   setIsCalendarOpen(true)
                 }}
+                onOpenQibla={() => setIsQiblaOpen(true)}
               />
 
               {/* 2-Column Responsive Dashboard on Laptop/Desktop */}
@@ -761,6 +802,36 @@ export const AppDashboard = () => {
                 {/* Right Column (5 cols): Daily Deeds & Learning */}
                 <div className="lg:col-span-5 space-y-4 mt-4 lg:mt-0">
                   <TodaysDeeds deeds={deeds} onToggleDeed={handleToggleDeed} />
+
+                  {/* Quick Qibla Compass Card */}
+                  <div
+                    onClick={() => setIsQiblaOpen(true)}
+                    className="w-full rounded-[22px] bg-gradient-to-r from-[#0C4535] to-[#082E22] text-white p-3.5 px-4 flex items-center justify-between cursor-pointer hover:shadow-md transition active:scale-[0.99] border border-emerald-900/40"
+                    role="button"
+                    tabIndex={0}
+                    title="Open Qibla Compass (قبلہ نما)"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-[#F5DC96] border border-white/10 flex-shrink-0">
+                        <Compass className="w-5 h-5 stroke-[2]" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-[13.5px] font-bold text-white">Qibla Compass (قبلہ نما)</h4>
+                          <span className="text-[9.5px] font-bold uppercase tracking-wider bg-[#F5DC96] text-[#0C4535] px-1.5 py-0.2 rounded-md">
+                            Live
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-100/80 mt-0.5 truncate">
+                          Face from {city.displayShort || city.name} to Kaaba, Makkah
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-[#F5DC96] text-xs font-bold flex-shrink-0">
+                      <span>Open</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </div>
+                  </div>
 
                   <StrengthenIman onLearnClick={() => setIsLessonOpen(true)} />
                 </div>
@@ -827,6 +898,7 @@ export const AppDashboard = () => {
             <SettingsScreen
               cityName={city.name}
               onOpenLocation={() => setIsLocationOpen(true)}
+              onOpenQibla={() => setIsQiblaOpen(true)}
               calculationMethod={calculationMethod}
               onChangeCalculationMethod={handleChangeCalculationMethod}
               madhab={madhab}
@@ -887,6 +959,7 @@ export const AppDashboard = () => {
           onSelectCity={handleSelectCity}
           onDetectGPS={handleDetectGPS}
           isDetectingGPS={isDetectingGPS}
+          onOpenQibla={() => setIsQiblaOpen(true)}
         />
         <PrayerDetailModal
           isOpen={!!selectedPrayerDetail}
@@ -929,6 +1002,13 @@ export const AppDashboard = () => {
           onLogout={handleSignOut}
           currentCoords={{ lat: city.lat, lng: city.lng }}
           currentCityName={city.name}
+        />
+        <QiblaCompassModal
+          isOpen={isQiblaOpen}
+          onClose={() => setIsQiblaOpen(false)}
+          latitude={city.lat}
+          longitude={city.lng}
+          cityName={city.displayShort || city.name}
         />
       </main>
     </div>

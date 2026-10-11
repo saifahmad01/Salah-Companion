@@ -123,6 +123,13 @@ export async function recordPrayerLog({
     throw err;
   }
 
+  if (evaluation.status === 'missed' && (overrideStatus === 'on_time' || overrideStatus === 'late')) {
+    const err = new Error('Prayer window has already expired. It cannot be marked as completed after expiry.');
+    err.code = 'PRAYER_WINDOW_EXPIRED';
+    err.statusCode = 409;
+    throw err;
+  }
+
   const finalStatus = (overrideStatus && ['on_time', 'late', 'missed'].includes(overrideStatus.toLowerCase()))
     ? overrideStatus.toLowerCase()
     : evaluation.status;

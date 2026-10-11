@@ -494,41 +494,61 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         const initial = prayer.id[0].toUpperCase()
 
                         const matchingCurrent = prayers.find((p) => p.id === prayer.id)
-                        const isUpcomingPrayer =
-                          day.isFuture ||
-                          (day.isToday &&
-                            (matchingCurrent?.isUpcoming || matchingCurrent?.statusBadge === 'upcoming') &&
-                            !prayer.isCompleted)
+                        const isPastDay = day.isPast
+                        const isFutureDay = day.isFuture
+                        const isUpcomingToday =
+                          day.isToday &&
+                          (matchingCurrent?.isUpcoming || matchingCurrent?.statusBadge === 'upcoming') &&
+                          !prayer.isCompleted
+                        const isExpiredToday =
+                          day.isToday &&
+                          !prayer.isCompleted &&
+                          matchingCurrent?.isWindowExpired
+                        const isCompletedPrayer = prayer.isCompleted
+
+                        // Strictly disable modifying past days, future days, unstarted prayers, expired prayers, or already completed prayers
+                        const isMatrixDisabled =
+                          isPastDay ||
+                          isFutureDay ||
+                          isUpcomingToday ||
+                          isExpiredToday ||
+                          isCompletedPrayer
 
                         if (status === 'on_time') {
-                          pillClasses = 'bg-[#0E543F] text-white border-[#0B4433] shadow-2xs hover:bg-[#0B4433]'
+                          pillClasses = 'bg-[#0E543F] text-white border-[#0B4433] shadow-2xs'
                         } else if (status === 'late') {
-                          pillClasses = 'bg-[#D97706] text-white border-[#B45309] shadow-2xs hover:bg-[#B45309]'
+                          pillClasses = 'bg-[#D97706] text-white border-[#B45309] shadow-2xs'
                         } else if (status === 'qada') {
-                          pillClasses = 'bg-[#7C3AED] text-white border-[#6D28D9] shadow-2xs hover:bg-[#6D28D9]'
+                          pillClasses = 'bg-[#7C3AED] text-white border-[#6D28D9] shadow-2xs'
                         } else if (status === 'missed') {
-                          pillClasses = 'bg-[#E11D48] text-white border-[#BE123C] shadow-2xs hover:bg-[#BE123C]'
+                          pillClasses = 'bg-[#E11D48] text-white border-[#BE123C] shadow-2xs'
                         } else if (status === 'pending') {
                           pillClasses = day.isToday
-                            ? 'bg-[#EBF5EF] text-[#0E543F] border-emerald-300 hover:bg-emerald-100'
+                            ? 'bg-[#EBF5EF] text-[#0E543F] border-emerald-300'
                             : 'bg-[#F5F3EC] text-stone-500 border-stone-200'
                         } else {
                           pillClasses = 'bg-[#F9F8F5] text-stone-300 border-stone-200/60'
                         }
 
-                        const tooltip = isUpcomingPrayer
-                          ? day.isFuture
-                            ? `${prayer.name} (${day.day}): Future date - prayer time has not started yet`
-                            : `${prayer.name} (${day.day}): Prayer time has not started yet. Available at ${matchingCurrent?.time || 'prayer time'}.`
-                          : `${prayer.name} (${day.day}): ${status.replace('_', ' ').toUpperCase()} • Click to update status`
+                        const tooltip = isPastDay
+                          ? `${prayer.name} (${day.day}): ${status ? status.replace('_', ' ').toUpperCase() : 'Not offered'} • Historical record (Read-Only)`
+                          : isFutureDay
+                          ? `${prayer.name} (${day.day}): Future date - prayer time has not started yet`
+                          : isUpcomingToday
+                          ? `${prayer.name} (${day.day}): Prayer time has not started yet. Available at ${matchingCurrent?.time || 'prayer time'}.`
+                          : isExpiredToday
+                          ? `${prayer.name} (${day.day}): Window expired`
+                          : isCompletedPrayer
+                          ? `${prayer.name} (${day.day}): Completed (Alhamdulillah)`
+                          : `${prayer.name} (${day.day}): Click to mark completed`
 
                         return (
                           <button
                             key={prayer.id}
                             type="button"
-                            disabled={isUpcomingPrayer}
+                            disabled={isMatrixDisabled}
                             onClick={() => {
-                              if (isUpcomingPrayer) return
+                              if (isMatrixDisabled) return
                               setSelectedModalPrayer({
                                 date: day.date,
                                 dayName: `${day.fullDay || day.day}, ${day.date}`,
@@ -538,9 +558,9 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                               })
                             }}
                             className={`w-5.5 h-5 sm:w-6.5 sm:h-5.5 rounded-md text-[9px] sm:text-[9.5px] font-bold flex items-center justify-center border transition-all ${
-                              isUpcomingPrayer
-                                ? 'opacity-40 cursor-not-allowed bg-stone-100 text-stone-300 border-stone-200/60'
-                                : `active:scale-90 cursor-pointer ${pillClasses}`
+                              isMatrixDisabled
+                                ? 'opacity-70 cursor-not-allowed select-none ' + pillClasses
+                                : `active:scale-90 cursor-pointer hover:ring-1 hover:ring-emerald-500 ${pillClasses}`
                             }`}
                             title={tooltip}
                             aria-label={tooltip}
@@ -678,9 +698,9 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                     {prayer.prayerStatus === 'ON_TIME' ? (
                       <button
                         type="button"
-                        onClick={() => onTogglePrayer(prayer.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E5F4EC] border border-[#BCE1CD] text-[#0C4E3A] text-[11px] font-semibold active:scale-95 transition cursor-pointer"
-                        title="Click to update prayer status"
+                        disabled={true}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E5F4EC] border border-[#BCE1CD] text-[#0C4E3A] text-[11px] font-semibold cursor-not-allowed opacity-90"
+                        title="Completed On Time (Alhamdulillah)"
                       >
                         <span className="w-3.5 h-3.5 rounded-full bg-[#0C4E3A] text-white flex items-center justify-center">
                           <Check className="w-2.5 h-2.5 stroke-[3]" />
@@ -690,9 +710,9 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                     ) : prayer.prayerStatus === 'LATE' ? (
                       <button
                         type="button"
-                        onClick={() => onTogglePrayer(prayer.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FEF3C7] border border-[#FDE68A] text-[#92400E] text-[11px] font-semibold active:scale-95 transition cursor-pointer"
-                        title="Click to update prayer status"
+                        disabled={true}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FEF3C7] border border-[#FDE68A] text-[#92400E] text-[11px] font-semibold cursor-not-allowed opacity-90"
+                        title="Completed Late (Alhamdulillah)"
                       >
                         <span className="w-3.5 h-3.5 rounded-full bg-[#D97706] text-white flex items-center justify-center">
                           <Clock className="w-2.5 h-2.5 stroke-[2.5]" />
@@ -702,9 +722,9 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                     ) : prayer.prayerStatus === 'QADA' ? (
                       <button
                         type="button"
-                        onClick={() => onTogglePrayer(prayer.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F3E8FF] border border-[#E9D5FF] text-[#6B21A8] text-[11px] font-semibold active:scale-95 transition cursor-pointer"
-                        title="Click to update prayer status"
+                        disabled={true}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#F3E8FF] border border-[#E9D5FF] text-[#6B21A8] text-[11px] font-semibold cursor-not-allowed opacity-90"
+                        title="Completed Qada (Alhamdulillah)"
                       >
                         <span className="w-3.5 h-3.5 rounded-full bg-[#7C3AED] text-white flex items-center justify-center">
                           <RotateCcw className="w-2.5 h-2.5 stroke-[2.5]" />
@@ -714,9 +734,9 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                     ) : prayer.prayerStatus === 'MISSED' ? (
                       <button
                         type="button"
-                        onClick={() => onTogglePrayer(prayer.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFE4E6] border border-[#FECDD3] text-[#BE123C] text-[11px] font-semibold active:scale-95 transition cursor-pointer"
-                        title="Click to update prayer status"
+                        disabled={true}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FFE4E6] border border-[#FECDD3] text-[#BE123C] text-[11px] font-semibold cursor-not-allowed opacity-90"
+                        title="Marked Missed"
                       >
                         <span className="w-3.5 h-3.5 rounded-full bg-[#E11D48] text-white flex items-center justify-center">
                           <X className="w-2.5 h-2.5 stroke-[3]" />
@@ -726,8 +746,9 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                     ) : isDone ? (
                       <button
                         type="button"
-                        onClick={() => onTogglePrayer(prayer.id)}
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E5F4EC] border border-[#BCE1CD] text-[#0C4E3A] text-[11px] font-semibold active:scale-95 transition cursor-pointer"
+                        disabled={true}
+                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E5F4EC] border border-[#BCE1CD] text-[#0C4E3A] text-[11px] font-semibold cursor-not-allowed opacity-90"
+                        title="Completed (Alhamdulillah)"
                       >
                         <span className="w-3.5 h-3.5 rounded-full bg-[#0C4E3A] text-white flex items-center justify-center">
                           <Check className="w-2.5 h-2.5 stroke-[3]" />
@@ -743,13 +764,14 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         <span className="w-3.5 h-3.5 rounded-full border border-white flex-shrink-0"></span>
                         <span>Mark as Complete</span>
                       </button>
-                    ) : prayer.statusBadge === 'passed' ? (
+                    ) : prayer.isWindowExpired || prayer.statusBadge === 'passed' ? (
                       <button
                         type="button"
-                        onClick={() => onTogglePrayer(prayer.id)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] text-[10.5px] font-medium active:scale-95 transition cursor-pointer"
+                        disabled={true}
+                        title={`${prayer.name} prayer window has expired.`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-stone-100 text-stone-500 border border-stone-200 text-[10.5px] font-medium cursor-not-allowed opacity-80"
                       >
-                        <span>Log Prayer</span>
+                        <span>Window Expired</span>
                       </button>
                     ) : (
                       <button
@@ -810,23 +832,71 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
 
             {(() => {
               const todayKey = new Date().toISOString().split('T')[0]
+              const isPastDate = selectedModalPrayer.date < todayKey
               const isFutureDate = selectedModalPrayer.date > todayKey
               const match = prayers.find((p) => p.id === selectedModalPrayer.prayerId)
               const isUnstartedToday =
                 selectedModalPrayer.date === todayKey &&
                 (match?.isUpcoming || match?.statusBadge === 'upcoming') &&
                 !match?.completed
-              const isUpcomingBlocked = isFutureDate || isUnstartedToday
+              const isExpiredToday =
+                selectedModalPrayer.date === todayKey &&
+                match?.isWindowExpired &&
+                !match?.completed
+              const isAlreadyCompleted =
+                selectedModalPrayer.date === todayKey &&
+                match?.completed
+
+              const isBlocked =
+                isPastDate ||
+                isFutureDate ||
+                isUnstartedToday ||
+                isExpiredToday ||
+                isAlreadyCompleted
 
               return (
                 <>
-                  {isUpcomingBlocked && (
+                  {isPastDate && (
+                    <div className="p-2.5 rounded-xl bg-stone-100 border border-stone-200 text-stone-800 text-xs flex items-center gap-2 mb-2">
+                      <span className="text-sm">📜</span>
+                      <p className="text-[11px] leading-tight">
+                        Historical record (Read-Only). Past prayers cannot be modified through normal tracking.
+                      </p>
+                    </div>
+                  )}
+
+                  {isFutureDate && (
                     <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 mb-2">
                       <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
                       <p className="text-[11px] leading-tight">
-                        {isFutureDate
-                          ? 'This date is in the future. Prayer time has not started yet.'
-                          : `${selectedModalPrayer.prayerName} prayer time has not started yet. Available at ${match?.time}.`}
+                        This date is in the future. Prayer time has not started yet.
+                      </p>
+                    </div>
+                  )}
+
+                  {isUnstartedToday && (
+                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 mb-2">
+                      <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <p className="text-[11px] leading-tight">
+                        {selectedModalPrayer.prayerName} prayer time has not started yet. Available at {match?.time}.
+                      </p>
+                    </div>
+                  )}
+
+                  {isExpiredToday && (
+                    <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2 mb-2">
+                      <X className="w-4 h-4 text-rose-600 flex-shrink-0" />
+                      <p className="text-[11px] leading-tight">
+                        {selectedModalPrayer.prayerName} prayer window has expired. Cannot mark as completed on time.
+                      </p>
+                    </div>
+                  )}
+
+                  {isAlreadyCompleted && (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2 mb-2">
+                      <Check className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                      <p className="text-[11px] leading-tight">
+                        {selectedModalPrayer.prayerName} is already completed. Alhamdulillah!
                       </p>
                     </div>
                   )}
@@ -834,8 +904,8 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                   <div className="space-y-2 mt-3">
                     <button
                       type="button"
-                      disabled={isUpcomingBlocked}
-                      title={isUpcomingBlocked ? 'Prayer time has not started yet' : undefined}
+                      disabled={isBlocked}
+                      title={isBlocked ? 'Completion is not permitted' : undefined}
                       onClick={() =>
                         handleUpdateWeeklyPrayer(
                           selectedModalPrayer.date,
@@ -844,18 +914,18 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         )
                       }
                       className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition ${
-                        isUpcomingBlocked
+                        isBlocked
                           ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
                           : 'border-[#CEE5D8] bg-[#F2F8F4] hover:bg-[#E5F3EB] cursor-pointer active:scale-98'
                       }`}
                     >
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        isUpcomingBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#0E543F] text-white'
+                        isBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#0E543F] text-white'
                       }`}>
                         <Check className="w-4 h-4 stroke-[3]" />
                       </div>
                       <div>
-                        <span className={`text-xs font-bold block ${isUpcomingBlocked ? 'text-stone-500' : 'text-[#0E543F]'}`}>
+                        <span className={`text-xs font-bold block ${isBlocked ? 'text-stone-500' : 'text-[#0E543F]'}`}>
                           On Time (وقت پر ادا کی)
                         </span>
                         <span className="text-[10px] text-[#4F6A5B]">Offered within the prescribed prayer window</span>
@@ -864,8 +934,8 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
 
                     <button
                       type="button"
-                      disabled={isUpcomingBlocked}
-                      title={isUpcomingBlocked ? 'Prayer time has not started yet' : undefined}
+                      disabled={isBlocked}
+                      title={isBlocked ? 'Completion is not permitted' : undefined}
                       onClick={() =>
                         handleUpdateWeeklyPrayer(
                           selectedModalPrayer.date,
@@ -874,18 +944,18 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         )
                       }
                       className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition ${
-                        isUpcomingBlocked
+                        isBlocked
                           ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
                           : 'border-[#FDE68A] bg-[#FFFBEB] hover:bg-[#FEF3C7] cursor-pointer active:scale-98'
                       }`}
                     >
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        isUpcomingBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#D97706] text-white'
+                        isBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#D97706] text-white'
                       }`}>
                         <Clock className="w-4 h-4 stroke-[2.5]" />
                       </div>
                       <div>
-                        <span className={`text-xs font-bold block ${isUpcomingBlocked ? 'text-stone-500' : 'text-[#92400E]'}`}>
+                        <span className={`text-xs font-bold block ${isBlocked ? 'text-stone-500' : 'text-[#92400E]'}`}>
                           Late (تاخیر سے ادا کی)
                         </span>
                         <span className="text-[10px] text-[#785421]">Offered with delay before end of window</span>
@@ -894,8 +964,8 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
 
                     <button
                       type="button"
-                      disabled={isUpcomingBlocked}
-                      title={isUpcomingBlocked ? 'Prayer time has not started yet' : undefined}
+                      disabled={isBlocked}
+                      title={isBlocked ? 'Completion is not permitted' : undefined}
                       onClick={() =>
                         handleUpdateWeeklyPrayer(
                           selectedModalPrayer.date,
@@ -904,18 +974,18 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         )
                       }
                       className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition ${
-                        isUpcomingBlocked
+                        isBlocked
                           ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
                           : 'border-[#E9D5FF] bg-[#FAF5FF] hover:bg-[#F3E8FF] cursor-pointer active:scale-98'
                       }`}
                     >
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        isUpcomingBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#7C3AED] text-white'
+                        isBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#7C3AED] text-white'
                       }`}>
                         <RotateCcw className="w-4 h-4 stroke-[2.5]" />
                       </div>
                       <div>
-                        <span className={`text-xs font-bold block ${isUpcomingBlocked ? 'text-stone-500' : 'text-[#6B21A8]'}`}>
+                        <span className={`text-xs font-bold block ${isBlocked ? 'text-stone-500' : 'text-[#6B21A8]'}`}>
                           Qada (قضا ادا کی)
                         </span>
                         <span className="text-[10px] text-[#693E8F]">Offered after the prayer window passed</span>
@@ -924,8 +994,8 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
 
                     <button
                       type="button"
-                      disabled={isUpcomingBlocked}
-                      title={isUpcomingBlocked ? 'Prayer time has not started yet' : undefined}
+                      disabled={isBlocked}
+                      title={isBlocked ? 'Completion is not permitted' : undefined}
                       onClick={() =>
                         handleUpdateWeeklyPrayer(
                           selectedModalPrayer.date,
@@ -934,18 +1004,18 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         )
                       }
                       className={`w-full p-2.5 rounded-xl border text-left flex items-center gap-3 transition ${
-                        isUpcomingBlocked
+                        isBlocked
                           ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
                           : 'border-[#FECDD3] bg-[#FFF1F2] hover:bg-[#FFE4E6] cursor-pointer active:scale-98'
                       }`}
                     >
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        isUpcomingBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#E11D48] text-white'
+                        isBlocked ? 'bg-stone-300 text-stone-500' : 'bg-[#E11D48] text-white'
                       }`}>
                         <X className="w-4 h-4 stroke-[3]" />
                       </div>
                       <div>
-                        <span className={`text-xs font-bold block ${isUpcomingBlocked ? 'text-stone-500' : 'text-[#BE123C]'}`}>
+                        <span className={`text-xs font-bold block ${isBlocked ? 'text-stone-500' : 'text-[#BE123C]'}`}>
                           Missed (قضا ہو گئی)
                         </span>
                         <span className="text-[10px] text-[#8C3446]">Window ended without offering</span>

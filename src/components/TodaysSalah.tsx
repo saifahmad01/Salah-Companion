@@ -80,6 +80,8 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
           const isDone = prayer.completed
           const status = prayer.prayerStatus
           const isUpcoming = !isDone && (prayer.statusBadge === 'upcoming' || prayer.isUpcoming)
+          const isExpired = !isDone && !!prayer.isWindowExpired
+          const isDisabled = isUpcoming || isDone || isExpired
 
           const cardBgClass =
             status === 'ON_TIME'
@@ -92,6 +94,8 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
               ? 'bg-[#FFF1F2] border border-[#FECDD3] shadow-[0_1px_3px_rgba(225,29,72,0.06)]'
               : isDone
               ? 'bg-[#EBF5EF] border border-[#CEE5D8]'
+              : isExpired
+              ? 'bg-stone-50 border border-stone-200 opacity-80'
               : prayer.statusBadge === 'active'
               ? 'bg-white border-2 border-emerald-500 shadow-[0_1px_4px_rgba(16,185,129,0.15)]'
               : isUpcoming
@@ -101,17 +105,19 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
           const buttonTitle = isUpcoming
             ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
             : isDone
-            ? `Click to view or correct status for ${prayer.name}`
+            ? `${prayer.name} is already completed.`
+            : isExpired
+            ? `${prayer.name} prayer window has expired.`
             : `Click to log status for ${prayer.name}`
 
           return (
             <button
               key={prayer.id}
               type="button"
-              disabled={isUpcoming}
+              disabled={isDisabled}
               onClick={() => onTogglePrayer(prayer.id)}
               className={`flex flex-col items-center justify-between py-2.5 sm:py-3.5 px-1 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-all duration-200 select-none text-center ${
-                isUpcoming
+                isDisabled
                   ? 'cursor-not-allowed'
                   : 'cursor-pointer active:scale-95'
               } ${cardBgClass}`}
@@ -191,6 +197,13 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
                     <span className="w-2.5 h-2.5 rounded-full border border-emerald-600 bg-emerald-500 animate-pulse flex-shrink-0"></span>
                     <span className="text-[8.5px] font-bold text-[#0E543F] leading-none">
                       Active
+                    </span>
+                  </>
+                ) : prayer.isWindowExpired || prayer.statusBadge === 'passed' ? (
+                  <>
+                    <span className="w-2.5 h-2.5 rounded-full bg-stone-400 flex-shrink-0"></span>
+                    <span className="text-[8.5px] font-bold text-stone-500 leading-none">
+                      Expired
                     </span>
                   </>
                 ) : (

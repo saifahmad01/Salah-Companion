@@ -122,6 +122,18 @@ export async function logPrayerHandler(req, res, next) {
       });
     }
 
+    const endTimeMs = new Date(prayerEndTime).getTime();
+    if (!isNaN(endTimeMs) && nowMs >= endTimeMs && status !== 'missed') {
+      return res.status(409).json({
+        success: false,
+        code: 'PRAYER_WINDOW_EXPIRED',
+        error: `Prayer window for ${prayerName} has already expired.`,
+        message: `Prayer window for ${prayerName} has already expired. It cannot be marked as completed after its window ends.`,
+        availableAt: null,
+        currentTime: new Date(nowMs).toISOString(),
+      });
+    }
+
     const { record, evaluation } = await recordPrayerLog({
       userId,
       prayerName,

@@ -473,11 +473,16 @@ export const PrayerDetailModal: React.FC<{
   }
 
   const isUpcoming = (prayer.statusBadge === 'upcoming' || prayer.isUpcoming) && !prayer.completed
+  const isExpired = !prayer.completed && (prayer.isWindowExpired || prayer.statusBadge === 'passed')
+  const isDone = prayer.completed
+  const isDisabled = isUpcoming || isExpired || isDone
 
-  const statusLabel = prayer.prayerStatus
-    ? prayer.prayerStatus.replace('_', ' ')
-    : prayer.completed
-    ? 'Completed'
+  const statusLabel = isDone
+    ? prayer.prayerStatus
+      ? prayer.prayerStatus.replace('_', ' ')
+      : 'Completed'
+    : isExpired
+    ? 'Window Expired'
     : isUpcoming
     ? `Available at ${prayer.time}`
     : 'Log Status'
@@ -491,8 +496,10 @@ export const PrayerDetailModal: React.FC<{
       ? 'bg-purple-600 text-white'
       : prayer.prayerStatus === 'MISSED'
       ? 'bg-rose-600 text-white'
-      : prayer.completed
+      : isDone
       ? 'bg-white/20 text-white'
+      : isExpired
+      ? 'bg-stone-300 text-stone-700'
       : isUpcoming
       ? 'bg-stone-200 text-stone-600'
       : 'bg-[#F5DC96] text-[#0C4535]'
@@ -520,10 +527,18 @@ export const PrayerDetailModal: React.FC<{
           </div>
           <button
             type="button"
-            disabled={isUpcoming}
-            title={isUpcoming ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.` : undefined}
+            disabled={isDisabled}
+            title={
+              isUpcoming
+                ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
+                : isDone
+                ? `${prayer.name} is already completed.`
+                : isExpired
+                ? `${prayer.name} prayer window has expired.`
+                : undefined
+            }
             onClick={() => {
-              if (isUpcoming) return
+              if (isDisabled) return
               if (onOpenStatusModal) {
                 onOpenStatusModal(prayer)
               } else {
@@ -531,7 +546,7 @@ export const PrayerDetailModal: React.FC<{
               }
             }}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-              isUpcoming
+              isDisabled
                 ? 'opacity-60 cursor-not-allowed bg-stone-200 text-stone-600'
                 : `active:scale-95 cursor-pointer ${statusBadgeColor}`
             }`}
@@ -540,6 +555,16 @@ export const PrayerDetailModal: React.FC<{
               <>
                 <Clock className="w-3.5 h-3.5" />
                 <span>Available at {prayer.time}</span>
+              </>
+            ) : isDone ? (
+              <>
+                <CheckCircle className="w-3.5 h-3.5" />
+                <span>{statusLabel}</span>
+              </>
+            ) : isExpired ? (
+              <>
+                <Clock className="w-3.5 h-3.5" />
+                <span>Window Expired</span>
               </>
             ) : (
               <>
@@ -725,10 +750,18 @@ export const PrayerDetailModal: React.FC<{
         {/* Mark status toggle button */}
         <button
           type="button"
-          disabled={isUpcoming}
-          title={isUpcoming ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.` : undefined}
+          disabled={isDisabled}
+          title={
+            isUpcoming
+              ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
+              : isDone
+              ? `${prayer.name} is already completed.`
+              : isExpired
+              ? `${prayer.name} prayer window has expired.`
+              : undefined
+          }
           onClick={() => {
-            if (isUpcoming) return
+            if (isDisabled) return
             if (onOpenStatusModal) {
               onOpenStatusModal(prayer)
             } else {
@@ -737,7 +770,7 @@ export const PrayerDetailModal: React.FC<{
             }
           }}
           className={`w-full py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 shadow-sm transition ${
-            isUpcoming
+            isDisabled
               ? 'bg-stone-200 text-stone-500 cursor-not-allowed opacity-75'
               : 'bg-[#0C4535] hover:bg-[#083327] active:scale-[0.98] text-white cursor-pointer'
           }`}
@@ -746,6 +779,16 @@ export const PrayerDetailModal: React.FC<{
             <>
               <Clock className="w-4 h-4" />
               <span>Available at {prayer.time} (Time not started)</span>
+            </>
+          ) : isDone ? (
+            <>
+              <CheckCircle className="w-4 h-4" />
+              <span>Completed ({prayer.prayerStatus ? prayer.prayerStatus.replace('_', ' ') : 'Done'})</span>
+            </>
+          ) : isExpired ? (
+            <>
+              <Clock className="w-4 h-4" />
+              <span>Prayer Window Expired</span>
             </>
           ) : (
             <>
@@ -773,6 +816,8 @@ export const PrayerStatusModal: React.FC<{
 
   const current = prayer.prayerStatus
   const isUpcoming = (prayer.statusBadge === 'upcoming' || prayer.isUpcoming) && !prayer.completed
+  const isExpired = !prayer.completed && (prayer.isWindowExpired || prayer.statusBadge === 'passed')
+  const isDone = prayer.completed
 
   const options: Array<{
     status: PrayerStatus
@@ -852,6 +897,19 @@ export const PrayerStatusModal: React.FC<{
           )}
         </div>
 
+        {/* Already Completed Notification Banner */}
+        {isDone && (
+          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2.5">
+            <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+            <div>
+              <p className="font-bold">Prayer already recorded as completed</p>
+              <p className="text-[11px] text-emerald-800 leading-tight mt-0.5">
+                Alhamdulillah! This prayer has been fulfilled for today. Duplicate completion is prevented.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Timing Not Started Warning Banner */}
         {isUpcoming && (
           <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2.5">
@@ -865,19 +923,43 @@ export const PrayerStatusModal: React.FC<{
           </div>
         )}
 
+        {/* Window Expired Warning Banner */}
+        {isExpired && (
+          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2.5">
+            <XCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
+            <div>
+              <p className="font-bold">Prayer window has expired</p>
+              <p className="text-[11px] text-rose-800 leading-tight mt-0.5">
+                The prescribed time for {prayer.name} has passed. On-time completion is no longer available.
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* 4 Status Options Cards */}
         <div className="space-y-2">
           {options.map((opt) => {
             const Icon = opt.icon
             const isSelected = current === opt.status
-            const isDisabled = isUpcoming
+            const isDisabled =
+              isUpcoming ||
+              isDone ||
+              (isExpired && (opt.status === 'ON_TIME' || opt.status === 'LATE'))
+
+            const buttonTitle = isDone
+              ? 'Prayer is already completed'
+              : isUpcoming
+              ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
+              : isExpired && (opt.status === 'ON_TIME' || opt.status === 'LATE')
+              ? `${prayer.name} prayer window has expired`
+              : undefined
 
             return (
               <button
                 key={opt.status}
                 type="button"
                 disabled={isDisabled}
-                title={isDisabled ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.` : undefined}
+                title={buttonTitle}
                 onClick={() => {
                   if (isDisabled) return
                   onSelectStatus(prayer.id, opt.status)
@@ -1185,6 +1267,7 @@ export const LocationModal: React.FC<{
   onSelectCity: (city: CityInfo) => void
   onDetectGPS: () => Promise<void>
   isDetectingGPS: boolean
+  onOpenQibla?: () => void
 }> = ({
   isOpen,
   onClose,
@@ -1197,6 +1280,7 @@ export const LocationModal: React.FC<{
   onSelectCity,
   onDetectGPS,
   isDetectingGPS,
+  onOpenQibla,
 }) => {
   const [searchTerm, setSearchTerm] = React.useState('')
   const [searchResults, setSearchResults] = React.useState<ResolvedLocation[]>([])
@@ -1300,6 +1384,21 @@ export const LocationModal: React.FC<{
             </>
           )}
         </button>
+
+        {/* Qibla Compass Trigger */}
+        {onOpenQibla && (
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
+              onOpenQibla()
+            }}
+            className="w-full py-2.5 px-3 rounded-xl bg-[#EBF5EF] hover:bg-[#DDF0E4] border border-[#CFE5D8] active:scale-[0.98] text-[#0C4535] text-xs font-bold flex items-center justify-center gap-2 shadow-2xs transition cursor-pointer"
+          >
+            <Compass className="w-4 h-4 text-[#0E543F]" />
+            <span>Open Qibla Compass (قبلہ کی سمت دیکھیں)</span>
+          </button>
+        )}
 
         {/* Search Input */}
         <div className="relative">

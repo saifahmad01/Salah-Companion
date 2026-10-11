@@ -1,3 +1,4 @@
+import '../config/env.js';
 import { PrismaClient } from '@prisma/client';
 
 // PrismaClient singleton instance to prevent multiple client instances in development
