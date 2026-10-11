@@ -51,6 +51,71 @@ async function getTransporter() {
 }
 
 /**
+ * Sends email via HTTPS REST API (port 443) to avoid cloud host SMTP port blocking (e.g. Render Free tier)
+ */
+async function sendViaHttpApi({ to, subject, html, text }) {
+  const resendApiKey = process.env.RESEND_API_KEY;
+  if (resendApiKey) {
+    try {
+      const response = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM || 'Salah Companion <onboarding@resend.dev>',
+          to: [to],
+          subject,
+          html,
+          text,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`[EmailService] Delivered via Resend API to ${to}: ${data.id}`);
+        return { success: true, messageId: data.id };
+      }
+      const errBody = await response.text();
+      console.warn(`[EmailService] Resend API rejected: ${errBody}`);
+    } catch (err) {
+      console.warn(`[EmailService] Resend API attempt failed:`, err.message);
+    }
+  }
+
+  const brevoApiKey = process.env.BREVO_API_KEY;
+  if (brevoApiKey) {
+    try {
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: 'Salah Companion', email: process.env.BREVO_FROM || config.emailUser },
+          to: [{ email: to }],
+          subject,
+          htmlContent: html,
+          textContent: text,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`[EmailService] Delivered via Brevo API to ${to}: ${data.messageId}`);
+        return { success: true, messageId: data.messageId };
+      }
+      const errBody = await response.text();
+      console.warn(`[EmailService] Brevo API rejected: ${errBody}`);
+    } catch (err) {
+      console.warn(`[EmailService] Brevo API attempt failed:`, err.message);
+    }
+  }
+
+  return null;
+}
+
+/**
  * Generates the responsive Islamic-themed verification email HTML template
  */
 function getVerificationEmailHtml(name, verificationUrl, directApiUrl) {
@@ -259,6 +324,22 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
   const textContent = `Assalamu Alaikum ${name},\n\nPlease verify your email and activate your Salah Companion account by clicking this link:\n${directApiUrl}\n\nThis will automatically log you into your account and take you directly to your prayer dashboard.\n\nThis link will expire in ${config.verificationTokenTtlHours} hours.\n\nSalah Companion Team`;
 
   try {
+    // 1. First attempt HTTPS REST API if configured (bypasses Render SMTP port blocking)
+    const httpApiResult = await sendViaHttpApi({
+      to,
+      subject: '🕌 Verify your email address - Salah Companion',
+      html: htmlContent,
+      text: textContent,
+    });
+    if (httpApiResult?.success) {
+      return {
+        success: true,
+        messageId: httpApiResult.messageId,
+        previewUrl: directApiUrl,
+        verificationUrl: directApiUrl,
+      };
+    }
+
     const mailOptions = {
       from: config.emailFrom,
       to,
@@ -335,6 +416,12 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
  * Verifies SMTP transport configuration connection
  */
 export async function verifyEmailTransport() {
+  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY) {
+    return {
+      connected: true,
+      provider: process.env.RESEND_API_KEY ? 'resend_http_api' : 'brevo_http_api',
+    };
+  }
   try {
     const mailer = await getTransporter();
     await mailer.verify();
