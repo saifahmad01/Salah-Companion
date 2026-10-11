@@ -694,20 +694,29 @@ export async function initiateGoogleOAuth(req, res) {
  */
 export function getOAuthCallbackUrl(req) {
   const reqHost = req?.get ? req.get('host') : null;
-  const reqProto = (req?.headers && req.headers['x-forwarded-proto']) || req?.protocol || 'https';
+  const isLocal = Boolean(reqHost && (reqHost.includes('localhost') || reqHost.includes('127.0.0.1')));
+  const reqProto = (req?.headers && req.headers['x-forwarded-proto']) || req?.protocol || (isLocal ? 'http' : 'https');
 
-  // In cloud deployments (e.g. Render), ensure callback URL matches the active service host
-  if (reqHost && !reqHost.includes('localhost') && !reqHost.includes('127.0.0.1')) {
-    if (config.googleCallbackUrl && config.googleCallbackUrl.includes(reqHost)) {
+  // 1. In local development, resolve local callback matching active server port
+  if (isLocal) {
+    if (config.googleCallbackUrl && (config.googleCallbackUrl.includes('localhost') || config.googleCallbackUrl.includes('127.0.0.1'))) {
       return config.googleCallbackUrl;
     }
+    return `${reqProto}://${reqHost}/api/auth/google/callback`;
+  }
+
+  // 2. In cloud deployments (e.g. Render), ensure callback URL matches the active service host
+  if (reqHost && config.googleCallbackUrl && config.googleCallbackUrl.includes(reqHost)) {
+    return config.googleCallbackUrl;
+  }
+  if (reqHost) {
     return `${reqProto}://${reqHost}/api/auth/google/callback`;
   }
 
   if (config.googleCallbackUrl) {
     return config.googleCallbackUrl;
   }
-  const baseUrl = config.appUrl ? config.appUrl.replace(/\/+$/, '') : `http://${reqHost || 'localhost:5000'}`;
+  const baseUrl = config.appUrl ? config.appUrl.replace(/\/+$/, '') : 'http://localhost:8080';
   return `${baseUrl}/api/auth/google/callback`;
 }
 
