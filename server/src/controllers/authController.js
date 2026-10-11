@@ -216,6 +216,8 @@ export async function register(req, res, next) {
       });
     }
 
+    const directApiUrl = `${config.appUrl}/api/auth/verify-email?token=${rawToken}`;
+
     // 7. If email delivery failed, return 201 with warning & fallback verification link rather than blocking account creation with 502
     if (!emailResult.success) {
       console.warn(`[AuthController] Email delivery warning for ${normalizedEmail}: ${emailResult.error}`);
@@ -225,8 +227,8 @@ export async function register(req, res, next) {
         requiresEmailVerification: true,
         email: normalizedEmail,
         emailWarning: emailResult.error,
-        previewUrl: emailResult.previewUrl,
-        verificationUrl: emailResult.verificationUrl,
+        previewUrl: directApiUrl,
+        verificationUrl: directApiUrl,
       });
     }
 
@@ -235,8 +237,8 @@ export async function register(req, res, next) {
       message: 'Verification link sent! Please check your email and click the link to activate your account.',
       requiresEmailVerification: true,
       email: normalizedEmail,
-      previewUrl: emailResult.previewUrl,
-      verificationUrl: emailResult.verificationUrl,
+      previewUrl: directApiUrl,
+      verificationUrl: directApiUrl,
     });
   } catch (err) {
     next(err);
@@ -503,11 +505,12 @@ export async function resendVerification(req, res, next) {
       });
     }
 
+    const directApiUrl = `${config.appUrl}/api/auth/verify-email?token=${rawToken}`;
     return res.status(200).json({
       success: true,
       message: `A fresh verification link has been sent to ${normalizedEmail}. Please check your inbox.`,
-      previewUrl: emailResult.previewUrl,
-      verificationUrl: emailResult.verificationUrl,
+      previewUrl: directApiUrl,
+      verificationUrl: directApiUrl,
     });
   } catch (err) {
     next(err);

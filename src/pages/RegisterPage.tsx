@@ -169,18 +169,18 @@ export const RegisterPage: React.FC = () => {
               </div>
 
               {devPreviewUrl && (
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-left">
-                  <p className="text-[11px] text-amber-800 font-medium">
-                    🛠️ <strong>Development Mode:</strong> Click below to view the outgoing email:
+                <div className="p-3.5 bg-emerald-950/40 rounded-xl border border-emerald-500/30 text-left space-y-1.5">
+                  <p className="text-[11px] text-emerald-200 font-medium">
+                    ⚡ <strong>Instant Activation:</strong> Check your email inbox, or verify your account immediately below:
                   </p>
                   <a
                     href={devPreviewUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="mt-1 inline-flex items-center gap-1.5 text-xs text-blue-700 underline font-semibold"
+                    className="inline-flex items-center gap-1.5 text-xs text-amber-300 hover:text-amber-200 underline font-semibold"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Open Email Preview</span>
+                    <span>Verify My Account Now &amp; Launch</span>
                   </a>
                 </div>
               )}
