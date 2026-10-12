@@ -23,6 +23,7 @@ import {
 import { AuthModal } from '../components/AuthModal'
 import { CalendarModal, type CalendarMode } from '../components/CalendarModal'
 import { useAuth } from '../context/AuthContext'
+import { useUnsavedChanges } from '../context/UnsavedChangesContext'
 import { salahApi } from '../services/backendApi'
 import { HADITH_COLLECTION, type DailyHadith } from '../data/hadiths'
 import {
@@ -56,6 +57,7 @@ import { PrayerConfirmationModal } from '../components/PrayerConfirmationModal'
 export const AppDashboard = () => {
   const navigate = useNavigate()
   const { user: currentUser, logout, banner, setBanner } = useAuth()
+  const { promptLogout } = useUnsavedChanges()
   const queryClient = useQueryClient()
 
   // Current active Indian city with address persistence
@@ -794,9 +796,11 @@ export const AppDashboard = () => {
     })
   }
 
-  const handleSignOut = async () => {
-    await logout()
-    navigate('/', { replace: true })
+  const handleSignOut = () => {
+    promptLogout(async () => {
+      await logout()
+      navigate('/', { replace: true })
+    })
   }
 
   return (

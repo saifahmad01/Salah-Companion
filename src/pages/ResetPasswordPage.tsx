@@ -3,11 +3,13 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { Lock, Eye, EyeOff, CheckCircle2, AlertCircle, RefreshCw, ArrowRight, ArrowLeft } from 'lucide-react'
 import { salahApi } from '../services/backendApi'
 import { useAuth } from '../context/AuthContext'
+import { useUnsavedChanges, useUnsavedChangesWarn } from '../context/UnsavedChangesContext'
 
 export const ResetPasswordPage: React.FC = () => {
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { refreshUser } = useAuth()
+  const { confirmAction } = useUnsavedChanges()
 
   const token = searchParams.get('token')
 
@@ -17,6 +19,27 @@ export const ResetPasswordPage: React.FC = () => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(token ? null : 'Missing password reset token. Please check the link in your email.')
   const [success, setSuccess] = useState(false)
+
+  // Track unsaved form entries
+  const isFormDirty = Boolean(password || confirmPassword) && !success && !loading
+  useUnsavedChangesWarn('reset_password_form', isFormDirty, 'New password inputs')
+
+  const handleSafeNavigate = (to: string) => {
+    if (isFormDirty) {
+      confirmAction(
+        {
+          title: 'Discard New Password?',
+          message: 'You have entered a new password. If you leave now, your password will not be changed.',
+          confirmLabel: 'Discard & Leave',
+          cancelLabel: 'Stay on Page',
+          variant: 'unsaved',
+        },
+        () => navigate(to)
+      )
+    } else {
+      navigate(to)
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -70,7 +93,16 @@ export const ResetPasswordPage: React.FC = () => {
 
       {/* Top Header */}
       <header className="relative z-10 px-6 py-6 max-w-6xl mx-auto w-full flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 text-amber-200/90 hover:text-amber-100 transition">
+        <Link
+          to="/"
+          onClick={(e) => {
+            if (isFormDirty) {
+              e.preventDefault()
+              handleSafeNavigate('/')
+            }
+          }}
+          className="flex items-center gap-2 text-amber-200/90 hover:text-amber-100 transition"
+        >
           <div className="w-8 h-8 rounded-full bg-emerald-900/60 border border-amber-400/30 flex items-center justify-center text-sm">
             🕌
           </div>
@@ -78,6 +110,12 @@ export const ResetPasswordPage: React.FC = () => {
         </Link>
         <Link
           to="/login"
+          onClick={(e) => {
+            if (isFormDirty) {
+              e.preventDefault()
+              handleSafeNavigate('/login')
+            }
+          }}
           className="text-xs font-medium text-emerald-200/80 hover:text-white flex items-center gap-1 transition"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -112,7 +150,16 @@ export const ResetPasswordPage: React.FC = () => {
                 <span className="font-medium leading-relaxed">{error}</span>
                 {error.includes('expired') || error.includes('invalid') ? (
                   <p className="pt-1">
-                    <Link to="/forgot-password" className="text-rose-900 underline font-semibold">
+                    <Link
+                      to="/forgot-password"
+                      onClick={(e) => {
+                        if (isFormDirty) {
+                          e.preventDefault()
+                          handleSafeNavigate('/forgot-password')
+                        }
+                      }}
+                      className="text-rose-900 underline font-semibold"
+                    >
                       Click here to request a new reset link →
                     </Link>
                   </p>

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
+import { UnsavedChangesProvider } from './context/UnsavedChangesContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { PublicOnlyRoute } from './components/PublicOnlyRoute'
 import { AdminRoute } from './components/AdminRoute'
@@ -17,8 +18,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <ServerWarmupNotice />
-        <Routes>
+        <UnsavedChangesProvider>
+          <ServerWarmupNotice />
+          <Routes>
           {/* Public Landing Page (accessible to logged-out visitors; authenticated users redirected to /app) */}
           <Route
             path="/"
@@ -97,6 +99,7 @@ export default function App() {
           {/* Fallback to Public Landing Page */}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </UnsavedChangesProvider>
       </AuthProvider>
     </BrowserRouter>
   )
