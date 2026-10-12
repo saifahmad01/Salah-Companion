@@ -135,6 +135,7 @@ async function runTests() {
     prayerName: 'asr',
     prayerStartTime: asrStart.toISOString(),
     prayerEndTime: maghribStart.toISOString(),
+    logTimestamp: new Date(asrStart.getTime() + 10 * 60 * 1000).toISOString(),
     overrideStatus: 'on_time',
   });
 

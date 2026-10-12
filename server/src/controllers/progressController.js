@@ -1,4 +1,5 @@
 import { prisma } from '../db/prisma.js';
+import { isValidDateKey } from '../utils/dateUtils.js';
 
 const PRAYER_NAMES = ['Fajr', 'Dhuhr', 'Asr', 'Maghrib', 'Isha'];
 const PRAYER_ICONS = {
@@ -133,9 +134,13 @@ export async function getProgressSummary(req, res, next) {
     const userId = req.user.id;
     const now = new Date();
     const todayStr = formatDateKey(now);
+    const dateParam = (req.query.startDate || req.query.date);
+    const referenceDate = dateParam && isValidDateKey(dateParam)
+      ? new Date(`${dateParam}T12:00:00Z`)
+      : now;
 
     // 1. Determine "This Week" (Monday through Sunday)
-    const { monday, sunday } = getThisWeekRange(now);
+    const { monday, sunday } = getThisWeekRange(referenceDate);
     const mondayStr = formatDateKey(monday);
     const sundayStr = formatDateKey(sunday);
 

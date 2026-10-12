@@ -1,5 +1,7 @@
 import { prisma } from '../src/db/prisma.js';
 import { query } from '../src/db/connection.js';
+import { isPermanentAdmin, PERMANENT_ADMIN_EMAILS } from '../src/constants/admins.js';
+import { ensurePermanentAdmins } from '../src/services/adminBootstrapService.js';
 
 const command = process.argv[2] || 'list';
 const targetEmail = process.argv[3];
@@ -80,6 +82,11 @@ async function main() {
         process.exit(1);
       }
       const normEmail = targetEmail.trim().toLowerCase();
+
+      if (isPermanentAdmin(normEmail) && process.argv[4] !== '--force') {
+        console.error(`🛡️  PROTECTED: ${normEmail} is a permanent system administrator. Cannot delete without --force flag.`);
+        process.exit(1);
+      }
 
       // Check users table
       const user = await prisma.user.findUnique({ where: { email: normEmail } });
@@ -197,10 +204,19 @@ async function main() {
       break;
     }
 
+    case 'ensure-admins': {
+      console.log('👑 Ensuring permanent administrator accounts exist in the database...');
+      await ensurePermanentAdmins();
+      console.log('✅ Permanent administrator accounts verified successfully:');
+      console.log(PERMANENT_ADMIN_EMAILS.map((e) => `   - ${e}`).join('\n'));
+      break;
+    }
+
     default:
       console.log(`
 Commands available:
   node scripts/dbManager.js list                 - List all users and pending registrations
+  node scripts/dbManager.js ensure-admins        - Guarantee permanent admins exist in database
   node scripts/dbManager.js verify <email>       - Manually mark a user as verified
   node scripts/dbManager.js delete <email>       - Delete a user or pending record
   node scripts/dbManager.js reset-logs <email>   - Clear all prayer logs for a user

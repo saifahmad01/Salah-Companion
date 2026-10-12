@@ -79,6 +79,9 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
         {prayers.map((prayer) => {
           const isDone = prayer.completed
           const status = prayer.prayerStatus
+          const isUpcoming = !isDone && (prayer.statusBadge === 'upcoming' || prayer.isUpcoming)
+          const isExpired = !isDone && !!prayer.isWindowExpired
+          const isDisabled = isUpcoming || isDone || isExpired
 
           const cardBgClass =
             status === 'ON_TIME'
@@ -91,17 +94,35 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
               ? 'bg-[#FFF1F2] border border-[#FECDD3] shadow-[0_1px_3px_rgba(225,29,72,0.06)]'
               : isDone
               ? 'bg-[#EBF5EF] border border-[#CEE5D8]'
+              : isExpired
+              ? 'bg-stone-50 border border-stone-200 opacity-80'
               : prayer.statusBadge === 'active'
               ? 'bg-white border-2 border-emerald-500 shadow-[0_1px_4px_rgba(16,185,129,0.15)]'
+              : isUpcoming
+              ? 'bg-[#FAF8F3] border border-[#EAE6DC] opacity-90'
               : 'bg-white border border-[#EBE7DD] shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-emerald-300'
+
+          const buttonTitle = isUpcoming
+            ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
+            : isDone
+            ? `${prayer.name} is already completed.`
+            : isExpired
+            ? `${prayer.name} prayer window has expired.`
+            : `Click to log status for ${prayer.name}`
 
           return (
             <button
               key={prayer.id}
               type="button"
+              disabled={isDisabled}
               onClick={() => onTogglePrayer(prayer.id)}
-              className={`flex flex-col items-center justify-between py-2.5 sm:py-3.5 px-1 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-all duration-200 select-none text-center cursor-pointer active:scale-95 ${cardBgClass}`}
-              title={`Click to set status for ${prayer.name}`}
+              className={`flex flex-col items-center justify-between py-2.5 sm:py-3.5 px-1 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-all duration-200 select-none text-center ${
+                isDisabled
+                  ? 'cursor-not-allowed'
+                  : 'cursor-pointer active:scale-95'
+              } ${cardBgClass}`}
+              title={buttonTitle}
+              aria-label={buttonTitle}
             >
               {/* Icon Container */}
               <div className="h-5.5 flex items-center justify-center mb-1">
@@ -109,7 +130,9 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
               </div>
 
               {/* Prayer Name */}
-              <span className="text-[12.5px] sm:text-[14px] font-bold text-[#172720] leading-tight">
+              <span className={`text-[12.5px] sm:text-[14px] font-bold leading-tight ${
+                isUpcoming ? 'text-[#3B4D43]' : 'text-[#172720]'
+              }`}>
                 {prayer.name}
               </span>
 
@@ -165,6 +188,10 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
                       Done
                     </span>
                   </>
+                ) : isUpcoming ? (
+                  <span className="text-[8px] sm:text-[9px] font-semibold text-[#63756C] leading-none bg-[#EFECE3] px-1.5 py-0.5 rounded-md border border-[#DED9CC] truncate max-w-full">
+                    At {prayer.time}
+                  </span>
                 ) : prayer.statusBadge === 'active' ? (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full border border-emerald-600 bg-emerald-500 animate-pulse flex-shrink-0"></span>
@@ -172,11 +199,18 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
                       Active
                     </span>
                   </>
+                ) : prayer.isWindowExpired || prayer.statusBadge === 'passed' ? (
+                  <>
+                    <span className="w-2.5 h-2.5 rounded-full bg-stone-400 flex-shrink-0"></span>
+                    <span className="text-[8.5px] font-bold text-stone-500 leading-none">
+                      Expired
+                    </span>
+                  </>
                 ) : (
                   <>
                     <span className="w-2.5 h-2.5 rounded-full border border-[#8F9F95] flex-shrink-0"></span>
                     <span className="text-[8.5px] font-medium text-[#65766E] leading-none">
-                      Upcoming
+                      Past Due
                     </span>
                   </>
                 )}

@@ -104,12 +104,13 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promi
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const error: any = new Error(data.error || response.statusText || 'Request failed');
+    const error: any = new Error(data.message || data.error || response.statusText || 'Request failed');
     error.status = response.status;
     error.code = data.code;
     error.details = data.details;
     error.retryAfter = data.retryAfter;
     error.email = data.email;
+    error.availableAt = data.availableAt;
     throw error;
   }
 
@@ -216,6 +217,53 @@ export interface BackendUserStats {
       loggedAt: string | null;
     }>;
   }>;
+}
+
+export interface WeeklyPrayerItem {
+  id: 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha';
+  name: string;
+  status: 'on_time' | 'late' | 'qada' | 'missed' | 'pending' | 'future';
+  isCompleted: boolean;
+  loggedAt: string | null;
+  logId: string | null;
+  notes?: string | null;
+}
+
+export interface WeeklyPrayerDay {
+  date: string;
+  day: string;
+  fullDay: string;
+  isToday: boolean;
+  isPast: boolean;
+  isFuture: boolean;
+  completedCount: number;
+  total: number;
+  dailyPercentage: number;
+  prayers: WeeklyPrayerItem[];
+}
+
+export interface WeeklyPrayersResponse {
+  success: boolean;
+  data: {
+    startDate: string;
+    endDate: string;
+    weekLabel: string;
+    isCurrentWeek: boolean;
+    prevWeekStartDate: string;
+    nextWeekStartDate: string;
+    statistics: {
+      totalPossiblePrayers: number;
+      completedPrayers: number;
+      weeklyCompletionRate: number;
+      activeDaysCount: number;
+      onTimeCount: number;
+      lateCount: number;
+      qadaCount: number;
+      missedCount: number;
+      pendingCount: number;
+    };
+    days: WeeklyPrayerDay[];
+  };
 }
 
 export const salahApi = {
@@ -381,7 +429,7 @@ export const salahApi = {
     prayerStartTime: string;
     prayerEndTime: string;
     logTimestamp?: string;
-    status?: 'on_time' | 'late' | 'missed';
+    status?: 'on_time' | 'late' | 'qada' | 'missed';
     notes?: string;
   }): Promise<BackendLogResponse> {
     const res = await fetchWithAuth('/prayer/log', {
@@ -394,7 +442,7 @@ export const salahApi = {
   /**
    * Get tailored Hadith based on prayer status
    */
-  async getHadithByStatus(status: 'on_time' | 'late' | 'missed') {
+  async getHadithByStatus(status: 'on_time' | 'late' | 'qada' | 'missed') {
     const res = await fetchWithAuth(`/hadith?status=${status}`);
     return res.data.hadith;
   },
@@ -431,13 +479,55 @@ export const salahApi = {
   async upsertPrayerLog(payload: {
     prayerName: string;
     date?: string;
-    status: 'on_time' | 'late' | 'missed';
+    status: 'on_time' | 'late' | 'qada' | 'missed';
+    latitude?: number;
+    longitude?: number;
+    calculationMethod?: string;
+    madhab?: string;
     notes?: string;
   }) {
     return await fetchWithAuth('/prayers/log', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
+  },
+
+  /**
+   * Fetch 7-day weekly Salah overview for selected week (Protected via JWT)
+   * GET /api/prayers/weekly?startDate=YYYY-MM-DD
+   */
+  async getWeeklyPrayers(params?: { startDate?: string; date?: string }): Promise<WeeklyPrayersResponse> {
+    const search = new URLSearchParams();
+    if (params?.startDate) search.set('startDate', params.startDate);
+    if (params?.date) search.set('date', params.date);
+    const query = search.toString() ? `?${search.toString()}` : '';
+    return await fetchWithAuth(`/prayers/weekly${query}`, { method: 'GET' });
+  },
+
+  /**
+   * Update existing prayer log status or notes
+   * PATCH /api/prayers/log/:id
+   */
+  async updatePrayerLog(
+    id: string,
+    payload: { status?: 'on_time' | 'late' | 'qada' | 'missed'; notes?: string }
+  ) {
+    return await fetchWithAuth(`/prayers/log/${encodeURIComponent(id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /**
+   * Fetch consolidated progress & analytics summary (Protected via JWT)
+   * GET /api/progress/summary?startDate=YYYY-MM-DD
+   */
+  async getProgressSummary(params?: { startDate?: string; date?: string }) {
+    const search = new URLSearchParams();
+    if (params?.startDate) search.set('startDate', params.startDate);
+    if (params?.date) search.set('date', params.date);
+    const query = search.toString() ? `?${search.toString()}` : '';
+    return await fetchWithAuth(`/progress/summary${query}`, { method: 'GET' });
   },
 
   /**

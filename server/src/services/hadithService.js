@@ -91,7 +91,9 @@ const HADITH_DATABASE = {
  */
 export function getHadithByStatus(status = 'on_time', index = null) {
   const normalized = (status || 'on_time').toLowerCase().replace('-', '_');
-  const validStatus = ['on_time', 'late', 'missed'].includes(normalized) ? normalized : 'on_time';
+  let lookupStatus = normalized;
+  if (lookupStatus === 'qada') lookupStatus = 'missed';
+  const validStatus = ['on_time', 'late', 'missed'].includes(lookupStatus) ? lookupStatus : 'on_time';
 
   const list = HADITH_DATABASE[validStatus];
   let selected;

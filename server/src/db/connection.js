@@ -23,8 +23,18 @@ if (isPostgresUrl) {
   // ============================================================================
   const isLocalhostPg = dbUrl.includes('localhost') || dbUrl.includes('127.0.0.1');
 
+  // Strip conflicting sslmode query param so pg.Pool honors ssl: { rejectUnauthorized: false }
+  let cleanDbUrl = dbUrl;
+  try {
+    const parsedUrl = new URL(dbUrl);
+    if (parsedUrl.searchParams.has('sslmode')) {
+      parsedUrl.searchParams.delete('sslmode');
+      cleanDbUrl = parsedUrl.toString();
+    }
+  } catch {}
+
   pool = new Pool({
-    connectionString: dbUrl,
+    connectionString: cleanDbUrl,
     max: parseInt(process.env.DB_POOL_MAX || '10', 10),
     idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT_MS || '30000', 10),
     connectionTimeoutMillis: parseInt(process.env.DB_CONNECT_TIMEOUT_MS || '10000', 10),

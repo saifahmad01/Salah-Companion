@@ -9,20 +9,18 @@ import {
   getGoogleProfileFromCode,
 } from '../services/googleAuthService.js';
 import { config } from '../config/env.js';
+import { isPermanentAdmin } from '../constants/admins.js';
 
 const JWT_SECRET = config.jwtSecret || process.env.JWT_SECRET || 'fallback_secret_for_dev_only_change_in_production';
 const JWT_EXPIRES_IN = config.jwtExpiresIn || process.env.JWT_EXPIRES_IN || '7d';
 const FRONTEND_URL = config.frontendUrl || 'http://localhost:5173';
 
 /**
- * Resolves the active frontend domain dynamically, supporting both Netlify site domains
+ * Resolves the active frontend domain dynamically, prioritizing Cloudflare Workers production domain
  */
 export function getEffectiveFrontendUrl(req) {
   const origin = req?.headers?.origin || req?.headers?.referer;
   if (origin) {
-    if (origin.includes('salahcompanion786.netlify.app') || origin.includes('salahcopmanion786.netlify.app')) {
-      return 'https://salahcompanion786.netlify.app';
-    }
     if (origin.includes('salah-companion.mdsaif.workers.dev') || origin.includes('.workers.dev')) {
       try {
         const parsed = new URL(origin);
@@ -31,11 +29,17 @@ export function getEffectiveFrontendUrl(req) {
         return 'https://salah-companion.mdsaif.workers.dev';
       }
     }
-    if (origin.includes('localhost:5173')) return 'http://localhost:5173';
+    if (origin.includes('localhost:5173') || origin.includes('localhost:3000')) {
+      return origin.includes('localhost:3000') ? 'http://localhost:3000' : 'http://localhost:5173';
+    }
+    // Route any legacy Netlify traffic directly to Cloudflare Workers
+    if (origin.includes('netlify.app')) {
+      return 'https://salah-companion.mdsaif.workers.dev';
+    }
   }
-  const configured = config.frontendUrl || FRONTEND_URL;
-  if (configured) {
-    return configured.replace('salahcopmanion', 'salahcompanion');
+  const configured = (config.frontendUrl || FRONTEND_URL || '').replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+  if (configured && !configured.includes('netlify.app')) {
+    return configured;
   }
   return 'https://salah-companion.mdsaif.workers.dev';
 }
@@ -277,7 +281,7 @@ export async function verifyEmail(req, res, next) {
 
     if (!rawToken || typeof rawToken !== 'string') {
       if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/?verified=false&error=missing_token`);
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=missing_token`);
       }
       return res.status(400).json({
         success: false,
@@ -303,7 +307,7 @@ export async function verifyEmail(req, res, next) {
       if (legacyUser) {
         if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
           if (isBrowserRequest) {
-            return res.redirect(`${frontendUrl}/?verified=false&error=token_expired&email=${encodeURIComponent(legacyUser.email)}`);
+            return res.redirect(`${frontendUrl}/verify-email?verified=false&error=token_expired&email=${encodeURIComponent(legacyUser.email)}`);
           }
           return res.status(400).json({
             success: false,
@@ -326,7 +330,7 @@ export async function verifyEmail(req, res, next) {
         setAuthCookie(res, token);
 
         if (isBrowserRequest) {
-          return res.redirect(`${frontendUrl}/app?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+          return res.redirect(`${frontendUrl}/verify-email?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
         }
         return res.status(200).json({
           success: true,
@@ -338,7 +342,7 @@ export async function verifyEmail(req, res, next) {
       }
 
       if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/?verified=false&error=invalid_or_used_token`);
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=invalid_or_used_token`);
       }
       return res.status(400).json({
         success: false,
@@ -350,7 +354,7 @@ export async function verifyEmail(req, res, next) {
     // 2. Check expiration
     if (new Date() > new Date(pending.expiresAt)) {
       if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/?verified=false&error=token_expired&email=${encodeURIComponent(pending.email)}`);
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=token_expired&email=${encodeURIComponent(pending.email)}`);
       }
       return res.status(400).json({
         success: false,
@@ -375,6 +379,7 @@ export async function verifyEmail(req, res, next) {
             isEmailVerified: true,
             verificationTokenHash: null,
             tokenExpiresAt: null,
+            ...(isPermanentAdmin(pending.email) ? { role: 'ADMIN' } : {}),
           },
         });
       } else {
@@ -383,7 +388,7 @@ export async function verifyEmail(req, res, next) {
             name: pending.name,
             email: pending.email,
             password: pending.password, // already bcrypt-hashed
-            role: 'USER',
+            role: isPermanentAdmin(pending.email) ? 'ADMIN' : 'USER',
             prayerCalculationMethod: pending.prayerCalculationMethod || 'Karachi',
             latitude: pending.latitude,
             longitude: pending.longitude,
@@ -408,7 +413,7 @@ export async function verifyEmail(req, res, next) {
 
     // If request was from browser, redirect user directly to their app dashboard
     if (isBrowserRequest) {
-      return res.redirect(`${frontendUrl}/app?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+      return res.redirect(`${frontendUrl}/verify-email?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
     }
 
     return res.status(200).json({
@@ -636,15 +641,13 @@ export async function initiateGoogleOAuth(req, res) {
     path: '/',
   });
 
-  // Track the frontend origin that initiated the login (Netlify, localhost, etc.)
+  // Track the frontend origin that initiated the login (Cloudflare Workers, localhost, etc.)
   const referer = req.query.redirect_to || req.headers.referer;
   let frontendOrigin = getEffectiveFrontendUrl(req);
   if (referer) {
     try {
       const parsed = new URL(referer);
       if (
-        parsed.origin.endsWith('.netlify.app') ||
-        parsed.origin.endsWith('.onrender.com') ||
         parsed.origin.endsWith('.workers.dev') ||
         parsed.origin.includes('salah-companion.mdsaif.workers.dev') ||
         parsed.origin.includes('localhost') ||
@@ -653,6 +656,9 @@ export async function initiateGoogleOAuth(req, res) {
         frontendOrigin = parsed.origin;
       }
     } catch {}
+  }
+  if (frontendOrigin.includes('netlify.app')) {
+    frontendOrigin = 'https://salah-companion.mdsaif.workers.dev';
   }
 
   res.cookie('oauth_frontend', frontendOrigin, {
@@ -690,20 +696,29 @@ export async function initiateGoogleOAuth(req, res) {
  */
 export function getOAuthCallbackUrl(req) {
   const reqHost = req?.get ? req.get('host') : null;
-  const reqProto = (req?.headers && req.headers['x-forwarded-proto']) || req?.protocol || 'https';
+  const isLocal = Boolean(reqHost && (reqHost.includes('localhost') || reqHost.includes('127.0.0.1')));
+  const reqProto = (req?.headers && req.headers['x-forwarded-proto']) || req?.protocol || (isLocal ? 'http' : 'https');
 
-  // In cloud deployments (e.g. Render), ensure callback URL matches the active service host
-  if (reqHost && !reqHost.includes('localhost') && !reqHost.includes('127.0.0.1')) {
-    if (config.googleCallbackUrl && config.googleCallbackUrl.includes(reqHost)) {
+  // 1. In local development, resolve local callback matching active server port
+  if (isLocal) {
+    if (config.googleCallbackUrl && (config.googleCallbackUrl.includes('localhost') || config.googleCallbackUrl.includes('127.0.0.1'))) {
       return config.googleCallbackUrl;
     }
+    return `${reqProto}://${reqHost}/api/auth/google/callback`;
+  }
+
+  // 2. In cloud deployments (e.g. Render), ensure callback URL matches the active service host
+  if (reqHost && config.googleCallbackUrl && config.googleCallbackUrl.includes(reqHost)) {
+    return config.googleCallbackUrl;
+  }
+  if (reqHost) {
     return `${reqProto}://${reqHost}/api/auth/google/callback`;
   }
 
   if (config.googleCallbackUrl) {
     return config.googleCallbackUrl;
   }
-  const baseUrl = config.appUrl ? config.appUrl.replace(/\/+$/, '') : `http://${reqHost || 'localhost:5000'}`;
+  const baseUrl = config.appUrl ? config.appUrl.replace(/\/+$/, '') : 'http://localhost:8080';
   return `${baseUrl}/api/auth/google/callback`;
 }
 
@@ -716,7 +731,10 @@ export async function handleGoogleOAuthCallback(req, res) {
   const { code, state, error } = req.query;
 
   // Resolve target frontend origin
-  const frontendBase = (req.cookies?.oauth_frontend || getEffectiveFrontendUrl(req)).replace(/\/+$/, '');
+  let frontendBase = (req.cookies?.oauth_frontend || getEffectiveFrontendUrl(req)).replace(/\/+$/, '');
+  if (frontendBase.includes('netlify.app')) {
+    frontendBase = 'https://salah-companion.mdsaif.workers.dev';
+  }
   res.clearCookie('oauth_frontend', { path: '/' });
 
   // Handle user cancellation or Google error
@@ -767,6 +785,7 @@ export async function handleGoogleOAuthCallback(req, res) {
           googleId: user.googleId || googleId,
           avatarUrl: picture || user.avatarUrl,
           isEmailVerified: true,
+          ...(isPermanentAdmin(email) ? { role: 'ADMIN' } : {}),
         },
       });
     } else {
@@ -779,7 +798,7 @@ export async function handleGoogleOAuthCallback(req, res) {
           password: null,
           isEmailVerified: true,
           prayerCalculationMethod: 'Karachi',
-          role: 'USER',
+          role: isPermanentAdmin(email) ? 'ADMIN' : 'USER',
         },
       });
     }
@@ -837,6 +856,7 @@ export async function googleAuth(req, res, next) {
           googleId: user.googleId || googleId,
           avatarUrl: picture || user.avatarUrl,
           isEmailVerified: true,
+          ...(isPermanentAdmin(email) ? { role: 'ADMIN' } : {}),
         },
       });
     } else {
@@ -851,7 +871,7 @@ export async function googleAuth(req, res, next) {
           prayerCalculationMethod: prayerCalculationMethod || 'Karachi',
           latitude: latitude ?? null,
           longitude: longitude ?? null,
-          role: 'USER',
+          role: isPermanentAdmin(email) ? 'ADMIN' : 'USER',
         },
       });
     }

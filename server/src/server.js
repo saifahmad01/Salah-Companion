@@ -6,6 +6,7 @@ import { apiRouter } from './routes/index.js';
 import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
 import { db, checkDbHealth } from './db/connection.js';
 import { startNotificationScheduler, stopNotificationScheduler } from './services/notificationScheduler.js';
+import { ensurePermanentAdmins } from './services/adminBootstrapService.js';
 
 const app = express();
 
@@ -37,7 +38,6 @@ const devAllowedOrigins = [
 
 // Production origins
 const prodAllowedOrigins = [
-  'https://salahcompanion786.netlify.app',
   'https://salah-companion.mdsaif.workers.dev',
 ];
 
@@ -74,11 +74,9 @@ app.use(
         }
       }
 
-      // 3. Production profile: allow Netlify and Cloudflare Workers frontend domains
+      // 3. Production profile: allow Cloudflare Workers frontend domains
       if (
         allowedOrigins.includes(origin) ||
-        origin === 'https://salahcompanion786.netlify.app' ||
-        origin.endsWith('.netlify.app') ||
         origin === 'https://salah-companion.mdsaif.workers.dev' ||
         origin.endsWith('.workers.dev')
       ) {
@@ -157,6 +155,11 @@ const server = app.listen(config.port, '0.0.0.0', () => {
 
   // Start background notification scheduler
   startNotificationScheduler();
+
+  // Guarantee permanent administrators exist in database with ADMIN role
+  ensurePermanentAdmins().catch((err) => {
+    console.error('[Server] Admin bootstrap check failed:', err.message);
+  });
 });
 
 // Graceful cleanup on shutdown

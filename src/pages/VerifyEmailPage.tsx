@@ -17,7 +17,7 @@ export const VerifyEmailPage: React.FC = () => {
   const [message, setMessage] = useState('')
 
   // Resend form state
-  const [resendEmail, setResendEmail] = useState('')
+  const [resendEmail, setResendEmail] = useState(searchParams.get('email') || '')
   const [resending, setResending] = useState(false)
   const [resendResult, setResendResult] = useState<string | null>(null)
 
@@ -29,6 +29,24 @@ export const VerifyEmailPage: React.FC = () => {
         await refreshUser()
         setStatus('success')
         setMessage('Your email has been confirmed successfully! Welcome to Salah Companion.')
+        setLoading(false)
+        return
+      }
+
+      if (verifiedParam === 'false') {
+        const errorParam = searchParams.get('error')
+        const emailParam = searchParams.get('email')
+        if (emailParam) setResendEmail(emailParam)
+        setStatus('error')
+        if (errorParam === 'token_expired') {
+          setMessage('This verification link has expired (links are valid for 24 hours). Please request a new verification link below.')
+        } else if (errorParam === 'invalid_or_used_token') {
+          setMessage('This verification link is invalid or has already been used. If your account is already verified, you can sign in directly.')
+        } else if (errorParam === 'missing_token') {
+          setMessage('Verification token is missing. Please check the link in your email.')
+        } else {
+          setMessage(searchParams.get('message') || 'Verification link is invalid or has expired.')
+        }
         setLoading(false)
         return
       }

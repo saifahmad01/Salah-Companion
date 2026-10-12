@@ -40,18 +40,22 @@ import {
 import {
   getDateKey,
   loadPrayerRecords,
+  saveAllPrayerRecords,
   updatePrayerStatus,
   computeWeeklyStats,
   type AllRecords,
 } from '../utils/prayerRecords'
+import { useQueryClient } from '@tanstack/react-query'
 import { reverseGeocodeCoordinates } from '../utils/geocoding'
 import type { PrayerItem, DeedItem, PrayerStatus } from '../types'
-import { LogOut, Volume2, Shield } from 'lucide-react'
+import { LogOut, Volume2, Shield, Compass, ChevronRight } from 'lucide-react'
 import { useSalahNotifications } from '../hooks/useSalahNotifications'
+import { QiblaCompassModal } from '../components/QiblaCompassModal'
 
 export const AppDashboard = () => {
   const navigate = useNavigate()
   const { user: currentUser, logout, banner, setBanner } = useAuth()
+  const queryClient = useQueryClient()
 
   // Current active Indian city with address persistence
   const [city, setCity] = useState<CityInfo>(() => {
@@ -176,6 +180,47 @@ export const AppDashboard = () => {
     loadPrayerRecords()
   )
 
+  // Remote synchronization on user login
+  useEffect(() => {
+    if (currentUser) {
+      salahApi
+        .getWeeklyPrayers()
+        .then((res) => {
+          if (res?.data?.days) {
+            setAllPrayerRecords((prev) => {
+              const next = { ...prev }
+              let changed = false
+              res.data.days.forEach((day) => {
+                if (!next[day.date]) next[day.date] = {}
+                day.prayers.forEach((p) => {
+                  if (p.status && p.status !== 'pending' && p.status !== 'future') {
+                    const mapped: PrayerStatus =
+                      p.status === 'on_time'
+                        ? 'ON_TIME'
+                        : p.status === 'late'
+                        ? 'LATE'
+                        : p.status === 'qada'
+                        ? 'QADA'
+                        : 'MISSED'
+                    if (next[day.date][p.id] !== mapped) {
+                      next[day.date][p.id] = mapped
+                      changed = true
+                    }
+                  }
+                })
+              })
+              if (changed) {
+                saveAllPrayerRecords(next)
+                return next
+              }
+              return prev
+            })
+          }
+        })
+        .catch(() => {})
+    }
+  }, [currentUser])
+
   const todayDateKey = getDateKey(currentTime)
   const todayRecords = allPrayerRecords[todayDateKey] || {}
 
@@ -196,10 +241,61 @@ export const AppDashboard = () => {
     setIsPrayerStatusModalOpen(true)
   }
 
-  const handleSelectPrayerStatus = (prayerId: string, status: PrayerStatus | null) => {
-    const updated = updatePrayerStatus(todayDateKey, prayerId, status)
+  const handleSelectPrayerStatus = (
+    prayerId: string,
+    status: PrayerStatus | null,
+    targetDateKey?: string
+  ) => {
+    const dateKeyToUse = targetDateKey || todayDateKey
+
+    // Strictly forbid marking future date, past date, unstarted, or expired prayer as completed
+    if (status === 'ON_TIME' || status === 'LATE' || status === 'QADA') {
+      if (dateKeyToUse > todayDateKey) {
+        setBanner({
+          type: 'error',
+          message: 'Cannot mark prayer as completed for a future date. Prayer time has not started yet.',
+        })
+        return
+      }
+      if (dateKeyToUse < todayDateKey) {
+        setBanner({
+          type: 'error',
+          message: 'Past prayer records cannot be modified through normal tracking.',
+        })
+        return
+      }
+      if (dateKeyToUse === todayDateKey) {
+        const matched = prayers.find((p) => p.id === prayerId)
+        if (matched) {
+          if (matched.completed) {
+            setBanner({
+              type: 'error',
+              message: `${matched.name} prayer is already completed.`,
+            })
+            return
+          }
+          if ((matched.isUpcoming || matched.statusBadge === 'upcoming')) {
+            setBanner({
+              type: 'error',
+              message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
+            })
+            return
+          }
+          if (matched.isWindowExpired) {
+            setBanner({
+              type: 'error',
+              message: `${matched.name} prayer window has expired. Cannot mark as completed on time.`,
+            })
+            return
+          }
+        }
+      }
+    }
+
+    const previousRecords = { ...allPrayerRecords }
+    const updated = updatePrayerStatus(dateKeyToUse, prayerId, status)
     setAllPrayerRecords(updated)
-    if (selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
+    if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
       setSelectedPrayerDetail({
         ...selectedPrayerDetail,
         prayerStatus: status,
@@ -208,54 +304,64 @@ export const AppDashboard = () => {
     }
 
     // Check for genuine achievement milestone: all 5 prayers completed today
-    const todaysMap = updated[todayDateKey] || {}
-    const allDone = prayerIds.every((pId) => {
-      const s = pId === prayerId ? status : todaysMap[pId]
-      return s === 'ON_TIME' || s === 'LATE' || s === 'QADA'
-    })
+    if (dateKeyToUse === todayDateKey) {
+      const todaysMap = updated[todayDateKey] || {}
+      const allDone = prayerIds.every((pId) => {
+        const s = pId === prayerId ? status : todaysMap[pId]
+        return s === 'ON_TIME' || s === 'LATE' || s === 'QADA'
+      })
 
-    if (allDone) {
-      const milestoneKey = `salah_celebrated_${todayDateKey}`
-      if (!sessionStorage.getItem(milestoneKey)) {
-        sessionStorage.setItem(milestoneKey, 'true')
-        setBanner({
-          type: 'success',
-          message: '🎉 Alhamdulillah! You have completed all 5 prayers today. May Allah accept your salah and bless your day!',
-        })
+      if (allDone) {
+        const milestoneKey = `salah_celebrated_${todayDateKey}`
+        if (!sessionStorage.getItem(milestoneKey)) {
+          sessionStorage.setItem(milestoneKey, 'true')
+          setBanner({
+            type: 'success',
+            message: '🎉 Alhamdulillah! You have completed all 5 prayers today. May Allah accept your salah and bless your day!',
+          })
+        }
       }
     }
 
     // Sync with backend API
     if (status) {
-      const mappedStatus = status === 'ON_TIME' ? 'on_time' : status === 'LATE' ? 'late' : 'missed'
-      const prayerDate = prayerData ? (prayerData as any)[prayerId] : null
-      const nextPrayerMap: Record<string, string> = {
-        fajr: 'sunrise',
-        dhuhr: 'asr',
-        asr: 'maghrib',
-        maghrib: 'isha',
-        isha: 'tomorrowFajr',
-      }
-      const nextKey = nextPrayerMap[prayerId] || prayerId
-      const nextPrayerDate = prayerData ? (prayerData as any)[nextKey] : null
-
-      const startTime = prayerDate instanceof Date && !isNaN(prayerDate.getTime())
-        ? prayerDate.toISOString()
-        : new Date().toISOString()
-      const endTime = nextPrayerDate instanceof Date && !isNaN(nextPrayerDate.getTime())
-        ? nextPrayerDate.toISOString()
-        : new Date(Date.now() + 2 * 3600 * 1000).toISOString()
+      const mappedStatus =
+        status === 'ON_TIME'
+          ? 'on_time'
+          : status === 'LATE'
+          ? 'late'
+          : status === 'QADA'
+          ? 'qada'
+          : 'missed'
 
       salahApi
-        .logPrayer({
-          userId: currentUser?.id || 'guest_user',
+        .upsertPrayerLog({
           prayerName: prayerId,
-          prayerStartTime: startTime,
-          prayerEndTime: endTime,
-          logTimestamp: new Date().toISOString(),
+          date: dateKeyToUse,
           status: mappedStatus as any,
+          latitude: city.lat,
+          longitude: city.lng,
+          calculationMethod,
+          madhab,
         })
-        .catch(() => {})
+        .then(() => {
+          queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+          queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+        })
+        .catch((err: any) => {
+          // Rollback local state on backend rejection (e.g. 409 PRAYER_TIME_NOT_STARTED)
+          setAllPrayerRecords(previousRecords)
+          saveAllPrayerRecords(previousRecords)
+          queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+          queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+          setBanner({
+            type: 'error',
+            message: err?.message || 'Prayer time has not started yet. Cannot mark completed.',
+          })
+        })
+    } else {
+      queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+      queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
     }
   }
 
@@ -294,12 +400,36 @@ export const AppDashboard = () => {
       statusBadgeText: status.statusBadgeText,
       subtitle: status.subtitle,
       windowText: status.windowFormatted,
+      isUpcoming: status.isUpcoming,
+      isWindowExpired: status.isWindowExpired,
+      availableAtMessage: status.availableAtMessage,
     }
   })
 
   const handleTogglePrayer = (id: string) => {
     const matched = prayers.find((p) => p.id === id)
     if (matched) {
+      if (matched.completed) {
+        setBanner({
+          type: 'success',
+          message: `${matched.name} is already completed. Alhamdulillah!`,
+        })
+        return
+      }
+      if ((matched.statusBadge === 'upcoming' || matched.isUpcoming)) {
+        setBanner({
+          type: 'error',
+          message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
+        })
+        return
+      }
+      if (matched.isWindowExpired) {
+        setBanner({
+          type: 'error',
+          message: `${matched.name} prayer window has expired.`,
+        })
+        return
+      }
       handleOpenPrayerStatusModal(matched)
     }
   }
@@ -330,6 +460,7 @@ export const AppDashboard = () => {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('gregorian')
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [isQiblaOpen, setIsQiblaOpen] = useState(false)
 
   const handleToggleDeed = (id: string) => {
     setDeeds((prev) =>
@@ -628,6 +759,7 @@ export const AppDashboard = () => {
                   setCalendarMode('hijri')
                   setIsCalendarOpen(true)
                 }}
+                onOpenQibla={() => setIsQiblaOpen(true)}
               />
 
               {/* 2-Column Responsive Dashboard on Laptop/Desktop */}
@@ -671,6 +803,36 @@ export const AppDashboard = () => {
                 <div className="lg:col-span-5 space-y-4 mt-4 lg:mt-0">
                   <TodaysDeeds deeds={deeds} onToggleDeed={handleToggleDeed} />
 
+                  {/* Quick Qibla Compass Card */}
+                  <div
+                    onClick={() => setIsQiblaOpen(true)}
+                    className="w-full rounded-[22px] bg-gradient-to-r from-[#0C4535] to-[#082E22] text-white p-3.5 px-4 flex items-center justify-between cursor-pointer hover:shadow-md transition active:scale-[0.99] border border-emerald-900/40"
+                    role="button"
+                    tabIndex={0}
+                    title="Open Qibla Compass (قبلہ نما)"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-[#F5DC96] border border-white/10 flex-shrink-0">
+                        <Compass className="w-5 h-5 stroke-[2]" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <h4 className="text-[13.5px] font-bold text-white">Qibla Compass (قبلہ نما)</h4>
+                          <span className="text-[9.5px] font-bold uppercase tracking-wider bg-[#F5DC96] text-[#0C4535] px-1.5 py-0.2 rounded-md">
+                            Live
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-emerald-100/80 mt-0.5 truncate">
+                          Face from {city.displayShort || city.name} to Kaaba, Makkah
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 text-[#F5DC96] text-xs font-bold flex-shrink-0">
+                      <span>Open</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </div>
+                  </div>
+
                   <StrengthenIman onLearnClick={() => setIsLessonOpen(true)} />
                 </div>
               </div>
@@ -694,6 +856,8 @@ export const AppDashboard = () => {
               onToggleMadhab={handleToggleMadhab}
               isGPS={!!city.isGPS}
               coords={{ lat: city.lat, lng: city.lng }}
+              allPrayerRecords={allPrayerRecords}
+              onUpdatePrayerStatus={handleSelectPrayerStatus}
             />
           )}
 
@@ -734,6 +898,7 @@ export const AppDashboard = () => {
             <SettingsScreen
               cityName={city.name}
               onOpenLocation={() => setIsLocationOpen(true)}
+              onOpenQibla={() => setIsQiblaOpen(true)}
               calculationMethod={calculationMethod}
               onChangeCalculationMethod={handleChangeCalculationMethod}
               madhab={madhab}
@@ -794,6 +959,7 @@ export const AppDashboard = () => {
           onSelectCity={handleSelectCity}
           onDetectGPS={handleDetectGPS}
           isDetectingGPS={isDetectingGPS}
+          onOpenQibla={() => setIsQiblaOpen(true)}
         />
         <PrayerDetailModal
           isOpen={!!selectedPrayerDetail}
@@ -836,6 +1002,13 @@ export const AppDashboard = () => {
           onLogout={handleSignOut}
           currentCoords={{ lat: city.lat, lng: city.lng }}
           currentCityName={city.name}
+        />
+        <QiblaCompassModal
+          isOpen={isQiblaOpen}
+          onClose={() => setIsQiblaOpen(false)}
+          latitude={city.lat}
+          longitude={city.lng}
+          cityName={city.displayShort || city.name}
         />
       </main>
     </div>

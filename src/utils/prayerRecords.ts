@@ -103,6 +103,12 @@ export interface WeeklyStats {
   streakDays: number
   bestStreakDays: number
   totalPrayers30Days: number
+  startDate: string
+  endDate: string
+  weekLabel: string
+  prevWeekDate: string
+  nextWeekDate: string
+  isCurrentWeek: boolean
   prayerBreakdown: Array<{
     id: string
     name: string
@@ -114,12 +120,92 @@ export interface WeeklyStats {
     day: string
     dateKey: string
     isToday: boolean
+    isPast: boolean
+    isFuture: boolean
     count: string
+    completedCount: number
+    dailyPercentage: number
     prayers: Array<{
       id: string
+      name: string
       status: PrayerStatus | null
     }>
   }>
+}
+
+/**
+ * Returns clean ISO week boundaries (Mon-Sun) and week metadata for any date string or Date
+ */
+export function getIsoWeekDays(ref: Date | string = new Date()): {
+  monday: Date
+  sunday: Date
+  dates: string[]
+  startDate: string
+  endDate: string
+  prevWeekDate: string
+  nextWeekDate: string
+  weekLabel: string
+} {
+  let d: Date
+  if (typeof ref === 'string') {
+    const [y, m, day] = ref.split('-').map(Number)
+    d = new Date(y, m - 1, day, 12, 0, 0)
+  } else {
+    d = new Date(ref)
+  }
+
+  const dayOfWeek = d.getDay() // 0 = Sun
+  const mondayOffset = (dayOfWeek + 6) % 7
+
+  const monday = new Date(d)
+  monday.setDate(d.getDate() - mondayOffset)
+  monday.setHours(0, 0, 0, 0)
+
+  const sunday = new Date(monday)
+  sunday.setDate(monday.getDate() + 6)
+  sunday.setHours(23, 59, 59, 999)
+
+  const dates: string[] = []
+  for (let i = 0; i < 7; i++) {
+    const temp = new Date(monday)
+    temp.setDate(monday.getDate() + i)
+    dates.push(getDateKey(temp))
+  }
+
+  const prevMon = new Date(monday)
+  prevMon.setDate(monday.getDate() - 7)
+  const prevWeekDate = getDateKey(prevMon)
+
+  const nextMon = new Date(monday)
+  nextMon.setDate(monday.getDate() + 7)
+  const nextWeekDate = getDateKey(nextMon)
+
+  const monthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  ]
+  const mDay = String(monday.getDate()).padStart(2, '0')
+  const sDay = String(sunday.getDate()).padStart(2, '0')
+  const mMonth = monthNames[monday.getMonth()]
+  const sMonth = monthNames[sunday.getMonth()]
+  const mYear = monday.getFullYear()
+  const sYear = sunday.getFullYear()
+
+  const weekLabel =
+    mYear === sYear
+      ? `${mDay} ${mMonth} – ${sDay} ${sMonth} ${sYear}`
+      : `${mDay} ${mMonth} ${mYear} – ${sDay} ${sMonth} ${sYear}`
+
+  return {
+    monday,
+    sunday,
+    dates,
+    startDate: dates[0],
+    endDate: dates[6],
+    prevWeekDate,
+    nextWeekDate,
+    weekLabel,
+  }
 }
 
 /**
@@ -127,7 +213,7 @@ export interface WeeklyStats {
  */
 export function computeWeeklyStats(
   records: AllRecords,
-  currentDate: Date = new Date()
+  currentDate: Date | string = new Date()
 ): WeeklyStats {
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
   const prayerIds = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'] as const
@@ -139,9 +225,11 @@ export function computeWeeklyStats(
     isha: { name: 'Isha', icon: '🌌' },
   }
 
-  const dayOfWeek = currentDate.getDay() // 0 = Sun
-  const mondayOffset = (dayOfWeek + 6) % 7 // days since Monday
-  const todayKey = getDateKey(currentDate)
+  const { dates, startDate, endDate, prevWeekDate, nextWeekDate, weekLabel } =
+    getIsoWeekDays(currentDate)
+
+  const realTodayKey = getDateKey(new Date())
+  const isCurrentWeek = dates.includes(realTodayKey)
 
   let onTimeCount = 0
   let lateCount = 0
@@ -159,18 +247,18 @@ export function computeWeeklyStats(
   const daysOverview: WeeklyStats['daysOverview'] = []
 
   for (let i = 0; i < 7; i++) {
-    const d = new Date(currentDate)
-    d.setDate(currentDate.getDate() - mondayOffset + i)
-    const key = getDateKey(d)
+    const key = dates[i]
     const dayData = records[key] || {}
-    const isToday = key === todayKey
+    const isToday = key === realTodayKey
+    const isPast = key < realTodayKey
+    const isFuture = key > realTodayKey
 
     let dayOffered = 0
-    const dayPrayersList: Array<{ id: string; status: PrayerStatus | null }> = []
+    const dayPrayersList: Array<{ id: string; name: string; status: PrayerStatus | null }> = []
 
     for (const pid of prayerIds) {
       const status = dayData[pid] || null
-      dayPrayersList.push({ id: pid, status })
+      dayPrayersList.push({ id: pid, name: prayerNames[pid].name, status })
 
       if (status === 'ON_TIME') {
         onTimeCount++
@@ -189,22 +277,23 @@ export function computeWeeklyStats(
       }
     }
 
+    const dailyPercentage = Math.round((dayOffered / 5) * 100)
+
     daysOverview.push({
       day: dayNames[i],
       dateKey: key,
       isToday,
+      isPast,
+      isFuture,
       count: `${dayOffered}/5`,
+      completedCount: dayOffered,
+      dailyPercentage,
       prayers: dayPrayersList,
     })
   }
 
   const offeredCount = onTimeCount + lateCount + qadaCount
-  const totalDaysPassed = Math.max(1, mondayOffset + 1)
-  const totalPossibleThisWeek = totalDaysPassed * 5
-  const completionPercent =
-    offeredCount > 0
-      ? Math.min(100, Math.round((offeredCount / Math.max(1, totalPossibleThisWeek)) * 100))
-      : 0
+  const completionPercent = Math.min(100, Math.round((offeredCount / 35) * 100))
 
   const prayerBreakdown = prayerIds.map((pid) => {
     const count = perPrayerCompleted[pid]
@@ -220,11 +309,11 @@ export function computeWeeklyStats(
 
   // Calculate actual consecutive streak days from records
   let streakDays = 0
-  const yesterday = new Date(currentDate)
+  const yesterday = new Date()
   yesterday.setDate(yesterday.getDate() - 1)
   const yesterdayKey = getDateKey(yesterday)
 
-  const hasOfferedToday = Object.values(records[todayKey] || {}).some(
+  const hasOfferedToday = Object.values(records[realTodayKey] || {}).some(
     (s) => s === 'ON_TIME' || s === 'LATE' || s === 'QADA'
   )
   const hasOfferedYesterday = Object.values(records[yesterdayKey] || {}).some(
@@ -232,7 +321,7 @@ export function computeWeeklyStats(
   )
 
   if (hasOfferedToday || hasOfferedYesterday) {
-    let checkDate = new Date(hasOfferedToday ? currentDate : yesterday)
+    let checkDate = new Date(hasOfferedToday ? new Date() : yesterday)
     while (true) {
       const k = getDateKey(checkDate)
       const offered = Object.values(records[k] || {}).some(
@@ -276,12 +365,12 @@ export function computeWeeklyStats(
   }
 
   let totalPrayers30Days = 0
-  const thirtyDaysAgo = new Date(currentDate)
+  const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
   const thirtyDaysAgoStr = getDateKey(thirtyDaysAgo)
 
   for (const [dKey, dObj] of Object.entries(records)) {
-    if (dKey >= thirtyDaysAgoStr && dKey <= todayKey) {
+    if (dKey >= thirtyDaysAgoStr && dKey <= realTodayKey) {
       for (const s of Object.values(dObj)) {
         if (s === 'ON_TIME' || s === 'LATE' || s === 'QADA') {
           totalPrayers30Days++
@@ -301,6 +390,12 @@ export function computeWeeklyStats(
     streakDays,
     bestStreakDays,
     totalPrayers30Days,
+    startDate,
+    endDate,
+    weekLabel,
+    prevWeekDate,
+    nextWeekDate,
+    isCurrentWeek,
     prayerBreakdown,
     daysOverview,
   }

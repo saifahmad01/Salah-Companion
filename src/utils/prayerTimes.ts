@@ -336,9 +336,11 @@ export interface PrayerStatusDetails {
   isActive: boolean
   isUpcoming: boolean
   isPassed: boolean
+  isWindowExpired?: boolean
   statusBadge: 'completed' | 'active' | 'upcoming' | 'passed'
   statusBadgeText: string
   subtitle: string
+  availableAtMessage: string
 }
 
 export function getPrayerStatusDetails(
@@ -372,6 +374,8 @@ export function getPrayerStatusDetails(
   let statusBadgeText = '🕒 Upcoming'
   let subtitle = `Starts in ${formatDuration((startMs - nowMs) / 1000)}`
 
+  const isWindowExpired = isPassed && !isCompleted
+
   if (isCompleted) {
     statusBadge = 'completed'
     statusBadgeText = 'Completed'
@@ -383,14 +387,18 @@ export function getPrayerStatusDetails(
     subtitle = `Time left: ${formatDuration(timeLeftSec)}`
   } else if (isPassed) {
     statusBadge = 'passed'
-    statusBadgeText = 'Missed / Log'
-    subtitle = `Passed at ${timeFormatted}`
+    statusBadgeText = 'Window Expired'
+    subtitle = `Window ended at ${formatPrayerTime(item.end, is24Hour)}`
   } else {
     statusBadge = 'upcoming'
     statusBadgeText = '🕒 Upcoming'
     const startsInSec = Math.max(0, (startMs - nowMs) / 1000)
     subtitle = `Starts in ${formatDuration(startsInSec)}`
   }
+
+  const availableAtMessage = isUpcoming
+    ? `Available at ${timeFormatted}`
+    : 'Available now'
 
   return {
     id: prayerId,
@@ -403,9 +411,11 @@ export function getPrayerStatusDetails(
     isActive,
     isUpcoming,
     isPassed,
+    isWindowExpired,
     statusBadge,
     statusBadgeText,
     subtitle,
+    availableAtMessage,
   }
 }
 
