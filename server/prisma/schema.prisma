@@ -29,6 +29,8 @@ model User {
   verificationTokenHash   String?     @map("verification_token_hash")
   tokenExpiresAt          DateTime?   @map("token_expires_at")
   lastVerificationSentAt  DateTime?   @map("last_verification_sent_at")
+  resetPasswordTokenHash  String?     @map("reset_password_token_hash")
+  resetPasswordExpiresAt  DateTime?   @map("reset_password_expires_at")
   googleId                String?     @unique @map("google_id")
   avatarUrl               String?     @map("avatar_url")
   createdAt               DateTime    @default(now()) @map("created_at")
@@ -40,6 +42,7 @@ model User {
 
   @@index([email])
   @@index([verificationTokenHash])
+  @@index([resetPasswordTokenHash])
   @@map("users")
 }
 

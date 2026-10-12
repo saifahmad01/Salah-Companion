@@ -909,8 +909,8 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                 selectedModalPrayer.date === todayKey &&
                 match?.completed
 
-              const isGeneralBlocked = isPastDate || isFutureDate || isUnstartedToday
-              const isOnTimeBlocked = isGeneralBlocked || isExpiredToday
+              const isGeneralBlocked = isPastDate || isFutureDate
+              const isOnTimeBlocked = isGeneralBlocked
 
               return (
                 <>
@@ -927,25 +927,25 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                     <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 mb-2">
                       <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
                       <p className="text-[11px] leading-tight">
-                        This date is in the future. Prayer time has not started yet.
+                        This date is in the future. Prayer records cannot be logged in advance.
                       </p>
                     </div>
                   )}
 
                   {isUnstartedToday && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <div className="p-2.5 rounded-xl bg-stone-50 border border-stone-200 text-stone-700 text-xs flex items-center gap-2 mb-2">
+                      <Clock className="w-4 h-4 text-stone-500 flex-shrink-0" />
                       <p className="text-[11px] leading-tight">
-                        {selectedModalPrayer.prayerName} prayer time has not started yet. Available at {match?.time}.
+                        {selectedModalPrayer.prayerName} starts at {match?.time}. You can record it anytime during today.
                       </p>
                     </div>
                   )}
 
                   {isExpiredToday && (
-                    <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                    <div className="p-2.5 rounded-xl bg-emerald-50/70 border border-emerald-200/80 text-emerald-950 text-xs flex items-center gap-2 mb-2">
+                      <Clock className="w-4 h-4 text-emerald-700 flex-shrink-0" />
                       <p className="text-[11px] leading-tight">
-                        {selectedModalPrayer.prayerName} preferred window has passed. You may record it as Late, Qada, or Missed.
+                        {selectedModalPrayer.prayerName} window has passed. If offered earlier today, record it as On Time or select Late / Qada.
                       </p>
                     </div>
                   )}

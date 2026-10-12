@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
+import jwt from 'jsonwebtoken';
 import { prisma } from '../src/db/prisma.js';
 import { config } from '../src/config/env.js';
 
@@ -349,18 +350,68 @@ async function runTests() {
   assert.equal(meData.user.email, autoEmail, 'Authenticated user must match verified email');
   console.log(`✓ Test 13 Passed: "Verify My Email" automatically activated account, established session cookie, and redirected to dashboard.`);
 
+  // --------------------------------------------------------------------------
+  // Test 14: Guard Protected Features - Block Unverified User Access
+  // --------------------------------------------------------------------------
+  console.log('\n14. Testing Guard on Protected Features for Unverified User...');
+  const unverifiedEmail = `unverified_access_${timestamp}@example.com`;
+  const unverifiedUser = await prisma.user.create({
+    data: {
+      name: 'Unverified Access Tester',
+      email: unverifiedEmail,
+      password: '$2a$12$dummyhashforunverifiedtestingonly',
+      isEmailVerified: false,
+    },
+  });
+
+  const unverifiedToken = jwt.sign(
+    { id: unverifiedUser.id, email: unverifiedUser.email, role: 'USER' },
+    config.jwtSecret,
+    { expiresIn: '1h' }
+  );
+
+  const blockedRes = await fetch(`${BASE_URL}/api/prayers/today`, {
+    headers: { 'Authorization': `Bearer ${unverifiedToken}` },
+  });
+  assert.equal(blockedRes.status, 403, 'Unverified user must receive 403 Forbidden on protected prayer routes');
+  const blockedData = await blockedRes.json();
+  assert.equal(blockedData.code, 'EMAIL_NOT_VERIFIED', 'Error code must be EMAIL_NOT_VERIFIED');
+  console.log('✓ Test 14 Passed: Protected routes strictly reject unverified users with 403 EMAIL_NOT_VERIFIED.');
+
+  // --------------------------------------------------------------------------
+  // Test 15: Google OAuth Email Verification Claim Auto-Verification
+  // --------------------------------------------------------------------------
+  console.log('\n15. Testing Google OAuth Email Verification Claim Auto-Verification...');
+  const googleRes = await fetch(`${BASE_URL}/api/auth/google`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-test-secret': config.jwtSecret,
+    },
+    body: JSON.stringify({
+      credential: 'mock_direct_google_test',
+      prayerCalculationMethod: 'Karachi',
+      testSecret: config.jwtSecret,
+    }),
+  });
+
+  assert.equal(googleRes.status, 200, `Google OAuth with verified email must succeed (got ${googleRes.status})`);
+  const googleData = await googleRes.json();
+  assert.equal(googleData.user.isEmailVerified, true, 'User must be marked email-verified via trusted Google claim');
+  console.log('✓ Test 15 Passed: Trusted Google OAuth claim authoritatively verifies user email.');
+
   // Cleanup test users from database
   try {
     await prisma.pendingRegistration.deleteMany({
-      where: { email: { in: [testEmail, expiredEmail, autoEmail] } },
+      where: { email: { in: [testEmail, expiredEmail, autoEmail, unverifiedEmail] } },
     });
     await prisma.user.deleteMany({
-      where: { email: { in: [testEmail, expiredEmail, autoEmail] } },
+      where: { email: { in: [testEmail, expiredEmail, autoEmail, unverifiedEmail] } },
     });
     await prisma.$disconnect();
   } catch {}
 
-  console.log('\n🎉 ALL 13 EMAIL & PASSWORD AUTHENTICATION TESTS PASSED SUCCESSFULLY! 🎉\n');
+  console.log('\n🎉 ALL 15 EMAIL & PASSWORD AUTHENTICATION TESTS PASSED SUCCESSFULLY! 🎉\n');
 }
 
 runTests().catch(async (err) => {

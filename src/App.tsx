@@ -7,6 +7,8 @@ import { ServerWarmupNotice } from './components/ServerWarmupNotice'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import AppDashboard from './pages/AppDashboard'
 import AdminDashboard from './pages/AdminDashboard'
@@ -44,6 +46,17 @@ export default function App() {
               </PublicOnlyRoute>
             }
           />
+          <Route
+            path="/forgot-password"
+            element={
+              <PublicOnlyRoute>
+                <ForgotPasswordPage />
+              </PublicOnlyRoute>
+            }
+          />
+
+          {/* Password Reset Callback Route */}
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Email Verification Callback Route */}
           <Route path="/verify-email" element={<VerifyEmailPage />} />

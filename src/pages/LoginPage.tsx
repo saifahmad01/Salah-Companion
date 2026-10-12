@@ -19,6 +19,16 @@ export const LoginPage: React.FC = () => {
   const [resendLoading, setResendLoading] = useState(false)
   const [resendMessage, setResendMessage] = useState<string | null>(null)
   const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
+  const [cooldownSeconds, setCooldownSeconds] = useState(0)
+
+  // Live countdown timer for resend cooldown (Amazon/Flipkart standard)
+  React.useEffect(() => {
+    if (cooldownSeconds <= 0) return
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [cooldownSeconds])
 
   const from = (location.state as any)?.from?.pathname || '/app'
 
@@ -52,17 +62,21 @@ export const LoginPage: React.FC = () => {
 
   const handleResendVerification = async () => {
     const targetEmail = verificationPendingEmail || email.trim().toLowerCase()
-    if (!targetEmail) return
+    if (!targetEmail || cooldownSeconds > 0) return
     setResendLoading(true)
     setResendMessage(null)
     try {
       const res = await salahApi.resendVerification(targetEmail)
       setResendMessage(res.message || 'A fresh verification email has been sent!')
+      setCooldownSeconds(60)
       if (res.previewUrl) {
         setDevPreviewUrl(res.previewUrl)
       }
     } catch (err: any) {
       setError(err.message || 'Failed to resend verification email.')
+      if (err.retryAfter) {
+        setCooldownSeconds(Number(err.retryAfter))
+      }
     } finally {
       setResendLoading(false)
     }
@@ -154,11 +168,21 @@ export const LoginPage: React.FC = () => {
                     <button
                       type="button"
                       onClick={handleResendVerification}
-                      disabled={resendLoading}
-                      className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-900 hover:underline cursor-pointer"
+                      disabled={resendLoading || cooldownSeconds > 0}
+                      className={`inline-flex items-center gap-1.5 text-xs font-bold ${
+                        resendLoading || cooldownSeconds > 0
+                          ? 'text-rose-400 cursor-not-allowed'
+                          : 'text-rose-900 hover:underline cursor-pointer'
+                      }`}
                     >
                       <RefreshCw className={`w-3.5 h-3.5 ${resendLoading ? 'animate-spin' : ''}`} />
-                      <span>{resendLoading ? 'Sending link...' : 'Resend Verification Email'}</span>
+                      <span>
+                        {resendLoading
+                          ? 'Sending link...'
+                          : cooldownSeconds > 0
+                          ? `Resend email in ${cooldownSeconds}s`
+                          : 'Resend Verification Email'}
+                      </span>
                     </button>
                     {resendMessage && (
                       <p className="mt-1 text-xs text-emerald-700 font-semibold">{resendMessage}</p>
@@ -202,6 +226,12 @@ export const LoginPage: React.FC = () => {
             <div>
               <div className="flex items-center justify-between mb-1.5">
                 <label className="block text-xs font-bold text-[#14291F] uppercase tracking-wider">Password</label>
+                <Link
+                  to="/forgot-password"
+                  className="text-xs font-semibold text-[#0C4535] hover:text-[#083327] hover:underline transition"
+                >
+                  Forgot password?
+                </Link>
               </div>
               <div className="relative">
                 <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
