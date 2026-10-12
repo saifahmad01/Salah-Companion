@@ -269,9 +269,9 @@ export function computeWeeklyStats(
     for (const pid of prayerIds) {
       let status = dayData[pid] || null
       if (isDayFriday && pid === 'dhuhr' && !status) {
-        status = (dayData as any)['juma'] || null
+        status = (dayData as any)["jumu'ah"] || (dayData as any)['juma'] || null
       }
-      const displayName = (isDayFriday && pid === 'dhuhr') ? 'Juma' : prayerNames[pid].name
+      const displayName = (isDayFriday && pid === 'dhuhr') ? "Jumu'ah" : prayerNames[pid].name
       dayPrayersList.push({ id: pid, name: displayName, status })
 
       if (status === 'ON_TIME') {

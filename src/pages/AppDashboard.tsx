@@ -631,6 +631,9 @@ export const AppDashboard = () => {
       isUpcoming: status.isUpcoming,
       isWindowExpired: status.isWindowExpired,
       availableAtMessage: status.availableAtMessage,
+      isFridayMidday: status.isFridayMidday,
+      isCustomCongregationTime: status.isCustomCongregationTime,
+      scheduleNote: status.scheduleNote,
     }
   })
 

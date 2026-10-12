@@ -390,6 +390,9 @@ export async function verifyEmail(req, res, next) {
       }
 
       return { code: 'SUCCESS', user: userRecord };
+    }, {
+      maxWait: 15000,
+      timeout: 25000,
     });
 
     if (result.code === 'TOKEN_EXPIRED') {

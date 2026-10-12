@@ -212,11 +212,11 @@ export function calculateIndiaPrayerTimes(
   const tomorrowFajrMs = tomorrowPrayers.fajr.getTime()
 
   const isFriday = now.getDay() === 5
-  const fridayMiddayName: 'Dhuhr' | 'Juma' = isFriday ? 'Juma' : 'Dhuhr'
+  const fridayMiddayName: 'Dhuhr' | "Jumu'ah" = isFriday ? "Jumu'ah" : 'Dhuhr'
 
   let activePrayerId: 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha' | 'none' = 'none'
   let activePrayerName = ''
-  let nextPrayerName: 'Fajr' | 'Dhuhr' | 'Juma' | 'Asr' | 'Maghrib' | 'Isha' = 'Fajr'
+  let nextPrayerName: 'Fajr' | 'Dhuhr' | "Jumu'ah" | 'Asr' | 'Maghrib' | 'Isha' = 'Fajr'
   let nextPrayerTime = todayPrayers.fajr
   let currentPrayerName = 'Isha'
   let windowStartMs = yesterdayPrayers.isha.getTime()
@@ -344,6 +344,9 @@ export interface PrayerStatusDetails {
   statusBadgeText: string
   subtitle: string
   availableAtMessage: string
+  isFridayMidday?: boolean
+  isCustomCongregationTime?: boolean
+  scheduleNote?: string
 }
 
 export function getPrayerStatusDetails(
@@ -356,10 +359,17 @@ export function getPrayerStatusDetails(
 ): PrayerStatusDetails {
   const isFriday = now.getDay() === 5
   let dhuhrStart = prayerTimes.dhuhr
-  let dhuhrName = isFriday ? 'Juma' : 'Dhuhr'
+  let dhuhrName = isFriday ? "Jumu'ah" : 'Dhuhr'
+  const isCustomCongregationTime = Boolean(
+    isFriday &&
+    prayerId === 'dhuhr' &&
+    customJumuahTime &&
+    customJumuahTime !== 'default' &&
+    customJumuahTime.includes(':')
+  )
 
-  if (isFriday && customJumuahTime && customJumuahTime.includes(':')) {
-    const [h, m] = customJumuahTime.split(':').map(Number)
+  if (isCustomCongregationTime) {
+    const [h, m] = customJumuahTime!.split(':').map(Number)
     if (!isNaN(h) && !isNaN(m)) {
       const customDate = new Date(dhuhrStart)
       customDate.setHours(h, m, 0, 0)
@@ -394,6 +404,15 @@ export function getPrayerStatusDetails(
   // Current-day prayers never expire during the active day: users can mark, undo, or correct at any time today
   const isWindowExpired = false
 
+  const isFridayMidday = isFriday && prayerId === 'dhuhr'
+  let scheduleNote: string | undefined = undefined
+
+  if (isFridayMidday) {
+    scheduleNote = isCustomCongregationTime
+      ? 'Mosque Congregation Time'
+      : 'Schedule Reference (Dhuhr Start)'
+  }
+
   if (isCompleted) {
     statusBadge = 'completed'
     statusBadgeText = 'Completed'
@@ -402,16 +421,24 @@ export function getPrayerStatusDetails(
     statusBadge = 'active'
     statusBadgeText = 'Mark as Complete'
     const timeLeftSec = Math.max(0, (endMs - nowMs) / 1000)
-    subtitle = `Time left: ${formatDuration(timeLeftSec)}`
+    subtitle = isFridayMidday
+      ? isCustomCongregationTime
+        ? `Congregation active • Window ends in ${formatDuration(timeLeftSec)}`
+        : `Dhuhr window active • Check mosque for khutbah`
+      : `Time left: ${formatDuration(timeLeftSec)}`
   } else if (isPassed) {
     statusBadge = 'passed'
     statusBadgeText = 'Mark Completion'
-    subtitle = `Available to log • Time was ${formatPrayerTime(item.start, is24Hour)}`
+    subtitle = isFridayMidday && !isCustomCongregationTime
+      ? `Available to log • Dhuhr start was ${formatPrayerTime(item.start, is24Hour)}`
+      : `Available to log • Time was ${formatPrayerTime(item.start, is24Hour)}`
   } else {
     statusBadge = 'upcoming'
     statusBadgeText = '🕒 Upcoming'
     const startsInSec = Math.max(0, (startMs - nowMs) / 1000)
-    subtitle = `Starts in ${formatDuration(startsInSec)}`
+    subtitle = isFridayMidday && !isCustomCongregationTime
+      ? `Dhuhr start in ${formatDuration(startsInSec)} (Check mosque time)`
+      : `Starts in ${formatDuration(startsInSec)}`
   }
 
   const availableAtMessage = isUpcoming
@@ -434,6 +461,9 @@ export function getPrayerStatusDetails(
     statusBadgeText,
     subtitle,
     availableAtMessage,
+    isFridayMidday,
+    isCustomCongregationTime,
+    scheduleNote,
   }
 }
 

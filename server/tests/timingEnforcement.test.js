@@ -499,17 +499,18 @@ async function runTests() {
     const testFriday = new Date('2026-10-16T13:30:00+05:30'); // 2026-10-16 is Friday
     const fridayDateKey = '2026-10-16';
 
-    // 1. GET /api/prayers/today for Friday returns 'Juma' for midday slot
+    // 1. GET /api/prayers/today for Friday returns "Jumu'ah" for midday slot
     const fridayTodayRes = await fetch(`${BASE_URL}/api/prayers/today?date=${fridayDateKey}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(fridayTodayRes.status, 200);
     const fridayTodayJson = await fridayTodayRes.json();
-    const middaySlot = fridayTodayJson.prayers.find((p) => p.prayerName === 'Juma');
-    assert.ok(middaySlot, 'Friday midday slot must be named Juma');
+    const middaySlot = fridayTodayJson.prayers.find((p) => p.prayerName === "Jumu'ah" || p.prayerName === 'Juma');
+    assert.ok(middaySlot, "Friday midday slot must be named Jumu'ah");
+    assert.equal(middaySlot.prayerName, "Jumu'ah", "Midday prayer slot on Friday must be displayed as Jumu'ah");
     assert.equal(fridayTodayJson.prayers.length, 5, 'Must maintain exactly 5 slots on Friday');
 
-    // 2. GET /api/prayers/weekly returns 'Juma' for Friday
+    // 2. GET /api/prayers/weekly returns "Jumu'ah" for Friday
     const fridayWeeklyRes = await fetch(`${BASE_URL}/api/prayers/weekly?startDate=2026-10-12`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -518,7 +519,11 @@ async function runTests() {
     const fridayDay = fridayWeeklyJson.data.days.find((d) => d.date === fridayDateKey);
     assert.ok(fridayDay, 'Friday must exist in weekly breakdown');
     const fridayWeeklyMidday = fridayDay.prayers.find((p) => p.id === 'dhuhr');
-    assert.equal(fridayWeeklyMidday.name, 'Juma', 'Friday weekly midday slot must be named Juma');
+    assert.ok(
+      fridayWeeklyMidday.name === "Jumu'ah" || fridayWeeklyMidday.name === 'Juma',
+      "Friday weekly midday slot must be named Jumu'ah"
+    );
+    assert.equal(fridayWeeklyMidday.name, "Jumu'ah", "Friday weekly midday slot must be named Jumu'ah");
 
     // 3. Logging Juma on Friday
     const logJumaRes = await fetch(`${BASE_URL}/api/prayers/log`, {
