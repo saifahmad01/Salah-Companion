@@ -80,6 +80,15 @@ export const config = {
   verificationTokenTtlHours: parseInt(process.env.VERIFICATION_TOKEN_TTL_HOURS || '24', 10),
   verificationResendCooldownSec: parseInt(process.env.VERIFICATION_RESEND_COOLDOWN_SEC || '60', 10),
 
+  // Transactional Email HTTP API Keys (HTTPS Port 443 - Immune to Cloud Firewall / Render SMTP Blocking)
+  resendApiKey: process.env.RESEND_API_KEY || '',
+  resendFrom: process.env.RESEND_FROM || 'Salah Companion <onboarding@resend.dev>',
+  brevoApiKey: process.env.BREVO_API_KEY || '',
+  brevoFrom: process.env.BREVO_FROM || 'salahcompanion786@gmail.com',
+  sendgridApiKey: process.env.SENDGRID_API_KEY || '',
+  mailgunApiKey: process.env.MAILGUN_API_KEY || '',
+  mailgunDomain: process.env.MAILGUN_DOMAIN || '',
+
   // Google OAuth 2.0 Credentials
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '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',

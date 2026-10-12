@@ -118,6 +118,10 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promi
     error.retryAfter = data.retryAfter;
     error.email = data.email;
     error.availableAt = data.availableAt;
+    error.token = data.token;
+    error.previewUrl = data.previewUrl;
+    error.verificationUrl = data.verificationUrl;
+    error.requiresEmailVerification = data.requiresEmailVerification;
     throw error;
   }
 
@@ -148,6 +152,7 @@ export interface AuthResponse {
   requiresEmailVerification?: boolean;
   email?: string;
   previewUrl?: string;
+  verificationUrl?: string;
 }
 
 export interface BackendPrayerTimes {
@@ -334,7 +339,7 @@ export const salahApi = {
    * Resend email verification link
    * POST /api/auth/resend-verification
    */
-  async resendVerification(email: string): Promise<{ success: boolean; message: string; previewUrl?: string; token?: string }> {
+  async resendVerification(email: string): Promise<{ success: boolean; message: string; previewUrl?: string; verificationUrl?: string; token?: string }> {
     return await fetchWithAuth('/auth/resend-verification', {
       method: 'POST',
       body: JSON.stringify({ email }),

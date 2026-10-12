@@ -92,6 +92,12 @@ export const RegisterPage: React.FC = () => {
         setRegisteredEmail(err.email || email.trim().toLowerCase())
         setDeliveryStatus('failed')
         setResendError(err.message || 'Account created, but verification email could not be delivered yet. Please click Resend.')
+        if (err.token) {
+          setVerificationToken(err.token)
+        }
+        if (err.previewUrl || err.verificationUrl) {
+          setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
+        }
       } else {
         setError(err.message || 'Registration failed. Please check your network connection and try again.')
       }
@@ -113,11 +119,17 @@ export const RegisterPage: React.FC = () => {
       if (res.token) {
         setVerificationToken(res.token)
       }
-      if (res.previewUrl) {
-        setDevPreviewUrl(res.previewUrl)
+      if (res.previewUrl || res.verificationUrl) {
+        setDevPreviewUrl(res.previewUrl || res.verificationUrl || null)
       }
     } catch (err: any) {
       setResendError(err.message || 'Could not resend email.')
+      if (err.token) {
+        setVerificationToken(err.token)
+      }
+      if (err.previewUrl || err.verificationUrl) {
+        setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
+      }
       if (err.retryAfter) {
         setCooldownSeconds(Number(err.retryAfter))
       }

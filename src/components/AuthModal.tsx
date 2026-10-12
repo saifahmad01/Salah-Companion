@@ -191,6 +191,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorCode('EMAIL_DELIVERY_FAILED')
         setVerificationPendingEmail(err.email || email)
         setErrorMessage(err.message || 'Account created, but verification email could not be delivered yet. Please click Resend.')
+        if (err.previewUrl || err.verificationUrl) {
+          setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
+        }
       } else if (err.code) {
         setErrorCode(err.code)
       } else if (err.message?.toLowerCase().includes('already exists')) {
@@ -215,12 +218,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await salahApi.resendVerification(targetEmail)
       setSuccessMessage(res.message || 'Verification email resent successfully.')
-      if (res.previewUrl) {
-        setDevPreviewUrl(res.previewUrl)
+      if (res.previewUrl || res.verificationUrl) {
+        setDevPreviewUrl(res.previewUrl || res.verificationUrl || null)
       }
       setResendCooldown(60) // 60 seconds cooldown
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to resend verification email.')
+      if (err.previewUrl || err.verificationUrl) {
+        setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
+      }
       if (err.retryAfter || (err.message && err.message.match(/wait (\d+) seconds/))) {
         const match = err.message && err.message.match(/wait (\d+) seconds/)
         const waitTime = err.retryAfter || (match ? parseInt(match[1], 10) : 60)
