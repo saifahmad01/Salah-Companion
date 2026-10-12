@@ -629,65 +629,71 @@ export async function deletePrayerLog(req, res, next) {
     const reqNow = getRequestNow(req);
     const todayStr = getLocalDateKey(reqNow, userTimezone);
 
-    let existingLog = null;
     const targetDate = date || todayStr;
     const [y, m, d] = targetDate.split('-').map(Number);
     const isFriday = new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 5;
+
+    // Past / Future date restriction: Only today's records can be undone
+    if (targetDate < todayStr) {
+      return res.status(409).json({
+        success: false,
+        code: 'PRAYER_DATE_NOT_TODAY',
+        error: `Cannot undo or delete past prayer records (${targetDate}). Historical records are read-only.`,
+        message: `Cannot undo or delete past prayer records (${targetDate}). Historical records are read-only.`,
+      });
+    }
+
+    if (targetDate > todayStr) {
+      return res.status(409).json({
+        success: false,
+        code: 'PRAYER_DATE_NOT_TODAY',
+        error: `Cannot modify future prayer records (${targetDate}). Future days are read-only.`,
+        message: `Cannot modify future prayer records (${targetDate}). Future days are read-only.`,
+      });
+    }
+
+    let existingLog = null;
 
     if (id) {
       if (id.length > 20 || id.includes('-')) {
         existingLog = await prisma.prayerLog.findUnique({
           where: { id },
         });
-      } else {
-        const normName = normalizePrayerName(id);
-        if (isFriday && isFridayMiddayPrayer(normName)) {
-          existingLog = await prisma.prayerLog.findFirst({
-            where: {
-              userId,
-              date: targetDate,
-              prayerName: { in: ['Dhuhr', 'Juma', "Jumu'ah", 'Jumuah'] },
-            },
-          });
-        } else {
-          existingLog = await prisma.prayerLog.findUnique({
-            where: {
-              userId_prayerName_date: {
-                userId,
-                prayerName: normName,
-                date: targetDate,
-              },
-            },
-          });
-        }
       }
-    } else if (prayerName) {
-      const normName = normalizePrayerName(prayerName);
-      if (isFriday && isFridayMiddayPrayer(normName)) {
+      if (!existingLog) {
+        const normName = normalizePrayerName(id);
+        const searchNames = isFriday && isFridayMiddayPrayer(normName)
+          ? ['Dhuhr', 'dhuhr', 'DHUHR', 'Juma', 'juma', 'JUMA', "Jumu'ah", "jumu'ah", 'Jumuah', 'jumuah']
+          : [normName, normName.toLowerCase(), normName.toUpperCase()];
         existingLog = await prisma.prayerLog.findFirst({
           where: {
             userId,
             date: targetDate,
-            prayerName: { in: ['Dhuhr', 'Juma', "Jumu'ah", 'Jumuah'] },
-          },
-        });
-      } else {
-        existingLog = await prisma.prayerLog.findUnique({
-          where: {
-            userId_prayerName_date: {
-              userId,
-              prayerName: normName,
-              date: targetDate,
-            },
+            prayerName: { in: searchNames },
           },
         });
       }
+    } else if (prayerName) {
+      const normName = normalizePrayerName(prayerName);
+      const searchNames = isFriday && isFridayMiddayPrayer(normName)
+        ? ['Dhuhr', 'dhuhr', 'DHUHR', 'Juma', 'juma', 'JUMA', "Jumu'ah", "jumu'ah", 'Jumuah', 'jumuah']
+        : [normName, normName.toLowerCase(), normName.toUpperCase()];
+      existingLog = await prisma.prayerLog.findFirst({
+        where: {
+          userId,
+          date: targetDate,
+          prayerName: { in: searchNames },
+        },
+      });
     }
 
+    // Idempotent: If record is not found in database for today, it is already cleared!
     if (!existingLog) {
-      return res.status(404).json({
-        success: false,
-        error: 'Prayer log not found.',
+      return res.status(200).json({
+        success: true,
+        message: `Prayer log for ${id || prayerName || 'prayer'} on ${targetDate} is already cleared.`,
+        data: null,
+        date: targetDate,
       });
     }
 
@@ -699,7 +705,7 @@ export async function deletePrayerLog(req, res, next) {
       });
     }
 
-    // Past / Future date restriction: Only today's records can be undone
+    // Secondary date verification on existing record
     if (existingLog.date < todayStr) {
       return res.status(409).json({
         success: false,
@@ -940,14 +946,46 @@ export async function updatePrayerLog(req, res, next) {
       });
     }
 
-    const existingLog = await prisma.prayerLog.findUnique({
-      where: { id },
-    });
+    const userTimezone = await resolveUserTimezone(userId, req, prisma);
+    const reqNow = getRequestNow(req);
+    const todayStr = getLocalDateKey(reqNow, userTimezone);
+
+    let existingLog = null;
+    if (id.length > 20 || id.includes('-')) {
+      existingLog = await prisma.prayerLog.findUnique({
+        where: { id },
+      });
+    }
 
     if (!existingLog) {
-      return res.status(404).json({
-        success: false,
-        error: 'Prayer log not found.',
+      const normName = normalizePrayerName(id);
+      const searchNames = [normName, normName.toLowerCase(), normName.toUpperCase()];
+      existingLog = await prisma.prayerLog.findFirst({
+        where: {
+          userId,
+          date: todayStr,
+          prayerName: { in: searchNames },
+        },
+      });
+    }
+
+    if (!existingLog) {
+      // Auto-upsert new prayer log if not exists yet
+      const normName = normalizePrayerName(id) || id;
+      const created = await prisma.prayerLog.create({
+        data: {
+          userId,
+          prayerName: normName,
+          date: todayStr,
+          status: status || 'on_time',
+          notes: typeof notes !== 'undefined' ? notes : null,
+          loggedAt: reqNow,
+        },
+      });
+      return res.status(200).json({
+        success: true,
+        message: `Prayer log for ${created.prayerName} on ${created.date} created successfully.`,
+        data: created,
       });
     }
 
@@ -958,9 +996,6 @@ export async function updatePrayerLog(req, res, next) {
       });
     }
 
-    const userTimezone = await resolveUserTimezone(userId, req, prisma);
-    const reqNow = getRequestNow(req);
-    const todayStr = getLocalDateKey(reqNow, userTimezone);
 
     // Strict date restriction: only today's records can be edited
     if (existingLog.date !== todayStr) {

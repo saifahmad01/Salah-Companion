@@ -493,30 +493,43 @@ export const AppDashboard = () => {
     if (!status) {
       const matched = prayers.find((p) => p.id === prayerId)
 
+      const finalizeUndo = () => {
+        const updated = updatePrayerStatus(dateKeyToUse, prayerId, null)
+        setAllPrayerRecords(updated)
+        if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
+          setSelectedPrayerDetail({
+            ...selectedPrayerDetail,
+            prayerStatus: null,
+            completed: false,
+          })
+        }
+        queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+        queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+        setBanner({
+          type: 'success',
+          message: `${matched?.name || prayerId} completion has been undone.`,
+        })
+      }
+
       salahApi
         .deletePrayerLog(prayerId, dateKeyToUse)
         .then(() => {
-          const updated = updatePrayerStatus(dateKeyToUse, prayerId, null)
-          setAllPrayerRecords(updated)
-          if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
-            setSelectedPrayerDetail({
-              ...selectedPrayerDetail,
-              prayerStatus: null,
-              completed: false,
-            })
-          }
-          queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
-          queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
-          setBanner({
-            type: 'success',
-            message: `${matched?.name || prayerId} completion has been undone.`,
-          })
+          finalizeUndo()
         })
         .catch((err: any) => {
-          setBanner({
-            type: 'error',
-            message: err?.message || 'Failed to undo prayer completion.',
-          })
+          const errMsg = err?.message || ''
+          const isIgnorable =
+            errMsg.toLowerCase().includes('not found') ||
+            errMsg.toLowerCase().includes('already cleared') ||
+            errMsg.toLowerCase().includes('404')
+          if (isIgnorable) {
+            finalizeUndo()
+          } else {
+            setBanner({
+              type: 'error',
+              message: errMsg || 'Failed to undo prayer completion.',
+            })
+          }
         })
       return
     }
