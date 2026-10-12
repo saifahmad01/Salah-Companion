@@ -816,7 +816,6 @@ export const PrayerStatusModal: React.FC<{
 
   const current = prayer.prayerStatus
   const isUpcoming = (prayer.statusBadge === 'upcoming' || prayer.isUpcoming) && !prayer.completed
-  const isExpired = !prayer.completed && (prayer.isWindowExpired || prayer.statusBadge === 'passed')
   const isDone = prayer.completed
 
   const options: Array<{
@@ -902,9 +901,9 @@ export const PrayerStatusModal: React.FC<{
           <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs flex items-center gap-2.5">
             <CheckCircle className="w-4 h-4 text-emerald-600 flex-shrink-0" />
             <div>
-              <p className="font-bold">Prayer already recorded as completed</p>
+              <p className="font-bold">Prayer recorded as completed</p>
               <p className="text-[11px] text-emerald-800 leading-tight mt-0.5">
-                Alhamdulillah! This prayer has been fulfilled for today. Duplicate completion is prevented.
+                Alhamdulillah! You can update the status or undo completion at any time today.
               </p>
             </div>
           </div>
@@ -923,35 +922,15 @@ export const PrayerStatusModal: React.FC<{
           </div>
         )}
 
-        {/* Window Expired Warning Banner */}
-        {isExpired && (
-          <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2.5">
-            <XCircle className="w-4 h-4 text-rose-600 flex-shrink-0" />
-            <div>
-              <p className="font-bold">Prayer window has expired</p>
-              <p className="text-[11px] text-rose-800 leading-tight mt-0.5">
-                The prescribed time for {prayer.name} has passed. On-time completion is no longer available.
-              </p>
-            </div>
-          </div>
-        )}
-
         {/* 4 Status Options Cards */}
         <div className="space-y-2">
           {options.map((opt) => {
             const Icon = opt.icon
             const isSelected = current === opt.status
-            const isDisabled =
-              isUpcoming ||
-              isDone ||
-              (isExpired && (opt.status === 'ON_TIME' || opt.status === 'LATE'))
+            const isDisabled = isUpcoming
 
-            const buttonTitle = isDone
-              ? 'Prayer is already completed'
-              : isUpcoming
+            const buttonTitle = isUpcoming
               ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
-              : isExpired && (opt.status === 'ON_TIME' || opt.status === 'LATE')
-              ? `${prayer.name} prayer window has expired`
               : undefined
 
             return (
@@ -1019,14 +998,15 @@ export const PrayerStatusModal: React.FC<{
         {current && (
           <button
             type="button"
+            title="Undo completion / Mark incomplete for today"
             onClick={() => {
               onSelectStatus(prayer.id, null)
               onClose()
             }}
             className="w-full py-2.5 rounded-xl border border-stone-300 hover:bg-stone-100 text-stone-600 text-xs font-semibold flex items-center justify-center gap-1.5 transition cursor-pointer active:scale-98"
           >
-            <Trash2 className="w-3.5 h-3.5" />
-            <span>Reset / Mark Incomplete (غیر مکمل کریں)</span>
+            <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+            <span>Undo Completion / Mark Incomplete (منسوخ کریں)</span>
           </button>
         )}
       </div>

@@ -62,7 +62,7 @@ export interface ComputedPrayers {
   tomorrowFajr: Date
   activePrayerId: 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha' | 'none'
   activePrayerName: string
-  nextPrayerName: 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha'
+  nextPrayerName: 'Fajr' | 'Dhuhr' | 'Juma' | "Jumu'ah" | 'Asr' | 'Maghrib' | 'Isha'
   nextPrayerTime: Date
   currentPrayerName: string
   timeRemainingSeconds: number
@@ -211,9 +211,12 @@ export function calculateIndiaPrayerTimes(
   const ishaMs = todayPrayers.isha.getTime()
   const tomorrowFajrMs = tomorrowPrayers.fajr.getTime()
 
+  const isFriday = now.getDay() === 5
+  const fridayMiddayName: 'Dhuhr' | 'Juma' = isFriday ? 'Juma' : 'Dhuhr'
+
   let activePrayerId: 'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha' | 'none' = 'none'
   let activePrayerName = ''
-  let nextPrayerName: 'Fajr' | 'Dhuhr' | 'Asr' | 'Maghrib' | 'Isha' = 'Fajr'
+  let nextPrayerName: 'Fajr' | 'Dhuhr' | 'Juma' | 'Asr' | 'Maghrib' | 'Isha' = 'Fajr'
   let nextPrayerTime = todayPrayers.fajr
   let currentPrayerName = 'Isha'
   let windowStartMs = yesterdayPrayers.isha.getTime()
@@ -233,7 +236,7 @@ export function calculateIndiaPrayerTimes(
     activePrayerId = 'fajr'
     activePrayerName = 'Fajr'
     currentPrayerName = 'Fajr'
-    nextPrayerName = 'Dhuhr'
+    nextPrayerName = fridayMiddayName
     nextPrayerTime = todayPrayers.dhuhr
     windowStartMs = fajrMs
     windowEndMs = sunriseMs
@@ -242,15 +245,15 @@ export function calculateIndiaPrayerTimes(
     activePrayerId = 'none'
     activePrayerName = 'Sunrise'
     currentPrayerName = 'Sunrise'
-    nextPrayerName = 'Dhuhr'
+    nextPrayerName = fridayMiddayName
     nextPrayerTime = todayPrayers.dhuhr
     windowStartMs = sunriseMs
     windowEndMs = dhuhrMs
   } else if (nowMs < asrMs) {
-    // Within Dhuhr window
+    // Within Dhuhr / Jumu'ah window
     activePrayerId = 'dhuhr'
-    activePrayerName = 'Dhuhr'
-    currentPrayerName = 'Dhuhr'
+    activePrayerName = fridayMiddayName
+    currentPrayerName = fridayMiddayName
     nextPrayerName = 'Asr'
     nextPrayerTime = todayPrayers.asr
     windowStartMs = dhuhrMs
@@ -348,11 +351,25 @@ export function getPrayerStatusDetails(
   prayerTimes: ComputedPrayers,
   now: Date,
   isCompleted: boolean,
-  is24Hour: boolean = false
+  is24Hour: boolean = false,
+  customJumuahTime?: string
 ): PrayerStatusDetails {
+  const isFriday = now.getDay() === 5
+  let dhuhrStart = prayerTimes.dhuhr
+  let dhuhrName = isFriday ? 'Juma' : 'Dhuhr'
+
+  if (isFriday && customJumuahTime && customJumuahTime.includes(':')) {
+    const [h, m] = customJumuahTime.split(':').map(Number)
+    if (!isNaN(h) && !isNaN(m)) {
+      const customDate = new Date(dhuhrStart)
+      customDate.setHours(h, m, 0, 0)
+      dhuhrStart = customDate
+    }
+  }
+
   const map: Record<string, { name: string; start: Date; end: Date }> = {
     fajr: { name: 'Fajr', start: prayerTimes.fajr, end: prayerTimes.sunrise },
-    dhuhr: { name: 'Dhuhr', start: prayerTimes.dhuhr, end: prayerTimes.asr },
+    dhuhr: { name: dhuhrName, start: dhuhrStart, end: prayerTimes.asr },
     asr: { name: 'Asr', start: prayerTimes.asr, end: prayerTimes.maghrib },
     maghrib: { name: 'Maghrib', start: prayerTimes.maghrib, end: prayerTimes.isha },
     isha: { name: 'Isha', start: prayerTimes.isha, end: prayerTimes.tomorrowFajr },
@@ -374,7 +391,8 @@ export function getPrayerStatusDetails(
   let statusBadgeText = '🕒 Upcoming'
   let subtitle = `Starts in ${formatDuration((startMs - nowMs) / 1000)}`
 
-  const isWindowExpired = isPassed && !isCompleted
+  // Current-day prayers never expire during the active day: users can mark, undo, or correct at any time today
+  const isWindowExpired = false
 
   if (isCompleted) {
     statusBadge = 'completed'
@@ -387,8 +405,8 @@ export function getPrayerStatusDetails(
     subtitle = `Time left: ${formatDuration(timeLeftSec)}`
   } else if (isPassed) {
     statusBadge = 'passed'
-    statusBadgeText = 'Window Expired'
-    subtitle = `Window ended at ${formatPrayerTime(item.end, is24Hour)}`
+    statusBadgeText = 'Mark Completion'
+    subtitle = `Available to log • Time was ${formatPrayerTime(item.start, is24Hour)}`
   } else {
     statusBadge = 'upcoming'
     statusBadgeText = '🕒 Upcoming'

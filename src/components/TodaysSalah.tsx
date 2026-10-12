@@ -80,8 +80,8 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
           const isDone = prayer.completed
           const status = prayer.prayerStatus
           const isUpcoming = !isDone && (prayer.statusBadge === 'upcoming' || prayer.isUpcoming)
-          const isExpired = !isDone && !!prayer.isWindowExpired
-          const isDisabled = isUpcoming || isDone || isExpired
+          // Active-day Salah: Users can mark, undo, or correct at any time during current day, even after individual prayer time has passed
+          const isDisabled = isUpcoming
 
           const cardBgClass =
             status === 'ON_TIME'
@@ -94,10 +94,10 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
               ? 'bg-[#FFF1F2] border border-[#FECDD3] shadow-[0_1px_3px_rgba(225,29,72,0.06)]'
               : isDone
               ? 'bg-[#EBF5EF] border border-[#CEE5D8]'
-              : isExpired
-              ? 'bg-stone-50 border border-stone-200 opacity-80'
               : prayer.statusBadge === 'active'
               ? 'bg-white border-2 border-emerald-500 shadow-[0_1px_4px_rgba(16,185,129,0.15)]'
+              : prayer.statusBadge === 'passed'
+              ? 'bg-white border border-amber-300/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-emerald-400'
               : isUpcoming
               ? 'bg-[#FAF8F3] border border-[#EAE6DC] opacity-90'
               : 'bg-white border border-[#EBE7DD] shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-emerald-300'
@@ -105,9 +105,7 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
           const buttonTitle = isUpcoming
             ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
             : isDone
-            ? `${prayer.name} is already completed.`
-            : isExpired
-            ? `${prayer.name} prayer window has expired.`
+            ? `${prayer.name} is completed. Click to manage or undo at any time today.`
             : `Click to log status for ${prayer.name}`
 
           return (

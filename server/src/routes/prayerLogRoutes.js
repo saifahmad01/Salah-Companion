@@ -35,7 +35,9 @@ prayerLogRouter.get('/analytics', getPrayerAnalytics);
 prayerLogRouter.patch('/log/:id', updatePrayerLog);
 prayerLogRouter.patch('/:id', updatePrayerLog);
 
-// DELETE /api/prayers/log/:id (or /api/prayers/:id) - Delete/reset prayer log (ownership verified)
+// DELETE /api/prayers/log/:id (or /api/prayers/:id, /api/prayers/log, /api/prayers) - Delete/reset prayer log (ownership verified)
 prayerLogRouter.delete('/log/:id', deletePrayerLog);
 prayerLogRouter.delete('/:id', deletePrayerLog);
+prayerLogRouter.delete('/log', deletePrayerLog);
+prayerLogRouter.delete('/', deletePrayerLog);
 

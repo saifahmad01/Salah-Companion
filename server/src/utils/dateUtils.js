@@ -5,11 +5,81 @@
  */
 
 /**
- * Returns formatted YYYY-MM-DD string from a Date or date string
- * @param {Date|string} [date]
+ * Returns formatted YYYY-MM-DD string for a specific IANA timezone.
+ * Uses Intl.DateTimeFormat with 'en-CA' (standard ISO YYYY-MM-DD output).
+ * @param {Date} [date]
+ * @param {string} [timeZone='Asia/Kolkata']
  * @returns {string}
  */
-export function formatDateKey(date = new Date()) {
+export function getLocalDateKey(date = new Date(), timeZone = 'Asia/Kolkata') {
+  const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+  const tz = (timeZone && typeof timeZone === 'string') ? timeZone : 'Asia/Kolkata';
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  } catch {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(d);
+  }
+}
+
+/**
+ * Resolves the user's configured IANA timezone in order of priority:
+ * 1. Explicit timezone parameter from request (header 'x-timezone', query.timezone, or body.timezone)
+ * 2. User's saved timezone from NotificationPreference in the database
+ * 3. Default fallback: 'Asia/Kolkata'
+ * @param {string} userId
+ * @param {object} [req]
+ * @param {object} [prismaClient]
+ * @returns {Promise<string>}
+ */
+export async function resolveUserTimezone(userId, req = null, prismaClient = null) {
+  // 1. Check request for explicit valid IANA timezone
+  const candidate = req?.headers?.['x-timezone'] || req?.body?.timezone || req?.query?.timezone;
+  if (candidate && typeof candidate === 'string') {
+    try {
+      new Intl.DateTimeFormat(undefined, { timeZone: candidate });
+      return candidate;
+    } catch {}
+  }
+
+  // 2. Lookup user preference from database
+  if (userId && prismaClient) {
+    try {
+      const pref = await prismaClient.notificationPreference.findUnique({
+        where: { userId },
+        select: { timezone: true },
+      });
+      if (pref?.timezone) {
+        try {
+          new Intl.DateTimeFormat(undefined, { timeZone: pref.timezone });
+          return pref.timezone;
+        } catch {}
+      }
+    } catch {}
+  }
+
+  return 'Asia/Kolkata';
+}
+
+/**
+ * Returns formatted YYYY-MM-DD string from a Date or date string
+ * @param {Date|string} [date]
+ * @param {string} [timeZone]
+ * @returns {string}
+ */
+export function formatDateKey(date = new Date(), timeZone) {
+  if (timeZone && typeof timeZone === 'string') {
+    return getLocalDateKey(date, timeZone);
+  }
   if (typeof date === 'string') {
     if (/^\d{4}-\d{2}-\d{2}$/.test(date)) return date;
     const parsed = new Date(date);
