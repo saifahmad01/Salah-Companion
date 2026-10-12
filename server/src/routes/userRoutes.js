@@ -4,12 +4,12 @@ import {
   upsertUserHandler,
   listUsersHandler,
 } from '../controllers/userController.js';
-import { protectRoute, restrictTo } from '../middlewares/authMiddleware.js';
+import { protectRoute, restrictTo, requireVerifiedEmail } from '../middlewares/authMiddleware.js';
 
 export const userRouter = Router();
 
-// GET /api/user/:id/stats (Protected user stats)
-userRouter.get('/user/:id/stats', protectRoute, getUserStatsHandler);
+// GET /api/user/:id/stats (Protected user stats - requires verified email)
+userRouter.get('/user/:id/stats', protectRoute, requireVerifiedEmail, getUserStatsHandler);
 
 // User profile management
 userRouter.post('/users', protectRoute, upsertUserHandler);

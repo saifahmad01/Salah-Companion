@@ -499,17 +499,18 @@ async function runTests() {
     const testFriday = new Date('2026-10-16T13:30:00+05:30'); // 2026-10-16 is Friday
     const fridayDateKey = '2026-10-16';
 
-    // 1. GET /api/prayers/today for Friday returns 'Juma' for midday slot
+    // 1. GET /api/prayers/today for Friday returns "Jumu'ah" for midday slot
     const fridayTodayRes = await fetch(`${BASE_URL}/api/prayers/today?date=${fridayDateKey}`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     assert.equal(fridayTodayRes.status, 200);
     const fridayTodayJson = await fridayTodayRes.json();
-    const middaySlot = fridayTodayJson.prayers.find((p) => p.prayerName === 'Juma');
-    assert.ok(middaySlot, 'Friday midday slot must be named Juma');
+    const middaySlot = fridayTodayJson.prayers.find((p) => p.prayerName === "Jumu'ah" || p.prayerName === 'Juma');
+    assert.ok(middaySlot, "Friday midday slot must be named Jumu'ah");
+    assert.equal(middaySlot.prayerName, "Jumu'ah", "Midday prayer slot on Friday must be displayed as Jumu'ah");
     assert.equal(fridayTodayJson.prayers.length, 5, 'Must maintain exactly 5 slots on Friday');
 
-    // 2. GET /api/prayers/weekly returns 'Juma' for Friday
+    // 2. GET /api/prayers/weekly returns "Jumu'ah" for Friday
     const fridayWeeklyRes = await fetch(`${BASE_URL}/api/prayers/weekly?startDate=2026-10-12`, {
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -518,7 +519,11 @@ async function runTests() {
     const fridayDay = fridayWeeklyJson.data.days.find((d) => d.date === fridayDateKey);
     assert.ok(fridayDay, 'Friday must exist in weekly breakdown');
     const fridayWeeklyMidday = fridayDay.prayers.find((p) => p.id === 'dhuhr');
-    assert.equal(fridayWeeklyMidday.name, 'Juma', 'Friday weekly midday slot must be named Juma');
+    assert.ok(
+      fridayWeeklyMidday.name === "Jumu'ah" || fridayWeeklyMidday.name === 'Juma',
+      "Friday weekly midday slot must be named Jumu'ah"
+    );
+    assert.equal(fridayWeeklyMidday.name, "Jumu'ah", "Friday weekly midday slot must be named Jumu'ah");
 
     // 3. Logging Juma on Friday
     const logJumaRes = await fetch(`${BASE_URL}/api/prayers/log`, {
@@ -555,8 +560,174 @@ async function runTests() {
     assert.equal(logDupJson.code, 'PRAYER_ALREADY_COMPLETED');
     console.log('✓ Scenario 17 Passed: Friday midday slot is Juma only, maintaining exactly 5 slots and rejecting duplicates.');
 
+    // ------------------------------------------------------------------------
+    // Scenario 18: Completing a prayer late on current day
+    // ------------------------------------------------------------------------
+    console.log('Scenario 18: Completing a prayer late on current day...');
+    // Simulated time: during or after Asr window today
+    const simAsrTime = new Date(asrStart.getTime() + 15 * 60 * 1000);
+    const latePostRes = await fetch(`${BASE_URL}/api/prayers/log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'x-test-now': simAsrTime.toISOString(),
+      },
+      body: JSON.stringify({
+        prayerName: 'asr',
+        date: todayStr,
+        status: 'late',
+      }),
+    });
+    assert.equal(latePostRes.status, 200);
+    const latePostJson = await latePostRes.json();
+    assert.equal(latePostJson.success, true);
+    assert.equal(latePostJson.data.log.status, 'late');
+    console.log('✓ Scenario 18 Passed: Late prayer completion recorded successfully on current day.');
+
+    // ------------------------------------------------------------------------
+    // Scenario 19: Completing a prayer as Qada on current day
+    // ------------------------------------------------------------------------
+    console.log('Scenario 19: Completing a prayer as Qada on current day...');
+    const qadaPostRes = await fetch(`${BASE_URL}/api/prayers/log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'x-test-now': simAsrTime.toISOString(),
+      },
+      body: JSON.stringify({
+        prayerName: 'dhuhr',
+        date: todayStr,
+        status: 'qada',
+      }),
+    });
+    assert.equal(qadaPostRes.status, 200);
+    const qadaPostJson = await qadaPostRes.json();
+    assert.equal(qadaPostJson.success, true);
+    assert.equal(qadaPostJson.data.log.status, 'qada');
+    console.log('✓ Scenario 19 Passed: Qada prayer completion recorded successfully on current day.');
+
+    // ------------------------------------------------------------------------
+    // Scenario 20: In-place correction of today's prayer using isCorrection: true
+    // ------------------------------------------------------------------------
+    console.log("Scenario 20: In-place correction of today's prayer using isCorrection: true...");
+    // Update Asr from 'late' to 'on_time' via POST with isCorrection: true
+    const correctPostRes = await fetch(`${BASE_URL}/api/prayers/log`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'x-test-now': simAsrTime.toISOString(),
+      },
+      body: JSON.stringify({
+        prayerName: 'asr',
+        date: todayStr,
+        status: 'on_time',
+        isCorrection: true,
+      }),
+    });
+    assert.equal(correctPostRes.status, 200);
+    const correctPostJson = await correctPostRes.json();
+    assert.equal(correctPostJson.success, true);
+    assert.equal(correctPostJson.data.log.status, 'on_time');
+    console.log('✓ Scenario 20 Passed: In-place correction via POST with isCorrection: true succeeded.');
+
+    // ------------------------------------------------------------------------
+    // Scenario 21: In-place correction via PATCH /api/prayers/log/:id by prayer name
+    // ------------------------------------------------------------------------
+    console.log('Scenario 21: In-place correction via PATCH /api/prayers/log/:id by prayer name...');
+    // Correct Dhuhr from 'qada' to 'late' using prayer name identifier
+    const patchPrayerRes = await fetch(`${BASE_URL}/api/prayers/log/dhuhr`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'x-test-now': simAsrTime.toISOString(),
+      },
+      body: JSON.stringify({
+        status: 'late',
+        notes: 'Corrected to late after reflection',
+      }),
+    });
+    assert.equal(patchPrayerRes.status, 200);
+    const patchPrayerJson = await patchPrayerRes.json();
+    assert.equal(patchPrayerJson.success, true);
+    assert.equal(patchPrayerJson.data.status, 'late');
+    assert.equal(patchPrayerJson.data.notes, 'Corrected to late after reflection');
+    console.log('✓ Scenario 21 Passed: In-place correction via PATCH using prayer name identifier succeeded.');
+
+    // ------------------------------------------------------------------------
+    // Scenario 22: Midnight rollover: lock previous day and initialize new day fresh
+    // ------------------------------------------------------------------------
+    console.log('Scenario 22: Midnight rollover: lock previous day and initialize new day fresh...');
+    // User has logs for todayStr (e.g. Asr and Dhuhr).
+    // Now simulate local midnight rollover to tomorrow:
+    const tomorrowMidnight = new Date(`${tomorrowStr}T00:05:00+05:30`);
+
+    // 1. Check GET /api/prayers/today when evaluated on tomorrow:
+    // Today's completion for tomorrow must be 0/5 (fresh initialization, no copying of yesterday's statuses)
+    const newDayTodayRes = await fetch(`${BASE_URL}/api/prayers/today`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'x-test-now': tomorrowMidnight.toISOString(),
+      },
+    });
+    assert.equal(newDayTodayRes.status, 200);
+    const newDayTodayJson = await newDayTodayRes.json();
+    assert.equal(newDayTodayJson.date, tomorrowStr);
+    assert.equal(newDayTodayJson.summary.completed, 0, 'New day must initialize fresh with 0 completed');
+    newDayTodayJson.prayers.forEach((p) => {
+      assert.equal(p.status, 'pending', `${p.prayerName} must start as pending on new day`);
+      assert.equal(p.isCompleted, false);
+    });
+
+    // 2. Previous day's record (from todayStr) is now strictly locked as read-only:
+    const pastEditAfterRolloverRes = await fetch(`${BASE_URL}/api/prayers/log/${correctPostJson.data.log.id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'x-test-now': tomorrowMidnight.toISOString(),
+      },
+      body: JSON.stringify({ status: 'qada' }),
+    });
+    // Attempting to edit past day's record returns 409 PRAYER_DATE_NOT_TODAY
+    assert.equal(pastEditAfterRolloverRes.status, 409);
+    const pastEditJson = await pastEditAfterRolloverRes.json();
+    assert.equal(pastEditJson.code, 'PRAYER_DATE_NOT_TODAY');
+
+    // Also testing with prayer name and past date query:
+    const pastEditNameRes = await fetch(`${BASE_URL}/api/prayers/log/asr?date=${todayStr}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+        'x-test-now': tomorrowMidnight.toISOString(),
+      },
+      body: JSON.stringify({ status: 'qada' }),
+    });
+    assert.equal(pastEditNameRes.status, 409);
+    const pastEditNameJson = await pastEditNameRes.json();
+    assert.equal(pastEditNameJson.code, 'PRAYER_DATE_NOT_TODAY');
+    console.log('✓ Scenario 22 Passed: Midnight rollover initializes new day fresh and locks previous records.');
+
+    // ------------------------------------------------------------------------
+    // Scenario 23: Strict rejection of future date modifications
+    // ------------------------------------------------------------------------
+    console.log('Scenario 23: Strict rejection of future date modifications...');
+    const dayAfterTomorrowStr = addDays(todayStr, 2);
+    const futureDeleteRes = await fetch(`${BASE_URL}/api/prayers/log/fajr?date=${dayAfterTomorrowStr}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    assert.equal(futureDeleteRes.status, 409);
+    const futureDeleteJson = await futureDeleteRes.json();
+    assert.equal(futureDeleteJson.code, 'PRAYER_DATE_NOT_TODAY');
+    console.log('✓ Scenario 23 Passed: Modifying future date records strictly rejected with 409.');
+
     console.log('\n================================================================');
-    console.log('🎉 ALL 17 STRICT CURRENT-DAY TIMING & EDITING TESTS PASSED! 🎉');
+    console.log('🎉 ALL 23 STRICT CURRENT-DAY TIMING, QADA & EDITING TESTS PASSED! 🎉');
     console.log('================================================================\n');
   } finally {
     // Cleanup

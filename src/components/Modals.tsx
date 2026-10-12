@@ -455,9 +455,35 @@ export const PrayerDetailModal: React.FC<{
       fazeelatEnglish:
         'Congregational Isha brings spiritual protection throughout sleep and guarantees the reward of nightly Tahajjud.',
     },
+    jumuah: {
+      fard: 2,
+      sunnah: '4 Sunnah before + 4 Sunnah after Fard',
+      total: 10,
+      rule:
+        'Replaces Dhuhr on Friday for worshippers in congregation. Begins when the sun passes the meridian (Zawal). If a worshipper misses the Friday congregation, they must pray 4 rakahs of Dhuhr instead.',
+      hadithArabic:
+        'خَيْرُ يَوْمٍ طَلَعَتْ عَلَيْهِ الشَّمْسُ يَوْمُ الْجُمُعَةِ • مَنْ تَرَكَ ثَلَاثَ جُمَعٍ تَهَاوُنًا بِهَا طَبَعَ اللَّهُ عَلَى قَلْبِهِ',
+      hadithUrdu:
+        'رسول اللہ ﷺ نے فرمایا: ”سب سے بہترین دن جس پر سورج طلوع ہوا جمعہ کا دن ہے۔“ اور فرمایا: ”جس نے سستی کی وجہ سے تین جمعے چھوڑ دیے، اللہ تعالیٰ اس کے دل پر مہر لگا دیتا ہے۔“',
+      hadithRoman:
+        'Rasoolullah ﷺ ne farmaya: "Sabse behtareen din jis par suraj tulu hua Juma ka din hai." Aur farmaya: "Jisne susti ki wajah se teen Juma chhod diye, Allah Ta\'ala uske dil par mohar laga deta hai."',
+      hadithEnglish:
+        'The Prophet ﷺ said: "The best day on which the sun has risen is Friday." (Sahih Muslim 854) And: "Whoever neglects three Friday prayers out of carelessness, Allah places a seal upon his heart." (Sunan Abi Dawud 1052)',
+      reference: 'صحیح مسلم (854) اور سنن ابی داؤد (1052) • Sahih Muslim 854 & Abu Dawud 1052',
+      fazeelatUrdu:
+        'جمعہ کے دن ایک ایسی مبارک گھڑی ہے جس میں مسلمان بندہ اللہ تعالیٰ سے جو دعا مانگتا ہے، اللہ تعالیٰ اسے عطا فرماتا ہے۔',
+      fazeelatRoman:
+        'Juma ke din ek aisi ba-barkat ghadi hai jisme Musalman banda Allah Ta\'ala se jo dua maangta hai, Allah use ata farmata hai.',
+      fazeelatEnglish:
+        'On Friday there is a special hour during which whatever good a believer asks of Allah, He surely grants it (Sahih al-Bukhari 935).',
+    },
   }
 
-  const info = rakatsInfo[prayer.id] || {
+  const isFridayJumuah = Boolean(
+    prayer.isFridayMidday || prayer.name === "Jumu'ah" || prayer.name === 'Juma'
+  )
+  const infoKey = isFridayJumuah ? 'jumuah' : prayer.id
+  const info = rakatsInfo[infoKey] || rakatsInfo[prayer.id] || {
     fard: 4,
     sunnah: 'Sunnah prayers',
     total: 4,
@@ -475,14 +501,14 @@ export const PrayerDetailModal: React.FC<{
   const isUpcoming = (prayer.statusBadge === 'upcoming' || prayer.isUpcoming) && !prayer.completed
   const isExpired = !prayer.completed && (prayer.isWindowExpired || prayer.statusBadge === 'passed')
   const isDone = prayer.completed
-  const isDisabled = isUpcoming || isExpired || isDone
+  const isDisabled = isUpcoming
 
   const statusLabel = isDone
     ? prayer.prayerStatus
-      ? prayer.prayerStatus.replace('_', ' ')
-      : 'Completed'
+      ? `${prayer.prayerStatus.replace('_', ' ')} (Edit)`
+      : 'Completed (Edit)'
     : isExpired
-    ? 'Window Expired'
+    ? 'Log (Late/Qada)'
     : isUpcoming
     ? `Available at ${prayer.time}`
     : 'Log Status'
@@ -499,7 +525,7 @@ export const PrayerDetailModal: React.FC<{
       : isDone
       ? 'bg-white/20 text-white'
       : isExpired
-      ? 'bg-stone-300 text-stone-700'
+      ? 'bg-amber-600 text-white'
       : isUpcoming
       ? 'bg-stone-200 text-stone-600'
       : 'bg-[#F5DC96] text-[#0C4535]'
@@ -532,9 +558,9 @@ export const PrayerDetailModal: React.FC<{
               isUpcoming
                 ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
                 : isDone
-                ? `${prayer.name} is already completed.`
+                ? `${prayer.name} is completed. Click to manage or correct status.`
                 : isExpired
-                ? `${prayer.name} prayer window has expired.`
+                ? `${prayer.name} prayer time has passed. Click to record as Qada, Late, or Missed.`
                 : undefined
             }
             onClick={() => {
@@ -574,6 +600,25 @@ export const PrayerDetailModal: React.FC<{
             )}
           </button>
         </div>
+
+        {/* Friday Jumu'ah Mosque vs Reference Schedule Distinction */}
+        {isFridayJumuah && (
+          <div className="p-3 rounded-2xl bg-amber-50/90 border border-amber-200/90 text-amber-950 text-xs space-y-1 shadow-2xs">
+            <div className="flex items-center gap-1.5 font-bold text-amber-900">
+              <Clock className="w-3.5 h-3.5 text-amber-700 flex-shrink-0" />
+              <span>
+                {prayer.isCustomCongregationTime
+                  ? 'Configured Local Mosque Congregation Time'
+                  : 'Schedule Reference (Astronomical Dhuhr Start)'}
+              </span>
+            </div>
+            <p className="text-[11.5px] leading-relaxed text-amber-900/90">
+              {prayer.isCustomCongregationTime
+                ? 'This timing represents your saved local mosque congregation time. Confirm with your mosque for any seasonal daylight or khutbah updates.'
+                : 'This time indicates the astronomical start of the midday prayer window (Zawal). Actual Friday Khutbah and congregational prayer times vary by local mosque (commonly between 1:00 PM and 2:00 PM). Please check your local mosque or set your congregation time in Settings.'}
+            </p>
+          </div>
+        )}
 
         {/* Valid Timing Window & Jurisprudence */}
         <div className="p-3.5 rounded-xl bg-white border border-[#EDE8DC] space-y-1.5 text-xs">
@@ -755,9 +800,9 @@ export const PrayerDetailModal: React.FC<{
             isUpcoming
               ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
               : isDone
-              ? `${prayer.name} is already completed.`
+              ? `${prayer.name} is completed. Click to manage or correct status.`
               : isExpired
-              ? `${prayer.name} prayer window has expired.`
+              ? `${prayer.name} prayer time has passed. Click to record as Qada, Late, or Missed.`
               : undefined
           }
           onClick={() => {
@@ -783,12 +828,14 @@ export const PrayerDetailModal: React.FC<{
           ) : isDone ? (
             <>
               <CheckCircle className="w-4 h-4" />
-              <span>Completed ({prayer.prayerStatus ? prayer.prayerStatus.replace('_', ' ') : 'Done'})</span>
+              <span>
+                Completed ({prayer.prayerStatus ? prayer.prayerStatus.replace('_', ' ') : 'Done'}) — Click to Edit
+              </span>
             </>
           ) : isExpired ? (
             <>
               <Clock className="w-4 h-4" />
-              <span>Prayer Window Expired</span>
+              <span>Log Salah — Late / Qada / On Time (کیفیت درج کریں)</span>
             </>
           ) : (
             <>

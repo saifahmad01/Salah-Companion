@@ -16,6 +16,9 @@ export interface PrayerItem {
   isUpcoming?: boolean
   availableAtMessage?: string
   isWindowExpired?: boolean
+  isFridayMidday?: boolean
+  isCustomCongregationTime?: boolean
+  scheduleNote?: string
 }
 
 export interface DeedItem {

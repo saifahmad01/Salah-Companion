@@ -398,20 +398,91 @@ async function runTests() {
   assert.equal(googleRes.status, 200, `Google OAuth with verified email must succeed (got ${googleRes.status})`);
   const googleData = await googleRes.json();
   assert.equal(googleData.user.isEmailVerified, true, 'User must be marked email-verified via trusted Google claim');
-  console.log('✓ Test 15 Passed: Trusted Google OAuth claim authoritatively verifies user email.');
+  // --------------------------------------------------------------------------
+  // Test 16: Concurrency Safety & Race Condition Replay Prevention
+  // --------------------------------------------------------------------------
+  console.log('\n16. Testing Concurrency Safety & Simultaneous Token Verification Race Conditions...');
+  const concurrentEmail = `concurrent_${timestamp}@example.com`;
+  const concurrentRawToken = crypto.randomBytes(32).toString('hex');
+  const concurrentTokenHash = crypto.createHash('sha256').update(concurrentRawToken).digest('hex');
+
+  await prisma.pendingRegistration.create({
+    data: {
+      name: 'Concurrent Race Tester',
+      email: concurrentEmail,
+      password: '$2a$12$dummyhashforconcurrenttesting123',
+      prayerCalculationMethod: 'Karachi',
+      tokenHash: concurrentTokenHash,
+      expiresAt: new Date(Date.now() + 24 * 3600 * 1000),
+      lastSentAt: new Date(),
+    },
+  });
+
+  // Launch two simultaneous verification attempts with the exact same token
+  const [resA, resB] = await Promise.all([
+    fetch(`${BASE_URL}/api/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: concurrentRawToken }),
+    }),
+    fetch(`${BASE_URL}/api/auth/verify-email`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token: concurrentRawToken }),
+    }),
+  ]);
+
+  const statuses = [resA.status, resB.status].sort();
+  assert.deepEqual(statuses, [200, 400], 'One concurrent request must succeed with 200, the other must safely fail with 400 TOKEN_INVALID');
+
+  const pendingCount = await prisma.pendingRegistration.count({ where: { email: concurrentEmail } });
+  assert.equal(pendingCount, 0, 'Pending registration must be deleted after concurrent processing');
+
+  const userCount = await prisma.user.count({ where: { email: concurrentEmail } });
+  assert.equal(userCount, 1, 'Exactly one user record must be created despite simultaneous requests');
+  console.log('✓ Test 16 Passed: Atomic transaction safely handled simultaneous verification requests (1 succeeded, 1 rejected, 0 crashes).');
+
+  // --------------------------------------------------------------------------
+  // Test 17: Protected Profile & Password Routes Reject Unverified Users
+  // --------------------------------------------------------------------------
+  console.log('\n17. Testing Profile & Password Routes Guard for Unverified Users...');
+  const profileRes = await fetch(`${BASE_URL}/api/auth/profile`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${unverifiedToken}`,
+    },
+    body: JSON.stringify({ name: 'Hacked Name' }),
+  });
+  assert.equal(profileRes.status, 403, 'Unverified user updating profile must receive 403 Forbidden');
+  const profileData = await profileRes.json();
+  assert.equal(profileData.code, 'EMAIL_NOT_VERIFIED', 'Error code must be EMAIL_NOT_VERIFIED');
+
+  const passwordRes = await fetch(`${BASE_URL}/api/auth/set-password`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${unverifiedToken}`,
+    },
+    body: JSON.stringify({ password: 'NewSecurePassword123!' }),
+  });
+  assert.equal(passwordRes.status, 403, 'Unverified user setting password must receive 403 Forbidden');
+  const passwordData = await passwordRes.json();
+  assert.equal(passwordData.code, 'EMAIL_NOT_VERIFIED', 'Error code must be EMAIL_NOT_VERIFIED');
+  console.log('✓ Test 17 Passed: Profile and password routes strictly block unverified users with 403 EMAIL_NOT_VERIFIED.');
 
   // Cleanup test users from database
   try {
     await prisma.pendingRegistration.deleteMany({
-      where: { email: { in: [testEmail, expiredEmail, autoEmail, unverifiedEmail] } },
+      where: { email: { in: [testEmail, expiredEmail, autoEmail, unverifiedEmail, concurrentEmail] } },
     });
     await prisma.user.deleteMany({
-      where: { email: { in: [testEmail, expiredEmail, autoEmail, unverifiedEmail] } },
+      where: { email: { in: [testEmail, expiredEmail, autoEmail, unverifiedEmail, concurrentEmail] } },
     });
     await prisma.$disconnect();
   } catch {}
 
-  console.log('\n🎉 ALL 15 EMAIL & PASSWORD AUTHENTICATION TESTS PASSED SUCCESSFULLY! 🎉\n');
+  console.log('\n🎉 ALL 17 PRODUCTION EMAIL VERIFICATION & SECURITY TESTS PASSED SUCCESSFULLY! 🎉\n');
 }
 
 runTests().catch(async (err) => {

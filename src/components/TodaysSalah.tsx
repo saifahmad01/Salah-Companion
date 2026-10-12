@@ -128,11 +128,29 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
               </div>
 
               {/* Prayer Name */}
-              <span className={`text-[12.5px] sm:text-[14px] font-bold leading-tight ${
-                isUpcoming ? 'text-[#3B4D43]' : 'text-[#172720]'
-              }`}>
-                {prayer.name}
-              </span>
+              <div className="flex flex-col items-center">
+                <span className={`text-[12.5px] sm:text-[14px] font-bold leading-tight ${
+                  isUpcoming ? 'text-[#3B4D43]' : 'text-[#172720]'
+                }`}>
+                  {prayer.name}
+                </span>
+                {prayer.isFridayMidday && (
+                  <span
+                    className={`text-[7px] sm:text-[8px] font-semibold px-1 rounded-sm mt-0.5 leading-tight ${
+                      prayer.isCustomCongregationTime
+                        ? 'bg-emerald-100 text-[#0C4535]'
+                        : 'bg-stone-200/70 text-stone-600'
+                    }`}
+                    title={
+                      prayer.isCustomCongregationTime
+                        ? 'Configured Mosque Congregation Time'
+                        : 'Astronomical Dhuhr start reference (check local mosque for congregation time)'
+                    }
+                  >
+                    {prayer.isCustomCongregationTime ? 'Mosque Time' : 'Ref Time'}
+                  </span>
+                )}
+              </div>
 
               {/* Prayer Time */}
               <span className="text-[9.5px] sm:text-[11px] text-[#55675E] font-medium leading-tight mt-0.5 mb-2">

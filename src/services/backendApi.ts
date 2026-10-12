@@ -67,6 +67,13 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promi
     headers.set('Authorization', `Bearer ${token}`);
   }
 
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz && !headers.has('x-timezone')) {
+      headers.set('x-timezone', tz);
+    }
+  } catch {}
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 35000);
 
@@ -535,6 +542,7 @@ export const salahApi = {
     prayerName: string;
     date?: string;
     status: 'on_time' | 'late' | 'qada' | 'missed';
+    isCorrection?: boolean;
     latitude?: number;
     longitude?: number;
     calculationMethod?: string;
