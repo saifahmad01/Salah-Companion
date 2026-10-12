@@ -26,13 +26,18 @@ async function getTransporter() {
   }
 
   // 2. Production / Configured SMTP (Gmail, SendGrid, Amazon SES, Brevo, or custom SMTP)
+  const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.IS_RENDER);
+  const connTimeout = isRender ? 3500 : 10000;
+  const greetTimeout = isRender ? 3500 : 10000;
+  const sockTimeout = isRender ? 5000 : 15000;
+
   if (config.emailService === 'gmail' || config.emailHost?.includes('gmail.com')) {
     transporter = nodemailer.createTransport({
       service: 'gmail',
       family: 4,
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 15000,
+      connectionTimeout: connTimeout,
+      greetingTimeout: greetTimeout,
+      socketTimeout: sockTimeout,
       auth: {
         user: config.emailUser,
         pass: config.emailPass,
@@ -49,9 +54,9 @@ async function getTransporter() {
     port,
     secure: isSecure,
     family: 4, // Forces IPv4 DNS resolution
-    connectionTimeout: 8000,
-    greetingTimeout: 8000,
-    socketTimeout: 10000,
+    connectionTimeout: connTimeout,
+    greetingTimeout: greetTimeout,
+    socketTimeout: sockTimeout,
     auth: {
       user: config.emailUser,
       pass: config.emailPass,
@@ -69,9 +74,11 @@ async function getTransporter() {
  * Sends email via HTTPS REST API (port 443) to avoid cloud host SMTP port blocking (e.g. Render Free tier)
  */
 async function sendViaHttpApi({ to, subject, html, text }) {
+  // 1. Resend HTTPS REST API (Port 443)
   const resendApiKey = process.env.RESEND_API_KEY;
   if (resendApiKey) {
     try {
+      const fromEmail = process.env.RESEND_FROM || 'Salah Companion <onboarding@resend.dev>';
       const response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -79,7 +86,7 @@ async function sendViaHttpApi({ to, subject, html, text }) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          from: process.env.RESEND_FROM || 'Salah Companion <onboarding@resend.dev>',
+          from: fromEmail,
           to: [to],
           subject,
           html,
@@ -92,23 +99,26 @@ async function sendViaHttpApi({ to, subject, html, text }) {
         return { success: true, messageId: data.id };
       }
       const errBody = await response.text();
-      console.warn(`[EmailService] Resend API rejected: ${errBody}`);
+      console.warn(`[EmailService] Resend API rejected (${response.status}): ${errBody}`);
     } catch (err) {
       console.warn(`[EmailService] Resend API attempt failed:`, err.message);
     }
   }
 
+  // 2. Brevo (Sendinblue) HTTPS REST API (Port 443 - 300 free emails/day to any recipient)
   const brevoApiKey = process.env.BREVO_API_KEY;
   if (brevoApiKey) {
     try {
+      const senderEmail = process.env.BREVO_FROM || config.emailUser || 'salahcompanion786@gmail.com';
       const response = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {
           'api-key': brevoApiKey,
           'Content-Type': 'application/json',
+          Accept: 'application/json',
         },
         body: JSON.stringify({
-          sender: { name: 'Salah Companion', email: process.env.BREVO_FROM || config.emailUser },
+          sender: { name: 'Salah Companion', email: senderEmail },
           to: [{ email: to }],
           subject,
           htmlContent: html,
@@ -116,20 +126,22 @@ async function sendViaHttpApi({ to, subject, html, text }) {
         }),
       });
       if (response.ok) {
-        const data = await response.json();
-        console.log(`[EmailService] Delivered via Brevo API to ${to}: ${data.messageId}`);
-        return { success: true, messageId: data.messageId };
+        const data = await response.json().catch(() => ({}));
+        console.log(`[EmailService] Delivered via Brevo API to ${to}: ${data.messageId || 'ok'}`);
+        return { success: true, messageId: data.messageId || `brevo-${Date.now()}` };
       }
       const errBody = await response.text();
-      console.warn(`[EmailService] Brevo API rejected: ${errBody}`);
+      console.warn(`[EmailService] Brevo API rejected (${response.status}): ${errBody}`);
     } catch (err) {
       console.warn(`[EmailService] Brevo API attempt failed:`, err.message);
     }
   }
 
+  // 3. SendGrid HTTPS REST API (Port 443)
   const sendgridApiKey = process.env.SENDGRID_API_KEY;
   if (sendgridApiKey) {
     try {
+      const senderEmail = process.env.SENDGRID_FROM || config.emailUser || 'salahcompanion786@gmail.com';
       const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: {
@@ -138,7 +150,7 @@ async function sendViaHttpApi({ to, subject, html, text }) {
         },
         body: JSON.stringify({
           personalizations: [{ to: [{ email: to }] }],
-          from: { email: process.env.SENDGRID_FROM || config.emailUser || 'noreply@salahcompanion.com', name: 'Salah Companion' },
+          from: { email: senderEmail, name: 'Salah Companion' },
           subject,
           content: [
             { type: 'text/plain', value: text },
@@ -151,9 +163,42 @@ async function sendViaHttpApi({ to, subject, html, text }) {
         return { success: true, messageId: `sendgrid-${Date.now()}` };
       }
       const errBody = await response.text();
-      console.warn(`[EmailService] SendGrid API rejected: ${errBody}`);
+      console.warn(`[EmailService] SendGrid API rejected (${response.status}): ${errBody}`);
     } catch (err) {
       console.warn(`[EmailService] SendGrid API attempt failed:`, err.message);
+    }
+  }
+
+  // 4. Mailgun HTTPS REST API (Port 443)
+  const mailgunApiKey = process.env.MAILGUN_API_KEY;
+  const mailgunDomain = process.env.MAILGUN_DOMAIN;
+  if (mailgunApiKey && mailgunDomain) {
+    try {
+      const fromEmail = process.env.MAILGUN_FROM || `Salah Companion <mailgun@${mailgunDomain}>`;
+      const formData = new URLSearchParams();
+      formData.append('from', fromEmail);
+      formData.append('to', to);
+      formData.append('subject', subject);
+      formData.append('html', html);
+      formData.append('text', text);
+      const auth = Buffer.from(`api:${mailgunApiKey}`).toString('base64');
+      const response = await fetch(`https://api.mailgun.net/v3/${mailgunDomain}/messages`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Basic ${auth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
+      });
+      if (response.ok) {
+        const data = await response.json();
+        console.log(`[EmailService] Delivered via Mailgun API to ${to}: ${data.id}`);
+        return { success: true, messageId: data.id };
+      }
+      const errBody = await response.text();
+      console.warn(`[EmailService] Mailgun API rejected (${response.status}): ${errBody}`);
+    } catch (err) {
+      console.warn(`[EmailService] Mailgun API attempt failed:`, err.message);
     }
   }
 
@@ -415,8 +460,10 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
   } catch (err) {
     console.error(`[EmailService] Primary SMTP delivery failed for ${to}:`, err.message);
 
-    // If primary port failed on Gmail, attempt fallback port (465 <-> 587) with family: 4
-    if (config.emailHost?.includes('gmail.com') || config.emailService === 'gmail' || !config.emailHost) {
+    const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.IS_RENDER);
+
+    // If primary port failed on Gmail and not running on Render (where all outbound SMTP ports are blocked)
+    if (!isRender && (config.emailHost?.includes('gmail.com') || config.emailService === 'gmail' || !config.emailHost)) {
       try {
         const primaryPort = Number(config.emailPort) || 465;
         const fallbackPort = primaryPort === 465 ? 587 : 465;
@@ -426,9 +473,9 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
           port: fallbackPort,
           secure: fallbackPort === 465,
           family: 4,
-          connectionTimeout: 8000,
-          greetingTimeout: 8000,
-          socketTimeout: 10000,
+          connectionTimeout: 5000,
+          greetingTimeout: 5000,
+          socketTimeout: 8000,
           auth: {
             user: config.emailUser,
             pass: config.emailPass,
@@ -452,7 +499,9 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
     }
 
     let friendlyError = err.message;
-    if (err.message?.includes('535') || err.message?.includes('BadCredentials')) {
+    if (isRender && (err.message?.includes('timeout') || err.message?.includes('ETIMEDOUT') || err.message?.includes('ESOCKETTIMEDOUT'))) {
+      friendlyError = 'Mail server connection timeout. Cloud host (Render) restricts outbound SMTP ports (465/587). Please configure BREVO_API_KEY or RESEND_API_KEY in Render Environment Variables.';
+    } else if (err.message?.includes('535') || err.message?.includes('BadCredentials')) {
       friendlyError = 'Gmail SMTP authentication rejected. Gmail requires a 16-character App Password (not your personal account password). Please generate an App Password at Google Account > Security > 2-Step Verification > App passwords.';
     }
 
@@ -469,16 +518,27 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
  * Verifies SMTP transport configuration connection
  */
 export async function verifyEmailTransport() {
-  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY) {
+  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY || process.env.MAILGUN_API_KEY) {
     let provider = 'http_api';
-    if (process.env.RESEND_API_KEY) provider = 'resend_http_api';
-    else if (process.env.BREVO_API_KEY) provider = 'brevo_http_api';
+    if (process.env.BREVO_API_KEY) provider = 'brevo_http_api';
+    else if (process.env.RESEND_API_KEY) provider = 'resend_http_api';
     else if (process.env.SENDGRID_API_KEY) provider = 'sendgrid_http_api';
+    else if (process.env.MAILGUN_API_KEY) provider = 'mailgun_http_api';
     return {
       connected: true,
       provider,
     };
   }
+
+  const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.IS_RENDER);
+  if (isRender) {
+    return {
+      connected: false,
+      error: 'Render Free Tier blocks raw outbound SMTP ports (25, 465, 587). Please configure BREVO_API_KEY or RESEND_API_KEY in Render Environment Variables to enable transactional email delivery via HTTPS (port 443).',
+      provider: config.emailService,
+    };
+  }
+
   try {
     const mailer = await getTransporter();
     await mailer.verify();
@@ -491,9 +551,9 @@ export async function verifyEmailTransport() {
         port: 587,
         secure: false,
         family: 4,
-        connectionTimeout: 8000,
-        greetingTimeout: 8000,
-        socketTimeout: 10000,
+        connectionTimeout: 5000,
+        greetingTimeout: 5000,
+        socketTimeout: 8000,
         auth: {
           user: config.emailUser,
           pass: config.emailPass,
@@ -740,8 +800,10 @@ export async function sendPasswordResetEmail(to, name, token, clientOrigin = nul
   } catch (err) {
     console.error(`[EmailService] Primary SMTP delivery failed for password reset to ${to}:`, err.message);
 
-    // Fallback port retry if Gmail
-    if (config.emailHost?.includes('gmail.com') || config.emailService === 'gmail' || !config.emailHost) {
+    const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.IS_RENDER);
+
+    // Fallback port retry if Gmail and not on Render
+    if (!isRender && (config.emailHost?.includes('gmail.com') || config.emailService === 'gmail' || !config.emailHost)) {
       try {
         const primaryPort = Number(config.emailPort) || 465;
         const fallbackPort = primaryPort === 465 ? 587 : 465;
@@ -750,9 +812,9 @@ export async function sendPasswordResetEmail(to, name, token, clientOrigin = nul
           port: fallbackPort,
           secure: fallbackPort === 465,
           family: 4,
-          connectionTimeout: 8000,
-          greetingTimeout: 8000,
-          socketTimeout: 10000,
+          connectionTimeout: 5000,
+          greetingTimeout: 5000,
+          socketTimeout: 8000,
           auth: {
             user: config.emailUser,
             pass: config.emailPass,
@@ -774,9 +836,16 @@ export async function sendPasswordResetEmail(to, name, token, clientOrigin = nul
       }
     }
 
+    let friendlyError = err.message;
+    if (isRender && (err.message?.includes('timeout') || err.message?.includes('ETIMEDOUT') || err.message?.includes('ESOCKETTIMEDOUT'))) {
+      friendlyError = 'Mail server connection timeout. Cloud host (Render) restricts outbound SMTP ports (465/587). Please configure BREVO_API_KEY or RESEND_API_KEY in Render Environment Variables.';
+    } else if (err.message?.includes('535') || err.message?.includes('BadCredentials')) {
+      friendlyError = 'Gmail SMTP authentication rejected. Gmail requires a 16-character App Password (not your personal account password). Please generate an App Password at Google Account > Security > 2-Step Verification > App passwords.';
+    }
+
     return {
       success: false,
-      error: err.message,
+      error: friendlyError,
       resetUrl,
       previewUrl: resetUrl,
     };

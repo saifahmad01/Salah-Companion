@@ -518,15 +518,7 @@ export async function resendVerification(req, res, next) {
     const clientOrigin = getEffectiveFrontendUrl(req);
     const emailResult = await sendVerificationEmail(normalizedEmail, recipientName, rawToken, clientOrigin);
 
-    if (!emailResult.success) {
-      return res.status(502).json({
-        success: false,
-        error: emailResult.error || 'Failed to deliver verification email. Please verify your email configuration.',
-        code: 'EMAIL_DELIVERY_FAILED',
-        email: normalizedEmail,
-      });
-    }
-
+    // Update pending registration or user with the fresh single-use token in the database
     if (pending) {
       await prisma.pendingRegistration.update({
         where: { id: pending.id },
@@ -548,6 +540,19 @@ export async function resendVerification(req, res, next) {
     }
 
     const directApiUrl = `${config.appUrl}/api/auth/verify-email?token=${rawToken}`;
+
+    if (!emailResult.success) {
+      return res.status(502).json({
+        success: false,
+        error: emailResult.error || 'Failed to deliver verification email. Please verify your email configuration.',
+        code: 'EMAIL_DELIVERY_FAILED',
+        email: normalizedEmail,
+        token: rawToken,
+        previewUrl: directApiUrl,
+        verificationUrl: directApiUrl,
+      });
+    }
+
     return res.status(200).json({
       success: true,
       message: `A fresh verification link has been sent to ${normalizedEmail}. Please check your inbox.`,
@@ -983,17 +988,20 @@ export async function getEmailHealth(req, res) {
       return res.status(200).json({
         success: true,
         connected: true,
-        provider: config.emailService,
+        provider: health.provider || config.emailService,
         from: config.emailFrom,
-        message: 'SMTP transport connection verified successfully.',
+        message: 'Email transport verified and operational.',
       });
     } else {
       return res.status(503).json({
         success: false,
         connected: false,
         error: health.error,
-        provider: config.emailService,
+        provider: health.provider || config.emailService,
         from: config.emailFrom,
+        recommendation: process.env.RENDER
+          ? 'Render free web services block standard outbound SMTP ports (25, 465, 587). Please add BREVO_API_KEY or RESEND_API_KEY to your Render Environment Variables to send transactional emails via HTTPS (port 443).'
+          : 'Please check your SMTP credentials or configure an HTTP email API key (BREVO_API_KEY or RESEND_API_KEY).',
       });
     }
   } catch (err) {

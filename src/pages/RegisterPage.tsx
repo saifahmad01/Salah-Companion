@@ -2,11 +2,13 @@ import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff, User, AlertCircle, ArrowRight, ArrowLeft, CheckCircle2, RefreshCw, ExternalLink, ShieldCheck } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useUnsavedChanges, useUnsavedChangesWarn } from '../context/UnsavedChangesContext'
 import { salahApi } from '../services/backendApi'
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
   const { register, banner, setBanner, refreshUser } = useAuth()
+  const { confirmAction } = useUnsavedChanges()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -18,6 +20,10 @@ export const RegisterPage: React.FC = () => {
 
   // Post-registration verification state
   const [verificationPending, setVerificationPending] = useState(false)
+
+  // Track unsaved form edits
+  const isFormDirty = Boolean(name.trim() || email.trim() || password) && !verificationPending && !loading
+  useUnsavedChangesWarn('register_form', isFormDirty, 'Registration Form Details')
   const [registeredEmail, setRegisteredEmail] = useState('')
   const [verificationToken, setVerificationToken] = useState<string | null>(null)
   const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
@@ -92,6 +98,12 @@ export const RegisterPage: React.FC = () => {
         setRegisteredEmail(err.email || email.trim().toLowerCase())
         setDeliveryStatus('failed')
         setResendError(err.message || 'Account created, but verification email could not be delivered yet. Please click Resend.')
+        if (err.token) {
+          setVerificationToken(err.token)
+        }
+        if (err.previewUrl || err.verificationUrl) {
+          setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
+        }
       } else {
         setError(err.message || 'Registration failed. Please check your network connection and try again.')
       }
@@ -113,11 +125,17 @@ export const RegisterPage: React.FC = () => {
       if (res.token) {
         setVerificationToken(res.token)
       }
-      if (res.previewUrl) {
-        setDevPreviewUrl(res.previewUrl)
+      if (res.previewUrl || res.verificationUrl) {
+        setDevPreviewUrl(res.previewUrl || res.verificationUrl || null)
       }
     } catch (err: any) {
       setResendError(err.message || 'Could not resend email.')
+      if (err.token) {
+        setVerificationToken(err.token)
+      }
+      if (err.previewUrl || err.verificationUrl) {
+        setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
+      }
       if (err.retryAfter) {
         setCooldownSeconds(Number(err.retryAfter))
       }
@@ -253,20 +271,47 @@ export const RegisterPage: React.FC = () => {
 
       {/* Top Bar with Brand and Back Link */}
       <header className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            confirmAction(
+              {
+                title: 'Discard Registration?',
+                message: 'You have entered registration details. Are you sure you want to return to Home?',
+                confirmText: 'Discard & Leave',
+                cancelText: 'Stay on Page',
+                type: 'unsaved',
+              },
+              () => navigate('/')
+            )
+          }
+          className="flex items-center gap-3 text-left cursor-pointer"
+        >
           <div className="w-9 h-9 rounded-xl overflow-hidden bg-[#0C4535] border border-amber-400/20 shadow-xs flex items-center justify-center">
             <img src="/images/app-logo.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
           <span className="font-serif font-bold text-xl text-white">Salah Companion</span>
-        </Link>
+        </button>
 
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors"
+        <button
+          type="button"
+          onClick={() =>
+            confirmAction(
+              {
+                title: 'Discard Registration?',
+                message: 'You have entered registration details. Are you sure you want to return to Home?',
+                confirmText: 'Discard & Leave',
+                cancelText: 'Stay on Page',
+                type: 'unsaved',
+              },
+              () => navigate('/')
+            )
+          }
+          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
-        </Link>
+        </button>
       </header>
 
       {/* Main Card */}

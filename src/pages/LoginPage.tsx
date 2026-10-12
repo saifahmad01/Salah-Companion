@@ -2,12 +2,14 @@ import React, { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight, ArrowLeft, RefreshCw, ExternalLink } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useUnsavedChanges, useUnsavedChangesWarn } from '../context/UnsavedChangesContext'
 import { salahApi } from '../services/backendApi'
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { login, banner, setBanner } = useAuth()
+  const { confirmAction } = useUnsavedChanges()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -16,6 +18,10 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
+
+  // Track unsaved login credentials
+  const isLoginDirty = Boolean(email.trim() || password) && !loading && !verificationPendingEmail
+  useUnsavedChangesWarn('login_form', isLoginDirty, 'Login Credentials')
   const [resendLoading, setResendLoading] = useState(false)
   const [resendMessage, setResendMessage] = useState<string | null>(null)
   const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
@@ -125,20 +131,47 @@ export const LoginPage: React.FC = () => {
 
       {/* Top Bar with Brand and Back Link */}
       <header className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-3">
+        <button
+          type="button"
+          onClick={() =>
+            confirmAction(
+              {
+                title: 'Discard Login Inputs?',
+                message: 'You have entered login credentials. Are you sure you want to return to Home?',
+                confirmText: 'Discard & Leave',
+                cancelText: 'Stay on Page',
+                type: 'unsaved',
+              },
+              () => navigate('/')
+            )
+          }
+          className="flex items-center gap-3 text-left cursor-pointer"
+        >
           <div className="w-9 h-9 rounded-xl overflow-hidden bg-[#0C4535] border border-amber-400/20 shadow-xs flex items-center justify-center">
             <img src="/images/app-logo.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
           <span className="font-serif font-bold text-xl text-white">Salah Companion</span>
-        </Link>
+        </button>
 
-        <Link
-          to="/"
-          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors"
+        <button
+          type="button"
+          onClick={() =>
+            confirmAction(
+              {
+                title: 'Discard Login Inputs?',
+                message: 'You have entered login credentials. Are you sure you want to return to Home?',
+                confirmText: 'Discard & Leave',
+                cancelText: 'Stay on Page',
+                type: 'unsaved',
+              },
+              () => navigate('/')
+            )
+          }
+          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
-        </Link>
+        </button>
       </header>
 
       {/* Login Card */}

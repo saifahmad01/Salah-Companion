@@ -17,6 +17,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { salahApi, authStorage, type UserProfile } from '../services/backendApi'
+import { useUnsavedChanges, useUnsavedChangesWarn } from '../context/UnsavedChangesContext'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -37,6 +38,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   currentCoords,
   currentCityName,
 }) => {
+  const { confirmAction, promptLogout } = useUnsavedChanges()
+
   const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -121,6 +124,64 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   }, [forgotCooldown])
 
+  // Track if user has unsaved edits in profile settings
+  const isProfileDirty = Boolean(
+    isOpen &&
+      user &&
+      (editName.trim() !== (user.name || '').trim() ||
+        editMethod !== (user.prayerCalculationMethod || 'Karachi') ||
+        Boolean(newPasswordInput.trim()))
+  )
+
+  // Track if guest has unsaved entries in login or register tabs
+  const isAuthDirty = Boolean(
+    isOpen &&
+      !user &&
+      !verificationPendingEmail &&
+      (name.trim() || email.trim() || password)
+  )
+
+  const isModalDirty = isProfileDirty || isAuthDirty
+
+  useUnsavedChangesWarn(
+    'auth_modal',
+    isModalDirty,
+    user ? 'Profile settings changes' : 'Sign in / registration draft'
+  )
+
+  const handleSafeClose = () => {
+    if (isModalDirty) {
+      confirmAction(
+        {
+          title: 'Discard Changes?',
+          message: user
+            ? 'You have unsaved changes in your profile settings. Are you sure you want to discard them?'
+            : 'You have entered details that will be lost. Are you sure you want to close?',
+          confirmLabel: 'Discard & Close',
+          cancelLabel: 'Keep Editing',
+          variant: 'unsaved',
+        },
+        () => {
+          if (user) {
+            setEditName(user.name)
+            setEditMethod(user.prayerCalculationMethod || 'Karachi')
+            setNewPasswordInput('')
+            setConfirmPasswordInput('')
+            setCurrentPasswordInput('')
+            setShowPasswordSection(false)
+          } else {
+            setName('')
+            setEmail('')
+            setPassword('')
+          }
+          onClose()
+        }
+      )
+    } else {
+      onClose()
+    }
+  }
+
   if (!isOpen) return null
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -191,6 +252,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorCode('EMAIL_DELIVERY_FAILED')
         setVerificationPendingEmail(err.email || email)
         setErrorMessage(err.message || 'Account created, but verification email could not be delivered yet. Please click Resend.')
+        if (err.previewUrl || err.verificationUrl) {
+          setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
+        }
       } else if (err.code) {
         setErrorCode(err.code)
       } else if (err.message?.toLowerCase().includes('already exists')) {
@@ -215,12 +279,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await salahApi.resendVerification(targetEmail)
       setSuccessMessage(res.message || 'Verification email resent successfully.')
-      if (res.previewUrl) {
-        setDevPreviewUrl(res.previewUrl)
+      if (res.previewUrl || res.verificationUrl) {
+        setDevPreviewUrl(res.previewUrl || res.verificationUrl || null)
       }
       setResendCooldown(60) // 60 seconds cooldown
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to resend verification email.')
+      if (err.previewUrl || err.verificationUrl) {
+        setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
+      }
       if (err.retryAfter || (err.message && err.message.match(/wait (\d+) seconds/))) {
         const match = err.message && err.message.match(/wait (\d+) seconds/)
         const waitTime = err.retryAfter || (match ? parseInt(match[1], 10) : 60)
@@ -410,7 +477,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in"
-      onClick={onClose}
+      onClick={handleSafeClose}
     >
       <div
         className="relative w-full max-w-sm sm:max-w-md rounded-[28px] bg-[#FAF8F3] border border-[#ECE6D8] p-5.5 shadow-2xl overflow-hidden animate-scale-up"
@@ -419,7 +486,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Close Button */}
         <button
           type="button"
-          onClick={onClose}
+          onClick={handleSafeClose}
           className="absolute right-4 top-4 w-7 h-7 rounded-full bg-stone-200/60 hover:bg-stone-200 flex items-center justify-center text-stone-600 transition cursor-pointer"
         >
           <X className="w-4 h-4" />
@@ -786,8 +853,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    onLogout()
-                    onClose()
+                    promptLogout(() => {
+                      onLogout()
+                      onClose()
+                    })
                   }}
                   className="px-3.5 py-2.5 rounded-xl bg-stone-200/70 hover:bg-stone-300 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer active:scale-95"
                 >

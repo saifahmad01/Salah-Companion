@@ -1,15 +1,40 @@
 import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { Mail, CheckCircle2, AlertCircle, RefreshCw, ArrowRight, ArrowLeft, ExternalLink } from 'lucide-react'
 import { salahApi } from '../services/backendApi'
+import { useUnsavedChanges, useUnsavedChangesWarn } from '../context/UnsavedChangesContext'
 
 export const ForgotPasswordPage: React.FC = () => {
+  const navigate = useNavigate()
+  const { confirmAction } = useUnsavedChanges()
+
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [submittedEmail, setSubmittedEmail] = useState<string | null>(null)
   const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
   const [cooldown, setCooldown] = useState(0)
+
+  // Track unsaved form input
+  const isFormDirty = Boolean(email.trim()) && !submittedEmail && !loading
+  useUnsavedChangesWarn('forgot_password_form', isFormDirty, 'Password reset email')
+
+  const handleSafeNavigate = (to: string) => {
+    if (isFormDirty) {
+      confirmAction(
+        {
+          title: 'Discard Reset Request?',
+          message: 'You have entered an email address. If you leave now, your password reset request will not be sent.',
+          confirmLabel: 'Discard & Leave',
+          cancelLabel: 'Stay on Page',
+          variant: 'unsaved',
+        },
+        () => navigate(to)
+      )
+    } else {
+      navigate(to)
+    }
+  }
 
   // Resend cooldown timer
   React.useEffect(() => {
@@ -77,7 +102,16 @@ export const ForgotPasswordPage: React.FC = () => {
 
       {/* Header */}
       <header className="relative z-10 px-6 py-6 max-w-6xl mx-auto w-full flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-2 text-amber-200/90 hover:text-amber-100 transition">
+        <Link
+          to="/"
+          onClick={(e) => {
+            if (isFormDirty) {
+              e.preventDefault()
+              handleSafeNavigate('/')
+            }
+          }}
+          className="flex items-center gap-2 text-amber-200/90 hover:text-amber-100 transition"
+        >
           <div className="w-8 h-8 rounded-full bg-emerald-900/60 border border-amber-400/30 flex items-center justify-center text-sm">
             🕌
           </div>
@@ -85,6 +119,12 @@ export const ForgotPasswordPage: React.FC = () => {
         </Link>
         <Link
           to="/login"
+          onClick={(e) => {
+            if (isFormDirty) {
+              e.preventDefault()
+              handleSafeNavigate('/login')
+            }
+          }}
           className="text-xs font-medium text-emerald-200/80 hover:text-white flex items-center gap-1 transition"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
@@ -212,6 +252,12 @@ export const ForgotPasswordPage: React.FC = () => {
               <div className="text-center pt-2">
                 <Link
                   to="/login"
+                  onClick={(e) => {
+                    if (isFormDirty) {
+                      e.preventDefault()
+                      handleSafeNavigate('/login')
+                    }
+                  }}
                   className="text-xs text-[#0E543F] font-semibold hover:underline inline-flex items-center gap-1"
                 >
                   <ArrowLeft className="w-3 h-3" />
