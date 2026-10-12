@@ -59,6 +59,7 @@ interface PrayerConfirmationModalProps {
   prayer: PrayerItem | null
   targetStatus?: PrayerStatus
   isSubmitting?: boolean
+  isCorrection?: boolean
   error?: string | null
 }
 
@@ -69,6 +70,7 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
   prayer,
   targetStatus = 'ON_TIME',
   isSubmitting = false,
+  isCorrection = false,
   error = null,
 }) => {
   if (!isOpen || !prayer) return null
@@ -102,10 +104,12 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
             </div>
             <div>
               <h3 id="confirm-prayer-title" className="text-[17px] font-bold text-[#14261E] leading-tight">
-                Confirm {prayer.name} Salah
+                {isCorrection ? `Update ${prayer.name} Salah` : `Confirm ${prayer.name} Salah`}
               </h3>
               <p className="text-[11px] text-[#55675D]">
-                A verified reminder about the importance of prayer
+                {isCorrection
+                  ? "Correcting today's prayer completion record"
+                  : 'A verified reminder about the importance of prayer'}
               </p>
             </div>
           </div>
@@ -167,7 +171,9 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
         {/* Confirmation Question */}
         <div className="mt-4 p-3 rounded-xl bg-white border border-[#E8E2D5] text-center shadow-2xs">
           <p className="text-sm font-bold text-[#14261E]">
-            Have you completed your {prayer.name} Salah?
+            {isCorrection
+              ? `Confirm correction for ${prayer.name} Salah?`
+              : `Have you completed your ${prayer.name} Salah?`}
           </p>
           <div className="mt-1 flex items-center justify-center gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#EBF5EF] text-[#0E543F]">
@@ -175,7 +181,9 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
             </span>
           </div>
           <p className="text-[11px] text-[#55675D] mt-1">
-            Recording Salah complete confirms your fulfillment for today’s active date.
+            {isCorrection
+              ? "Updating your record will correct today's tracking status and progress calculations."
+              : 'Recording Salah complete confirms your fulfillment for today’s active date.'}
           </p>
         </div>
 
@@ -198,12 +206,12 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
             {isSubmitting ? (
               <>
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>Verifying...</span>
+                <span>{isCorrection ? 'Updating...' : 'Verifying...'}</span>
               </>
             ) : (
               <>
                 <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Confirm Salah</span>
+                <span>{isCorrection ? 'Confirm Correction' : 'Confirm Salah'}</span>
               </>
             )}
           </button>

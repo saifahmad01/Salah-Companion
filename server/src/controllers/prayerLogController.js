@@ -81,6 +81,7 @@ export async function logPrayer(req, res, next) {
       longitude,
       calculationMethod,
       madhab,
+      isCorrection,
     } = req.body;
 
     const normalizedPrayer = normalizePrayerName(prayerName);
@@ -165,9 +166,9 @@ export async function logPrayer(req, res, next) {
       });
     }
 
-    // Prevent duplicate completions without prior undo
+    // Prevent duplicate completions without prior undo, UNLESS this is an explicit correction
     const isCompletedStatus = (s) => ['on_time', 'late', 'qada', 'completed'].includes(s?.toLowerCase());
-    if (existingLog && isCompletedStatus(existingLog.status) && isCompletedStatus(status)) {
+    if (existingLog && isCompletedStatus(existingLog.status) && isCompletedStatus(status) && !isCorrection) {
       const dupMessage = isFriday && isFridayMiddayPrayer(normalizedPrayer)
         ? `Friday midday prayer (Juma / Dhuhr) has already been recorded for today. You cannot record both Dhuhr and Juma as separate slots.`
         : `${normalizedPrayer} has already been recorded as completed for today. Duplicate completion is not permitted.`;
@@ -930,7 +931,8 @@ export async function updatePrayerLog(req, res, next) {
   try {
     const userId = req.user.id;
     const { id } = req.params;
-    const { status, notes } = req.body;
+    const { status, notes, date } = req.body;
+    const reqDate = req.query.date || date;
 
     if (!id) {
       return res.status(400).json({
@@ -949,6 +951,26 @@ export async function updatePrayerLog(req, res, next) {
     const userTimezone = await resolveUserTimezone(userId, req, prisma);
     const reqNow = getRequestNow(req);
     const todayStr = getLocalDateKey(reqNow, userTimezone);
+    const targetDate = reqDate || todayStr;
+
+    // Strict date restriction: historical and future dates cannot be edited
+    if (targetDate < todayStr) {
+      return res.status(409).json({
+        success: false,
+        code: 'PRAYER_DATE_NOT_TODAY',
+        error: `Cannot edit prayer records for ${targetDate}. Historical and future dates are read-only.`,
+        message: `Cannot edit prayer records for ${targetDate}. Historical and future dates are read-only.`,
+      });
+    }
+
+    if (targetDate > todayStr) {
+      return res.status(409).json({
+        success: false,
+        code: 'PRAYER_DATE_NOT_TODAY',
+        error: `Cannot edit prayer records for ${targetDate}. Historical and future dates are read-only.`,
+        message: `Cannot edit prayer records for ${targetDate}. Historical and future dates are read-only.`,
+      });
+    }
 
     let existingLog = null;
     if (id.length > 20 || id.includes('-')) {
@@ -972,6 +994,37 @@ export async function updatePrayerLog(req, res, next) {
     if (!existingLog) {
       // Auto-upsert new prayer log if not exists yet
       const normName = normalizePrayerName(id) || id;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          latitude: true,
+          longitude: true,
+          prayerCalculationMethod: true,
+        },
+      });
+
+      const timingValidation = validatePrayerTiming({
+        prayerName: normName,
+        date: todayStr,
+        status: status || 'on_time',
+        latitude: user?.latitude,
+        longitude: user?.longitude,
+        method: user?.prayerCalculationMethod || 'Karachi',
+        now: reqNow,
+        timezone: userTimezone,
+      });
+
+      if (!timingValidation.isValid) {
+        return res.status(timingValidation.statusCode || 409).json({
+          success: false,
+          code: timingValidation.code || 'PRAYER_TIME_NOT_STARTED',
+          error: timingValidation.message,
+          message: timingValidation.message,
+          availableAt: timingValidation.availableAt || null,
+          currentTime: timingValidation.currentTime || reqNow.toISOString(),
+        });
+      }
+
       const created = await prisma.prayerLog.create({
         data: {
           userId,
@@ -979,6 +1032,8 @@ export async function updatePrayerLog(req, res, next) {
           date: todayStr,
           status: status || 'on_time',
           notes: typeof notes !== 'undefined' ? notes : null,
+          prayerStartTime: timingValidation.prayerStartTime || null,
+          prayerEndTime: timingValidation.prayerEndTime || null,
           loggedAt: reqNow,
         },
       });
@@ -1042,7 +1097,7 @@ export async function updatePrayerLog(req, res, next) {
     }
 
     const updated = await prisma.prayerLog.update({
-      where: { id },
+      where: { id: existingLog.id },
       data: {
         ...(status ? { status } : {}),
         ...(typeof notes !== 'undefined' ? { notes } : {}),

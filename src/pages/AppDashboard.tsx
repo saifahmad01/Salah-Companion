@@ -224,6 +224,9 @@ export const AppDashboard = () => {
                       next[day.date][p.id] = mapped
                       changed = true
                     }
+                  } else if (next[day.date]?.[p.id]) {
+                    delete next[day.date][p.id]
+                    changed = true
                   }
                 })
               })
@@ -273,6 +276,9 @@ export const AppDashboard = () => {
                         next[day.date][p.id] = mapped
                         changed = true
                       }
+                    } else if (next[day.date]?.[p.id]) {
+                      delete next[day.date][p.id]
+                      changed = true
                     }
                   })
                 })
@@ -309,6 +315,7 @@ export const AppDashboard = () => {
     prayer: PrayerItem
     status: PrayerStatus
     dateKey: string
+    isCorrection?: boolean
   } | null>(null)
   const [isConfirmSubmitting, setIsConfirmSubmitting] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
@@ -346,13 +353,15 @@ export const AppDashboard = () => {
     const matched = prayers.find((p) => p.id === prayerId)
     if (!matched) return
 
-    if (matched.completed) {
+    // If prayer is already marked with this exact status, inform user idempotently
+    if (matched.completed && matched.prayerStatus === status) {
       setBanner({
-        type: 'error',
-        message: `${matched.name} prayer is already completed. Duplicate completion is prevented.`,
+        type: 'success',
+        message: `${matched.name} prayer is already recorded as ${status.replace('_', ' ')}.`,
       })
       return
     }
+
     if (matched.isUpcoming || matched.statusBadge === 'upcoming') {
       setBanner({
         type: 'error',
@@ -361,11 +370,14 @@ export const AppDashboard = () => {
       return
     }
 
+    const isCorrection = Boolean(matched.completed || (matched.prayerStatus && matched.prayerStatus !== status))
+
     // Open authentic confirmation modal
     setPendingConfirmation({
       prayer: matched,
       status,
       dateKey: dateKeyToUse,
+      isCorrection,
     })
     setIsConfirmModalOpen(true)
   }
@@ -374,7 +386,7 @@ export const AppDashboard = () => {
   const handleConfirmPrayer = async () => {
     if (!pendingConfirmation) return
 
-    const { prayer, status, dateKey } = pendingConfirmation
+    const { prayer, status, dateKey, isCorrection } = pendingConfirmation
     setIsConfirmSubmitting(true)
     setConfirmError(null)
 
@@ -403,6 +415,7 @@ export const AppDashboard = () => {
         prayerName: prayer.id,
         date: dateKey,
         status: mappedStatus as any,
+        isCorrection: Boolean(isCorrection),
         latitude: city.lat,
         longitude: city.lng,
         calculationMethod,
@@ -451,7 +464,9 @@ export const AppDashboard = () => {
 
       setBanner({
         type: 'success',
-        message: `Alhamdulillah! ${prayer.name} prayer recorded as completed. May Allah accept your salah!`,
+        message: isCorrection
+          ? `${prayer.name} prayer status updated to ${status.replace('_', ' ')}. May Allah accept your salah!`
+          : `Alhamdulillah! ${prayer.name} prayer recorded as completed. May Allah accept your salah!`,
       })
     } catch (err: any) {
       setConfirmError(err?.message || 'Server rejected completion. Please verify that the prayer time window is active.')
@@ -536,11 +551,14 @@ export const AppDashboard = () => {
 
     // 4. Marking MISSED
     if (status === 'MISSED') {
+      const matched = prayers.find((p) => p.id === prayerId)
+      const isCorrection = Boolean(matched?.completed || (matched?.prayerStatus && matched?.prayerStatus !== 'MISSED'))
       salahApi
         .upsertPrayerLog({
           prayerName: prayerId,
           date: dateKeyToUse,
           status: 'missed',
+          isCorrection,
           latitude: city.lat,
           longitude: city.lng,
           calculationMethod,
@@ -550,8 +568,19 @@ export const AppDashboard = () => {
         .then(() => {
           const updated = updatePrayerStatus(dateKeyToUse, prayerId, 'MISSED')
           setAllPrayerRecords(updated)
+          if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
+            setSelectedPrayerDetail({
+              ...selectedPrayerDetail,
+              prayerStatus: 'MISSED',
+              completed: false,
+            })
+          }
           queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
           queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+          setBanner({
+            type: 'success',
+            message: `${matched?.name || prayerId} prayer marked as missed. Make it up as Qada when possible.`,
+          })
         })
         .catch((err: any) => {
           setBanner({
@@ -617,6 +646,11 @@ export const AppDashboard = () => {
           type: 'error',
           message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
         })
+        return
+      }
+      // If prayer is already passed or expired today, open status modal to let user choose On Time, Late, Qada, or Missed
+      if (matched.isWindowExpired || matched.statusBadge === 'passed') {
+        handleOpenPrayerStatusModal(matched)
         return
       }
       requestPrayerConfirmation(id, 'ON_TIME', todayDateKey)
@@ -1204,6 +1238,7 @@ export const AppDashboard = () => {
           onConfirm={handleConfirmPrayer}
           prayer={pendingConfirmation?.prayer || null}
           targetStatus={pendingConfirmation?.status || 'ON_TIME'}
+          isCorrection={pendingConfirmation?.isCorrection}
           isSubmitting={isConfirmSubmitting}
           error={confirmError}
         />

@@ -15,16 +15,15 @@ const STORAGE_KEY = 'salah_companion_prayer_records_v2'
  * Returns YYYY-MM-DD format for a given date, supporting IANA timezones.
  */
 export function getDateKey(date: Date = new Date(), timeZone?: string): string {
-  if (timeZone && typeof timeZone === 'string') {
-    try {
-      return new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-      }).format(date)
-    } catch {}
-  }
+  const tz = timeZone || (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'Asia/Kolkata') || 'Asia/Kolkata'
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: tz,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date)
+  } catch {}
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')

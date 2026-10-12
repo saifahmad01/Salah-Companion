@@ -475,14 +475,14 @@ export const PrayerDetailModal: React.FC<{
   const isUpcoming = (prayer.statusBadge === 'upcoming' || prayer.isUpcoming) && !prayer.completed
   const isExpired = !prayer.completed && (prayer.isWindowExpired || prayer.statusBadge === 'passed')
   const isDone = prayer.completed
-  const isDisabled = isUpcoming || isExpired || isDone
+  const isDisabled = isUpcoming
 
   const statusLabel = isDone
     ? prayer.prayerStatus
-      ? prayer.prayerStatus.replace('_', ' ')
-      : 'Completed'
+      ? `${prayer.prayerStatus.replace('_', ' ')} (Edit)`
+      : 'Completed (Edit)'
     : isExpired
-    ? 'Window Expired'
+    ? 'Log (Late/Qada)'
     : isUpcoming
     ? `Available at ${prayer.time}`
     : 'Log Status'
@@ -499,7 +499,7 @@ export const PrayerDetailModal: React.FC<{
       : isDone
       ? 'bg-white/20 text-white'
       : isExpired
-      ? 'bg-stone-300 text-stone-700'
+      ? 'bg-amber-600 text-white'
       : isUpcoming
       ? 'bg-stone-200 text-stone-600'
       : 'bg-[#F5DC96] text-[#0C4535]'
@@ -532,9 +532,9 @@ export const PrayerDetailModal: React.FC<{
               isUpcoming
                 ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
                 : isDone
-                ? `${prayer.name} is already completed.`
+                ? `${prayer.name} is completed. Click to manage or correct status.`
                 : isExpired
-                ? `${prayer.name} prayer window has expired.`
+                ? `${prayer.name} prayer time has passed. Click to record as Qada, Late, or Missed.`
                 : undefined
             }
             onClick={() => {
@@ -755,9 +755,9 @@ export const PrayerDetailModal: React.FC<{
             isUpcoming
               ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
               : isDone
-              ? `${prayer.name} is already completed.`
+              ? `${prayer.name} is completed. Click to manage or correct status.`
               : isExpired
-              ? `${prayer.name} prayer window has expired.`
+              ? `${prayer.name} prayer time has passed. Click to record as Qada, Late, or Missed.`
               : undefined
           }
           onClick={() => {
@@ -783,12 +783,14 @@ export const PrayerDetailModal: React.FC<{
           ) : isDone ? (
             <>
               <CheckCircle className="w-4 h-4" />
-              <span>Completed ({prayer.prayerStatus ? prayer.prayerStatus.replace('_', ' ') : 'Done'})</span>
+              <span>
+                Completed ({prayer.prayerStatus ? prayer.prayerStatus.replace('_', ' ') : 'Done'}) — Click to Edit
+              </span>
             </>
           ) : isExpired ? (
             <>
               <Clock className="w-4 h-4" />
-              <span>Prayer Window Expired</span>
+              <span>Log Salah — Late / Qada / On Time (کیفیت درج کریں)</span>
             </>
           ) : (
             <>
