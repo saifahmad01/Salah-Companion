@@ -37,7 +37,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   currentCoords,
   currentCityName,
 }) => {
-  const [tab, setTab] = useState<'login' | 'register'>('login')
+  const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
@@ -50,6 +50,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
   const [isResending, setIsResending] = useState(false)
   const [resendCooldown, setResendCooldown] = useState(0)
+
+  // Forgot password state
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotLoading, setForgotLoading] = useState(false)
+  const [forgotSubmitted, setForgotSubmitted] = useState(false)
+  const [forgotDevUrl, setForgotDevUrl] = useState<string | null>(null)
+  const [forgotCooldown, setForgotCooldown] = useState(0)
+
+  // Password Setup / Change state for logged-in user
+  const [showPasswordSection, setShowPasswordSection] = useState(false)
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('')
+  const [newPasswordInput, setNewPasswordInput] = useState('')
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('')
+  const [passwordLoading, setPasswordLoading] = useState(false)
+  const [passwordFeedback, setPasswordFeedback] = useState<string | null>(null)
+  const [passwordError, setPasswordError] = useState<string | null>(null)
 
   // Form states
   const [name, setName] = useState('')
@@ -96,6 +112,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return () => clearTimeout(timer)
     }
   }, [resendCooldown])
+
+  // Cooldown timer for forgot password email
+  React.useEffect(() => {
+    if (forgotCooldown > 0) {
+      const timer = setTimeout(() => setForgotCooldown((prev) => prev - 1), 1000)
+      return () => clearTimeout(timer)
+    }
+  }, [forgotCooldown])
 
   if (!isOpen) return null
 
@@ -200,6 +224,68 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       }
     } finally {
       setIsResending(false)
+    }
+  }
+
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setErrorMessage(null)
+    setForgotLoading(true)
+
+    try {
+      const res = await salahApi.forgotPassword(forgotEmail.trim().toLowerCase())
+      setForgotSubmitted(true)
+      if (res.previewUrl) {
+        setForgotDevUrl(res.previewUrl)
+      }
+      setForgotCooldown(60)
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Unable to request password reset.')
+      if (err.retryAfter) {
+        setForgotCooldown(err.retryAfter)
+      }
+    } finally {
+      setForgotLoading(false)
+    }
+  }
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPasswordError(null)
+    setPasswordFeedback(null)
+
+    if (newPasswordInput.length < 8) {
+      setPasswordError('Password must be at least 8 characters long.')
+      return
+    }
+
+    if (!/[A-Za-z]/.test(newPasswordInput) || !/\d/.test(newPasswordInput)) {
+      setPasswordError('Password must contain at least one letter and one number.')
+      return
+    }
+
+    if (newPasswordInput !== confirmPasswordInput) {
+      setPasswordError('New passwords do not match.')
+      return
+    }
+
+    setPasswordLoading(true)
+    try {
+      const res = await salahApi.setPassword({
+        password: newPasswordInput,
+        currentPassword: user?.hasPassword ? currentPasswordInput : undefined,
+      })
+      setPasswordFeedback(res.message || 'Password saved successfully.')
+      setCurrentPasswordInput('')
+      setNewPasswordInput('')
+      setConfirmPasswordInput('')
+      if (user) {
+        onAuthSuccess({ ...user, hasPassword: true })
+      }
+    } catch (err: any) {
+      setPasswordError(err.message || 'Failed to update password.')
+    } finally {
+      setPasswordLoading(false)
     }
   }
 
@@ -449,6 +535,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               <p>1. Open your email app or Gmail.</p>
               <p>2. Click the <strong>"Verify My Email Address"</strong> button.</p>
               <p>3. Return here and sign in to access your prayer tracker.</p>
+              <p className="pt-1 text-[#92400E] font-medium border-t border-[#EDE5D5]/80 mt-1.5">
+                📬 <em>Don't see it?</em> Check your <strong>Spam</strong>, <strong>Junk</strong>, or <strong>Promotions</strong> folder!
+              </p>
             </div>
 
             {/* Quick Actions */}
@@ -584,6 +673,102 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <span className="text-[10px] text-stone-500 font-mono">
                   {currentCoords ? `${currentCoords.lat.toFixed(2)}°, ${currentCoords.lng.toFixed(2)}°` : 'Default GPS'}
                 </span>
+              </div>
+
+              {/* Password Management & Account Security */}
+              <div className="p-3 rounded-2xl bg-[#FAF8F2] border border-[#E8E2D4] space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-[#0E543F]" />
+                    <span className="text-xs font-bold text-[#14261E]">
+                      {user.hasPassword ? 'Password Security' : 'Set Account Password'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPasswordSection(!showPasswordSection)
+                      setPasswordError(null)
+                      setPasswordFeedback(null)
+                    }}
+                    className="text-[11px] font-semibold text-[#0E543F] hover:underline cursor-pointer"
+                  >
+                    {showPasswordSection ? 'Cancel' : (user.hasPassword ? 'Change' : 'Set Password')}
+                  </button>
+                </div>
+
+                {!user.hasPassword && !showPasswordSection && (
+                  <p className="text-[10.5px] text-[#55675E] leading-relaxed">
+                    You currently sign in using Google. Set a password to also log in with email and password.
+                  </p>
+                )}
+
+                {showPasswordSection && (
+                  <div className="pt-2 border-t border-[#E8E2D4] space-y-2 animate-fade-in">
+                    {passwordError && (
+                      <div className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
+                        <span>{passwordError}</span>
+                      </div>
+                    )}
+                    {passwordFeedback && (
+                      <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
+                        <span>{passwordFeedback}</span>
+                      </div>
+                    )}
+
+                    {user.hasPassword && (
+                      <div>
+                        <label className="text-[10.5px] font-semibold text-[#1F3329] block mb-0.5">
+                          Current Password
+                        </label>
+                        <input
+                          type="password"
+                          value={currentPasswordInput}
+                          onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                          placeholder="Current password"
+                          className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
+                        />
+                      </div>
+                    )}
+
+                    <div>
+                      <label className="text-[10.5px] font-semibold text-[#1F3329] block mb-0.5">
+                        New Password (min. 8 chars, letter &amp; digit)
+                      </label>
+                      <input
+                        type="password"
+                        value={newPasswordInput}
+                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                        placeholder="New strong password"
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10.5px] font-semibold text-[#1F3329] block mb-0.5">
+                        Confirm New Password
+                      </label>
+                      <input
+                        type="password"
+                        value={confirmPasswordInput}
+                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                        placeholder="Re-enter new password"
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSetPassword}
+                      disabled={passwordLoading || !newPasswordInput}
+                      className="w-full py-2 rounded-xl bg-[#0E543F] hover:bg-[#0A3D2E] text-white text-xs font-semibold shadow-2xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      {passwordLoading ? 'Saving...' : (user.hasPassword ? 'Update Password' : 'Save New Password')}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-2 pt-1">
@@ -775,9 +960,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-[11px] font-bold text-[#1F3329] uppercase tracking-wider block mb-1">
-                    Password
-                  </label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[11px] font-bold text-[#1F3329] uppercase tracking-wider block">
+                      Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTab('forgot')
+                        setErrorMessage(null)
+                        setSuccessMessage(null)
+                        setForgotSubmitted(false)
+                        setForgotEmail(email)
+                      }}
+                      className="text-[11px] font-semibold text-[#0E543F] hover:underline cursor-pointer"
+                    >
+                      Forgot password?
+                    </button>
+                  </div>
                   <div className="relative">
                     <Lock className="absolute left-3 top-2.5 w-4 h-4 text-stone-400" />
                     <input
@@ -806,6 +1006,109 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   {loading ? 'Signing in...' : 'Sign In to Salah Companion'}
                 </button>
               </form>
+            )}
+
+            {/* Forgot Password Form */}
+            {tab === 'forgot' && (
+              <div className="space-y-3 animate-fade-in">
+                {forgotSubmitted ? (
+                  <div className="p-3.5 rounded-2xl bg-[#FAF6EE] border border-[#EDE5D5] space-y-3 text-center">
+                    <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-800 mx-auto">
+                      <Mail className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-[#14261E]">Reset Link Dispatched</h4>
+                      <p className="text-[11px] text-[#55675E] mt-1 leading-relaxed">
+                        If an account exists for <strong className="text-[#0E543F]">{forgotEmail}</strong>, a password reset link has been sent.
+                      </p>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleForgotPassword}
+                        disabled={forgotLoading || forgotCooldown > 0}
+                        className="w-full py-2 rounded-xl bg-white border border-[#DDD7C8] hover:bg-stone-50 text-xs font-semibold text-[#25392F] transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCw className={`w-3.5 h-3.5 ${forgotLoading ? 'animate-spin' : ''}`} />
+                        <span>
+                          {forgotCooldown > 0 ? `Resend link in ${forgotCooldown}s` : 'Resend Reset Link'}
+                        </span>
+                      </button>
+
+                      {forgotDevUrl && (
+                        <a
+                          href={forgotDevUrl}
+                          className="inline-block text-[10.5px] text-amber-700 hover:underline font-mono pt-1"
+                        >
+                          ⚡ Click here for direct local reset link
+                        </a>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-stone-200/60">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTab('login')
+                          setForgotSubmitted(false)
+                        }}
+                        className="text-xs text-[#0E543F] font-semibold hover:underline cursor-pointer"
+                      >
+                        Back to Sign In
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotPassword} className="space-y-3">
+                    <div className="p-2.5 rounded-xl bg-[#FAF8F2] border border-[#ECE7DB] text-[11px] text-[#55675E]">
+                      Enter your account email to receive a secure link to reset your password.
+                    </div>
+
+                    <div>
+                      <label className="text-[11px] font-bold text-[#1F3329] uppercase tracking-wider block mb-1">
+                        Email Address
+                      </label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-2.5 w-4 h-4 text-stone-400" />
+                        <input
+                          type="email"
+                          value={forgotEmail}
+                          onChange={(e) => setForgotEmail(e.target.value)}
+                          required
+                          placeholder="you@example.com"
+                          className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={forgotLoading}
+                      className="w-full py-2.5 mt-2 rounded-xl bg-[#0C4535] hover:bg-[#083327] active:scale-95 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                    >
+                      {forgotLoading ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
+                          <span>Sending Link...</span>
+                        </>
+                      ) : (
+                        <span>Send Password Reset Link</span>
+                      )}
+                    </button>
+
+                    <div className="text-center pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setTab('login')}
+                        className="text-xs text-[#0E543F] font-semibold hover:underline cursor-pointer"
+                      >
+                        Back to Sign In
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
             )}
 
             {/* Registration Form */}

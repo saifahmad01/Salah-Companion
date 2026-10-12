@@ -132,3 +132,27 @@ export const googleAuthSchema = z.object({
   longitude: z.number().optional(),
 });
 
+/**
+ * Forgot Password Input Validation Schema
+ */
+export const forgotPasswordSchema = z.object({
+  email: emailValidation,
+});
+
+/**
+ * Reset Password Input Validation Schema
+ */
+export const resetPasswordSchema = z.object({
+  token: z.string({ required_error: 'Reset token is required' }).min(1, 'Reset token is required'),
+  password: passwordValidation,
+});
+
+/**
+ * Set/Change Password Validation Schema (for Google OAuth or existing users)
+ */
+export const setPasswordSchema = z.object({
+  password: passwordValidation,
+  currentPassword: z.string().optional(),
+});
+
+

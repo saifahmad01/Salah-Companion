@@ -26,6 +26,21 @@ async function getTransporter() {
   }
 
   // 2. Production / Configured SMTP (Gmail, SendGrid, Amazon SES, Brevo, or custom SMTP)
+  if (config.emailService === 'gmail' || config.emailHost?.includes('gmail.com')) {
+    transporter = nodemailer.createTransport({
+      service: 'gmail',
+      family: 4,
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
+      auth: {
+        user: config.emailUser,
+        pass: config.emailPass,
+      },
+    });
+    return transporter;
+  }
+
   const port = Number(config.emailPort) || 465;
   const isSecure = config.emailSecure !== undefined ? Boolean(config.emailSecure) : (port === 465);
 
@@ -33,7 +48,7 @@ async function getTransporter() {
     host: config.emailHost || 'smtp.gmail.com',
     port,
     secure: isSecure,
-    family: 4, // CRITICAL: Forces IPv4 DNS resolution to prevent ENETUNREACH errors on cloud hosts like Render
+    family: 4, // Forces IPv4 DNS resolution
     connectionTimeout: 8000,
     greetingTimeout: 8000,
     socketTimeout: 10000,
@@ -109,6 +124,36 @@ async function sendViaHttpApi({ to, subject, html, text }) {
       console.warn(`[EmailService] Brevo API rejected: ${errBody}`);
     } catch (err) {
       console.warn(`[EmailService] Brevo API attempt failed:`, err.message);
+    }
+  }
+
+  const sendgridApiKey = process.env.SENDGRID_API_KEY;
+  if (sendgridApiKey) {
+    try {
+      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${sendgridApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          personalizations: [{ to: [{ email: to }] }],
+          from: { email: process.env.SENDGRID_FROM || config.emailUser || 'noreply@salahcompanion.com', name: 'Salah Companion' },
+          subject,
+          content: [
+            { type: 'text/plain', value: text },
+            { type: 'text/html', value: html },
+          ],
+        }),
+      });
+      if (response.ok || response.status === 202) {
+        console.log(`[EmailService] Delivered via SendGrid API to ${to}`);
+        return { success: true, messageId: `sendgrid-${Date.now()}` };
+      }
+      const errBody = await response.text();
+      console.warn(`[EmailService] SendGrid API rejected: ${errBody}`);
+    } catch (err) {
+      console.warn(`[EmailService] SendGrid API attempt failed:`, err.message);
     }
   }
 
@@ -327,11 +372,23 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
   const htmlContent = getVerificationEmailHtml(name, verificationUrl, directApiUrl);
   const textContent = `Assalamu Alaikum ${name},\n\nPlease verify your email and activate your Salah Companion account by clicking this link:\n${verificationUrl}\n\nThis will take you to your Salah Companion dashboard.\n\nAlternative direct verification link:\n${directApiUrl}\n\nThis link will expire in ${config.verificationTokenTtlHours} hours.\n\nSalah Companion Team`;
 
+  const mailOptions = {
+    from: config.emailFrom || `"Salah Companion" <${config.emailUser}>`,
+    to,
+    replyTo: config.emailUser || 'salahcompanion786@gmail.com',
+    subject: 'Verify your email address - Salah Companion',
+    text: textContent,
+    html: htmlContent,
+    headers: {
+      'X-Entity-Ref-ID': token,
+    },
+  };
+
   try {
     // 1. First attempt HTTPS REST API if configured (bypasses Render SMTP port blocking)
     const httpApiResult = await sendViaHttpApi({
       to,
-      subject: '🕌 Verify your email address - Salah Companion',
+      subject: 'Verify your email address - Salah Companion',
       html: htmlContent,
       text: textContent,
     });
@@ -343,14 +400,6 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
         verificationUrl,
       };
     }
-
-    const mailOptions = {
-      from: config.emailFrom,
-      to,
-      subject: '🕌 Verify your email address - Salah Companion',
-      text: textContent,
-      html: htmlContent,
-    };
 
     const mailer = await getTransporter();
     const info = await mailer.sendMail(mailOptions);
@@ -420,10 +469,14 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
  * Verifies SMTP transport configuration connection
  */
 export async function verifyEmailTransport() {
-  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY) {
+  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY) {
+    let provider = 'http_api';
+    if (process.env.RESEND_API_KEY) provider = 'resend_http_api';
+    else if (process.env.BREVO_API_KEY) provider = 'brevo_http_api';
+    else if (process.env.SENDGRID_API_KEY) provider = 'sendgrid_http_api';
     return {
       connected: true,
-      provider: process.env.RESEND_API_KEY ? 'resend_http_api' : 'brevo_http_api',
+      provider,
     };
   }
   try {
@@ -461,3 +514,272 @@ export async function verifyEmailTransport() {
     }
   }
 }
+
+/**
+ * Generates responsive Islamic-themed password reset email HTML template
+ */
+function getPasswordResetEmailHtml(name, resetUrl) {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reset Your Password - Salah Companion</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #F7F5EE;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #1F2D26;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #F7F5EE;
+      padding: 30px 15px;
+      box-sizing: border-box;
+    }
+    .container {
+      max-width: 560px;
+      margin: 0 auto;
+      background-color: #FFFFFF;
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid #ECE7DB;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+    }
+    .header {
+      background: linear-gradient(135deg, #0E543F 0%, #157357 100%);
+      padding: 36px 30px 30px;
+      text-align: center;
+      color: #FFFFFF;
+    }
+    .header-icon {
+      font-size: 32px;
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+    .header-title {
+      font-size: 24px;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.3px;
+    }
+    .header-subtitle {
+      font-size: 13px;
+      color: #C5E5D7;
+      margin-top: 4px;
+      font-weight: 500;
+    }
+    .content {
+      padding: 36px 32px 28px;
+      line-height: 1.6;
+    }
+    .greeting {
+      font-size: 17px;
+      font-weight: 700;
+      color: #142820;
+      margin-bottom: 14px;
+    }
+    .text {
+      font-size: 14.5px;
+      color: #4A5B52;
+      margin-bottom: 22px;
+    }
+    .btn-container {
+      text-align: center;
+      margin: 32px 0 28px;
+    }
+    .btn {
+      display: inline-block;
+      background-color: #0E543F;
+      color: #FFFFFF !important;
+      font-size: 15px;
+      font-weight: 600;
+      text-decoration: none;
+      padding: 14px 34px;
+      border-radius: 9999px;
+      box-shadow: 0 4px 12px rgba(14, 84, 63, 0.25);
+    }
+    .info-card {
+      background-color: #FAF8F2;
+      border: 1px solid #ECE7DB;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+      font-size: 13px;
+      color: #5C6E65;
+    }
+    .backup-link {
+      font-size: 12px;
+      color: #7A8B82;
+      word-break: break-all;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px dashed #E2DDD2;
+    }
+    .backup-link a {
+      color: #0E543F;
+      text-decoration: underline;
+    }
+    .footer {
+      background-color: #FAF8F2;
+      padding: 22px 30px;
+      text-align: center;
+      border-top: 1px solid #EFEAE0;
+      font-size: 11.5px;
+      color: #8A9991;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <div class="header-icon">🕌</div>
+        <h1 class="header-title">Salah Companion</h1>
+        <div class="header-subtitle">رفیقِ نماز • Account Security</div>
+      </div>
+      <div class="content">
+        <div class="greeting">Assalamu Alaikum wa Rahmatullah, ${name || 'Dear Brother/Sister'}!</div>
+        <div class="text">
+          We received a request to reset your password for your <strong>Salah Companion</strong> account.
+        </div>
+        <div class="text">
+          Click the button below to choose a new secure password:
+        </div>
+        <div class="btn-container">
+          <a href="${resetUrl}" class="btn" target="_blank">Reset My Password</a>
+        </div>
+        <div class="info-card">
+          ⏱️ <strong>Security Notice:</strong> This reset link is valid for <strong>1 hour</strong> and can only be used once. If you did not request a password reset, you can safely ignore this email — your existing password remains completely secure.
+        </div>
+        <div class="backup-link">
+          If the button above does not work, copy and paste this link into your browser:<br>
+          <a href="${resetUrl}" target="_blank">${resetUrl}</a>
+        </div>
+      </div>
+      <div class="footer">
+        © ${new Date().getFullYear()} Salah Companion. May Allah protect your iman and guide your steps.
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+/**
+ * Sends a password reset email to the user
+ * @param {string} to Recipient email
+ * @param {string} name Recipient name
+ * @param {string} token Password reset token
+ * @param {string|null} clientOrigin Client origin domain
+ */
+export async function sendPasswordResetEmail(to, name, token, clientOrigin = null) {
+  let frontendBase = 'https://salah-companion.mdsaif.workers.dev';
+  if (clientOrigin) {
+    const sanitized = clientOrigin.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+    if (sanitized.includes('workers.dev') || sanitized.includes('localhost')) {
+      frontendBase = sanitized;
+    }
+  } else if (config.frontendUrl && !config.frontendUrl.includes('netlify.app')) {
+    frontendBase = config.frontendUrl.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+  }
+
+  if (frontendBase.includes('netlify.app')) {
+    frontendBase = 'https://salah-companion.mdsaif.workers.dev';
+  }
+
+  const resetUrl = `${frontendBase}/reset-password?token=${token}`;
+  const htmlContent = getPasswordResetEmailHtml(name, resetUrl);
+  const textContent = `Assalamu Alaikum ${name},\n\nWe received a request to reset your password for your Salah Companion account.\n\nPlease click the link below to choose a new password:\n${resetUrl}\n\nThis reset link is valid for 1 hour.\n\nIf you did not request a password reset, you can safely ignore this email.\n\nSalah Companion Team`;
+
+  const mailOptions = {
+    from: config.emailFrom || `"Salah Companion" <${config.emailUser}>`,
+    to,
+    replyTo: config.emailUser || 'salahcompanion786@gmail.com',
+    subject: 'Reset your password - Salah Companion',
+    text: textContent,
+    html: htmlContent,
+    headers: {
+      'X-Entity-Ref-ID': token,
+    },
+  };
+
+  try {
+    // 1. First attempt HTTPS REST API if configured (bypasses Render SMTP port blocking)
+    const httpApiResult = await sendViaHttpApi({
+      to,
+      subject: 'Reset your password - Salah Companion',
+      html: htmlContent,
+      text: textContent,
+    });
+    if (httpApiResult?.success) {
+      return {
+        success: true,
+        messageId: httpApiResult.messageId,
+        resetUrl,
+        previewUrl: resetUrl,
+      };
+    }
+
+    const mailer = await getTransporter();
+    const info = await mailer.sendMail(mailOptions);
+    console.log(`[EmailService] Password reset email successfully sent to ${to}: ${info.messageId}`);
+    const previewUrl = nodemailer.getTestMessageUrl(info) || resetUrl;
+
+    return {
+      success: true,
+      messageId: info.messageId,
+      resetUrl,
+      previewUrl,
+    };
+  } catch (err) {
+    console.error(`[EmailService] Primary SMTP delivery failed for password reset to ${to}:`, err.message);
+
+    // Fallback port retry if Gmail
+    if (config.emailHost?.includes('gmail.com') || config.emailService === 'gmail' || !config.emailHost) {
+      try {
+        const primaryPort = Number(config.emailPort) || 465;
+        const fallbackPort = primaryPort === 465 ? 587 : 465;
+        const fallbackTransporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: fallbackPort,
+          secure: fallbackPort === 465,
+          family: 4,
+          connectionTimeout: 8000,
+          greetingTimeout: 8000,
+          socketTimeout: 10000,
+          auth: {
+            user: config.emailUser,
+            pass: config.emailPass,
+          },
+          tls: {
+            rejectUnauthorized: false,
+          },
+        });
+        const info = await fallbackTransporter.sendMail(mailOptions);
+        console.log(`[EmailService] Reset email successfully sent via fallback port ${fallbackPort} to ${to}: ${info.messageId}`);
+        return {
+          success: true,
+          messageId: info.messageId,
+          resetUrl,
+          previewUrl: resetUrl,
+        };
+      } catch (fallbackErr) {
+        console.error(`[EmailService] Fallback reset delivery failed:`, fallbackErr.message);
+      }
+    }
+
+    return {
+      success: false,
+      error: err.message,
+      resetUrl,
+      previewUrl: resetUrl,
+    };
+  }
+}
+

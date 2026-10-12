@@ -126,6 +126,7 @@ export interface UserProfile {
   latitude: number | null;
   longitude: number | null;
   isEmailVerified?: boolean;
+  hasPassword?: boolean;
   googleId?: string | null;
   avatarUrl?: string | null;
   createdAt: string;
@@ -393,6 +394,43 @@ export const salahApi = {
   }): Promise<{ success: boolean; user: UserProfile }> {
     return await fetchWithAuth('/auth/profile', {
       method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /**
+   * Request password reset link via email
+   * POST /api/auth/forgot-password
+   */
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string; previewUrl?: string }> {
+    return await fetchWithAuth('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  /**
+   * Reset password using token from email
+   * POST /api/auth/reset-password
+   */
+  async resetPassword(payload: { token: string; password: string }): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Set or change password for authenticated user (including Google OAuth accounts)
+   * POST /api/auth/set-password (Protected)
+   */
+  async setPassword(payload: { password: string; currentPassword?: string }): Promise<{ success: boolean; message: string }> {
+    return await fetchWithAuth('/auth/set-password', {
+      method: 'POST',
       body: JSON.stringify(payload),
     });
   },

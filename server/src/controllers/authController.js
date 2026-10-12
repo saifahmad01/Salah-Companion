@@ -2,7 +2,11 @@ import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db/prisma.js';
-import { sendVerificationEmail, verifyEmailTransport } from '../services/emailService.js';
+import {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+  verifyEmailTransport,
+} from '../services/emailService.js';
 import {
   verifyGoogleToken,
   getGoogleAuthUrl,
@@ -126,9 +130,14 @@ export function sanitizeUser(user) {
     verificationToken,
     tokenExpiresAt,
     lastVerificationSentAt,
+    resetPasswordTokenHash,
+    resetPasswordExpiresAt,
     ...sanitized
   } = user;
-  return sanitized;
+  return {
+    ...sanitized,
+    hasPassword: Boolean(password),
+  };
 }
 
 /**
@@ -231,15 +240,16 @@ export async function register(req, res, next) {
 
     const directApiUrl = `${config.appUrl}/api/auth/verify-email?token=${rawToken}`;
 
-    // 7. If email delivery failed, return 201 with warning & fallback verification link rather than blocking account creation with 502
+    // 7. If email delivery failed, return 502 with honest diagnostic rather than swallowing the failure
     if (!emailResult.success) {
-      console.warn(`[AuthController] Email delivery warning for ${normalizedEmail}: ${emailResult.error}`);
-      return res.status(201).json({
-        success: true,
-        message: 'Account registered! Your verification email is queued or encountering a delay. You may use the direct link or click Resend in a moment.',
+      console.warn(`[AuthController] Email delivery failure for ${normalizedEmail}: ${emailResult.error}`);
+      return res.status(502).json({
+        success: false,
+        error: `Account created, but verification email could not be delivered (${emailResult.error || 'SMTP delivery rejected'}). Please verify email configuration or click Resend.`,
+        code: 'EMAIL_DELIVERY_FAILED',
         requiresEmailVerification: true,
         email: normalizedEmail,
-        emailWarning: emailResult.error,
+        canResend: true,
         previewUrl: directApiUrl,
         verificationUrl: directApiUrl,
       });
@@ -975,4 +985,222 @@ export async function getEmailHealth(req, res) {
     });
   }
 }
+
+/**
+ * 12. Forgot Password Request
+ * POST /api/auth/forgot-password
+ *
+ * Rules:
+ * - Anti-enumeration: returns generic 200 OK whether user exists or not
+ * - Generates secure single-use 32-byte crypto token, stores SHA-256 hash in database
+ * - Sets 1-hour expiration
+ * - Sends password reset email
+ * - Rate-limited cooldown (60 seconds)
+ */
+export async function forgotPassword(req, res, next) {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    // Anti-enumeration protection: never reveal whether the email exists
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists with this email, a password reset link has been sent.',
+      });
+    }
+
+    // Rate-limiting: prevent spamming reset requests (60 seconds cooldown)
+    if (user.resetPasswordExpiresAt) {
+      const msLeft = new Date(user.resetPasswordExpiresAt).getTime() - Date.now();
+      // Token was created with 1h (3600000ms). If > 3540000ms remain, it was created < 60s ago
+      if (msLeft > 3540000) {
+        const retryAfterSec = Math.ceil((msLeft - 3540000) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `A password reset link was recently requested. Please check your inbox or wait ${retryAfterSec} seconds.`,
+          code: 'RATE_LIMITED',
+          retryAfter: retryAfterSec,
+        });
+      }
+    }
+
+    // Generate secure random single-use token and SHA-256 hash
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = hashVerificationToken(rawToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour expiration
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetPasswordTokenHash: tokenHash,
+        resetPasswordExpiresAt: expiresAt,
+      },
+    });
+
+    const clientOrigin = getEffectiveFrontendUrl(req);
+    const emailResult = await sendPasswordResetEmail(normalizedEmail, user.name, rawToken, clientOrigin);
+
+    if (!emailResult.success) {
+      console.warn(`[AuthController] Password reset email delivery failed for ${normalizedEmail}: ${emailResult.error}`);
+      return res.status(502).json({
+        success: false,
+        error: `Password reset requested, but the email delivery failed (${emailResult.error || 'SMTP delivery rejected'}). Please verify your email configuration.`,
+        code: 'EMAIL_DELIVERY_FAILED',
+        previewUrl: emailResult.previewUrl,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'If an account exists with this email, a password reset link has been sent.',
+      previewUrl: emailResult.previewUrl,
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 13. Reset Password Using Token
+ * POST /api/auth/reset-password
+ *
+ * Rules:
+ * - Validates single-use token against SHA-256 hash in database
+ * - Enforces expiration (1 hour)
+ * - Hashes new password with bcrypt (salt rounds = 12)
+ * - Clears token hash (single-use)
+ * - Issues JWT session cookie and automatically logs user in
+ */
+export async function resetPassword(req, res, next) {
+  try {
+    const { token, password } = req.body;
+    if (!token || typeof token !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Reset token is required.',
+        code: 'MISSING_TOKEN',
+      });
+    }
+
+    const tokenHash = hashVerificationToken(token);
+    const user = await prisma.user.findFirst({
+      where: { resetPasswordTokenHash: tokenHash },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: 'This password reset link is invalid or has already been used. Please request a new link.',
+        code: 'INVALID_RESET_TOKEN',
+      });
+    }
+
+    if (user.resetPasswordExpiresAt && new Date() > new Date(user.resetPasswordExpiresAt)) {
+      return res.status(400).json({
+        success: false,
+        error: 'This password reset link has expired (links are valid for 1 hour). Please request a new link.',
+        code: 'TOKEN_EXPIRED',
+        email: user.email,
+      });
+    }
+
+    // Hash new password with bcrypt (salt rounds = 12)
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetPasswordTokenHash: null,
+        resetPasswordExpiresAt: null,
+        isEmailVerified: true, // Resetting password via email token confirms email ownership
+      },
+    });
+
+    const authToken = signToken(updatedUser);
+    setAuthCookie(res, authToken);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Your password has been successfully reset. You are now logged in.',
+      token: authToken,
+      user: sanitizeUser(updatedUser),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 14. Set or Change Password for Authenticated User
+ * POST /api/auth/set-password (Protected via protectRoute)
+ *
+ * Rules:
+ * - If user does not have a password yet (Google OAuth user), allows setting without current password
+ * - If user already has a password, requires and verifies current password
+ * - Hashes new password with bcrypt (salt rounds = 12)
+ */
+export async function setPassword(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const { password, currentPassword } = req.body;
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found.',
+        code: 'USER_NOT_FOUND',
+      });
+    }
+
+    // If user already has a password, verify current password
+    if (user.password) {
+      if (!currentPassword) {
+        return res.status(400).json({
+          success: false,
+          error: 'Current password is required to change your password.',
+          code: 'CURRENT_PASSWORD_REQUIRED',
+        });
+      }
+
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(401).json({
+          success: false,
+          error: 'Current password is incorrect.',
+          code: 'INCORRECT_CURRENT_PASSWORD',
+        });
+      }
+    }
+
+    // Hash new password with bcrypt (salt rounds = 12)
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: {
+        password: hashedPassword,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: user.password ? 'Password changed successfully.' : 'Password created successfully. You can now log in using either Google or your email and password.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
 

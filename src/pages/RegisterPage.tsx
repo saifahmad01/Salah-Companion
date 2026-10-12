@@ -166,6 +166,9 @@ export const RegisterPage: React.FC = () => {
                   We sent a confirmation link to <strong className="text-[#122A20]">{registeredEmail}</strong>.
                   Please click the link to activate your Salah Companion account.
                 </p>
+                <p className="mt-2 text-xs text-[#92400E] font-medium bg-[#FFFBEB] p-2.5 rounded-xl border border-[#FDE68A]">
+                  📬 If you don't see the email in your main inbox, please check your <strong>Spam</strong>, <strong>Junk</strong>, or <strong>Promotions</strong> folder!
+                </p>
               </div>
 
               {devPreviewUrl && (

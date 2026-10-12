@@ -1,3 +1,4 @@
+import dns from 'dns';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
@@ -8,11 +9,29 @@ import { db, checkDbHealth } from './db/connection.js';
 import { startNotificationScheduler, stopNotificationScheduler } from './services/notificationScheduler.js';
 import { ensurePermanentAdmins } from './services/adminBootstrapService.js';
 
+// Ensure IPv4 resolution is prioritized across the entire Node.js runtime to prevent IPv6 ENETUNREACH errors on cloud hosts
+try {
+  dns.setDefaultResultOrder('ipv4first');
+} catch {}
+
 const app = express();
 
 // ============================================================================
 // Global Middlewares
 // ============================================================================
+
+// Enterprise security headers (XSS, Clickjacking, MIME sniffing, HSTS)
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  res.setHeader('Permissions-Policy', 'geolocation=(self), microphone=(), camera=()');
+  if (config.nodeEnv === 'production' || process.env.RENDER) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
+  next();
+});
 
 // Cookie parser for secure HttpOnly sessions
 app.use(cookieParser());
