@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const validPrayerNames = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+const validPrayerNames = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'juma', 'jumuah', "jumu'ah", 'jummah'];
 
 export const logPrayerInputSchema = z.object({
   prayerName: z
@@ -9,7 +9,7 @@ export const logPrayerInputSchema = z.object({
     .refine(
       (val) => validPrayerNames.includes(val.toLowerCase()),
       {
-        message: 'prayerName must be one of: Fajr, Dhuhr, Asr, Maghrib, Isha',
+        message: "prayerName must be one of: Fajr, Dhuhr, Juma, Jumu'ah, Asr, Maghrib, Isha",
       }
     ),
   date: z
@@ -24,4 +24,5 @@ export const logPrayerInputSchema = z.object({
   longitude: z.number().min(-180).max(180).optional().nullable(),
   calculationMethod: z.string().optional().nullable(),
   madhab: z.string().optional().nullable(),
+  jumuahTime: z.string().optional().nullable(),
 });

@@ -5,7 +5,7 @@ import {
   Madhab,
   Prayer,
 } from 'adhan';
-import { formatDateKey, isValidDateKey } from '../utils/dateUtils.js';
+import { formatDateKey, isValidDateKey, getLocalDateKey } from '../utils/dateUtils.js';
 
 /**
  * Resolves CalculationMethod object from string identifier
@@ -219,21 +219,24 @@ export function validatePrayerTiming({
   method = 'Karachi',
   madhab = 'Hanafi',
   now = new Date(),
+  timezone = 'Asia/Kolkata',
+  jumuahTime,
 }) {
   const normPrayer = (prayerName || '').toLowerCase().trim();
-  const validPrayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
+  const validPrayers = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha', 'juma', 'jumuah', "jumu'ah", 'jummah'];
 
   if (!validPrayers.includes(normPrayer)) {
     return {
       isValid: false,
       code: 'INVALID_PRAYER_NAME',
       statusCode: 400,
-      message: `Invalid prayer name "${prayerName}". Must be one of: Fajr, Dhuhr, Asr, Maghrib, Isha.`,
+      message: `Invalid prayer name "${prayerName}". Must be one of: Fajr, Dhuhr, Juma, Asr, Maghrib, Isha.`,
     };
   }
 
-  // Trusted server date
-  const todayStr = formatDateKey(now);
+  // Trusted local date according to user's configured IANA timezone
+  const safeTimezone = (timezone && typeof timezone === 'string') ? timezone : 'Asia/Kolkata';
+  const todayStr = getLocalDateKey(now, safeTimezone);
   const targetDateStr = date || todayStr;
 
   if (!isValidDateKey(targetDateStr)) {
@@ -285,15 +288,31 @@ export function validatePrayerTiming({
     targetDate: targetDateObj,
   });
 
-  const prayerStartTimeStr = timetable.times[normPrayer];
-  const prayerStartTime = new Date(prayerStartTimeStr);
+  // Handle Friday Jumu'ah prayer mapping
+  const isMidday = normPrayer === 'dhuhr' || normPrayer === 'juma' || normPrayer === 'jumuah' || normPrayer === "jumu'ah" || normPrayer === 'jummah';
+  const prayerKey = isMidday ? 'dhuhr' : normPrayer;
+
+  const prayerStartTimeStr = timetable.times[prayerKey];
+  let prayerStartTime = new Date(prayerStartTimeStr);
+
+  // If a custom jumuahTime is provided (e.g. '13:15') and prayer is Jumu'ah on Friday, honor it
+  const [yYear, mMonth, dDay] = targetDateStr.split('-').map(Number);
+  const isTargetFriday = new Date(Date.UTC(yYear, mMonth - 1, dDay)).getUTCDay() === 5;
+  if (isTargetFriday && isMidday && jumuahTime && typeof jumuahTime === 'string') {
+    const [jH, jM] = jumuahTime.split(':').map(Number);
+    if (!isNaN(jH) && !isNaN(jM)) {
+      const customJumuah = new Date(prayerStartTime);
+      customJumuah.setHours(jH, jM, 0, 0);
+      prayerStartTime = customJumuah;
+    }
+  }
 
   let prayerEndTimeStr = null;
-  if (normPrayer === 'fajr') prayerEndTimeStr = timetable.times.sunrise;
-  else if (normPrayer === 'dhuhr') prayerEndTimeStr = timetable.times.asr;
-  else if (normPrayer === 'asr') prayerEndTimeStr = timetable.times.maghrib;
-  else if (normPrayer === 'maghrib') prayerEndTimeStr = timetable.times.isha;
-  else if (normPrayer === 'isha') {
+  if (prayerKey === 'fajr') prayerEndTimeStr = timetable.times.sunrise;
+  else if (prayerKey === 'dhuhr') prayerEndTimeStr = timetable.times.asr;
+  else if (prayerKey === 'asr') prayerEndTimeStr = timetable.times.maghrib;
+  else if (prayerKey === 'maghrib') prayerEndTimeStr = timetable.times.isha;
+  else if (prayerKey === 'isha') {
     const nextDay = new Date(targetDateObj);
     nextDay.setDate(nextDay.getDate() + 1);
     const nextDayTimetable = calculatePrayers({
@@ -315,17 +334,18 @@ export function validatePrayerTiming({
   // A. If current time is strictly before the prayer start time:
   if (nowMs < startMs) {
     const timeFormatted = prayerStartTime.toLocaleTimeString('en-IN', {
-      timeZone: 'Asia/Kolkata',
+      timeZone: safeTimezone,
       hour: '2-digit',
       minute: '2-digit',
       hour12: true,
     });
 
+    const displayName = (isTargetFriday && isMidday) ? "Jumu'ah" : capitalize(normPrayer);
     return {
       isValid: false,
       code: 'PRAYER_TIME_NOT_STARTED',
       statusCode: 409,
-      message: `${capitalize(normPrayer)} prayer time has not started yet. You can mark this prayer as completed once its prayer time begins at ${timeFormatted}.`,
+      message: `${displayName} prayer time has not started yet. You can mark this prayer as completed once its prayer time begins at ${timeFormatted}.`,
       availableAt: prayerStartTime.toISOString(),
       currentTime: now.toISOString(),
       prayerStartTime: prayerStartTime.toISOString(),
@@ -333,34 +353,17 @@ export function validatePrayerTiming({
     };
   }
 
-  // B. If current time is past the prayer window end time:
-  const isCompletionAttempt = !status || ['on_time', 'late', 'qada', 'completed'].includes(status.toLowerCase());
-  if (nowMs >= endMs && isCompletionAttempt) {
-    const endTimeFormatted = prayerEndTime.toLocaleTimeString('en-IN', {
-      timeZone: 'Asia/Kolkata',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    });
-
-    return {
-      isValid: false,
-      code: 'PRAYER_WINDOW_EXPIRED',
-      statusCode: 409,
-      message: `${capitalize(normPrayer)} prayer window ended at ${endTimeFormatted}. It cannot be marked as completed after its valid window expires.`,
-      availableAt: null,
-      currentTime: now.toISOString(),
-      prayerStartTime: prayerStartTime.toISOString(),
-      prayerEndTime: prayerEndTime.toISOString(),
-      isExpired: true,
-    };
-  }
+  // B. If current time is past the individual prayer window end time:
+  // In accordance with active-day rules: users can mark, undo, or correct their five daily prayers
+  // at any time during the current local calendar day, even after the individual prayer time has passed.
+  const isPassed = nowMs >= endMs;
 
   return {
     isValid: true,
+    code: 'OK',
     prayerStartTime: prayerStartTime.toISOString(),
     prayerEndTime: prayerEndTime.toISOString(),
     isWithinWindow: nowMs >= startMs && nowMs < endMs,
-    isPassed: nowMs >= endMs,
+    isPassed,
   };
 }

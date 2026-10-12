@@ -166,19 +166,20 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
     prayerId: string,
     status: PrayerStatus | null
   ) => {
-    // Strictly forbid marking future date or unstarted prayer as completed (ON_TIME, LATE, QADA)
-    if (status === 'ON_TIME' || status === 'LATE' || status === 'QADA') {
-      const todayKey = new Date().toISOString().split('T')[0]
-      if (dateKey > todayKey) {
-        alert('Cannot mark prayer as completed for a future date. Prayer time has not started yet.')
-        return
-      }
-      if (dateKey < todayKey) {
-        alert('Previous days are read-only. You can only mark prayers completed for today.')
-        return
-      }
-      if (dateKey === todayKey) {
-        const matching = prayers.find((p) => p.id === prayerId)
+    // Strictly forbid modifying past dates or future dates
+    const todayKey = new Date().toISOString().split('T')[0]
+    if (dateKey < todayKey) {
+      alert('Previous days are read-only. You cannot edit, complete, or undo past prayer records.')
+      return
+    }
+    if (dateKey > todayKey) {
+      alert('Future days are read-only. You cannot edit, complete, or undo future prayer records.')
+      return
+    }
+
+    if (dateKey === todayKey) {
+      const matching = prayers.find((p) => p.id === prayerId)
+      if (status === 'ON_TIME' || status === 'LATE' || status === 'QADA') {
         if (matching && (matching.isUpcoming || matching.statusBadge === 'upcoming') && !matching.completed) {
           alert(`${matching.name} prayer time has not started yet. Available at ${matching.time}.`)
           return
@@ -510,13 +511,13 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                           matchingCurrent?.isWindowExpired
                         const isCompletedPrayer = prayer.isCompleted
 
-                        // Strictly disable modifying past days, future days, unstarted prayers, expired prayers, or already completed prayers
+                        // Disable modifying past days, future days, unstarted prayers, expired prayers, or completed prayers whose window has ended
                         const isMatrixDisabled =
                           isPastDay ||
                           isFutureDay ||
                           isUpcomingToday ||
                           isExpiredToday ||
-                          isCompletedPrayer
+                          (isCompletedPrayer && isExpiredToday)
 
                         if (status === 'on_time') {
                           pillClasses = 'bg-[#0E543F] text-white border-[#0B4433] shadow-2xs'
@@ -537,13 +538,13 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         const tooltip = isPastDay
                           ? `${prayer.name} (${day.day}): ${status ? status.replace('_', ' ').toUpperCase() : 'Not offered'} • Historical record (Read-Only)`
                           : isFutureDay
-                          ? `${prayer.name} (${day.day}): Future date - prayer time has not started yet`
+                          ? `${prayer.name} (${day.day}): Future date - prayer time has not started yet (Read-Only)`
                           : isUpcomingToday
                           ? `${prayer.name} (${day.day}): Prayer time has not started yet. Available at ${matchingCurrent?.time || 'prayer time'}.`
                           : isExpiredToday
-                          ? `${prayer.name} (${day.day}): Window expired`
+                          ? `${prayer.name} (${day.day}): Window expired. Status is locked.`
                           : isCompletedPrayer
-                          ? `${prayer.name} (${day.day}): Completed (Alhamdulillah)`
+                          ? `${prayer.name} (${day.day}): Completed • Click to manage or undo while window is open`
                           : `${prayer.name} (${day.day}): Click to mark completed`
 
                         return (

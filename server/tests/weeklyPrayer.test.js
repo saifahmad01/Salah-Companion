@@ -154,7 +154,41 @@ async function runTests() {
     // Test 5: Update prayer status via PATCH /api/prayers/log/:id
     // ------------------------------------------------------------------------
     console.log('\n5. Testing PATCH /api/prayers/log/:id (updating prayer record notes)...');
-    const patchRes = await fetch(`${BASE_URL}/api/prayers/log/${maghribLogId}`, {
+    // Past date log must be rejected with 409 PRAYER_DATE_NOT_TODAY
+    const patchPastRes = await fetch(`${BASE_URL}/api/prayers/log/${maghribLogId}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${tokenA}`,
+      },
+      body: JSON.stringify({
+        notes: 'Trying to modify historical record',
+      }),
+    });
+    assert.equal(patchPastRes.status, 409, 'Past date PATCH must return 409');
+    const patchPastJson = await patchPastRes.json();
+    assert.equal(patchPastJson.code, 'PRAYER_DATE_NOT_TODAY');
+
+    // Today's log can be updated
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+    const todayLog = await prisma.prayerLog.upsert({
+      where: {
+        userId_prayerName_date: {
+          userId: userA.id,
+          prayerName: 'Isha',
+          date: todayStr,
+        },
+      },
+      update: { status: 'on_time' },
+      create: {
+        userId: userA.id,
+        prayerName: 'Isha',
+        date: todayStr,
+        status: 'on_time',
+      },
+    });
+
+    const patchTodayRes = await fetch(`${BASE_URL}/api/prayers/log/${todayLog.id}`, {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -164,10 +198,10 @@ async function runTests() {
         notes: 'Offered with congregation in mosque',
       }),
     });
-    assert.equal(patchRes.status, 200);
-    const patchJson = await patchRes.json();
-    assert.equal(patchJson.data.notes, 'Offered with congregation in mosque');
-    console.log('✓ Test 5 Passed: Successfully updated prayer notes via PATCH.');
+    assert.equal(patchTodayRes.status, 200);
+    const patchTodayJson = await patchTodayRes.json();
+    assert.equal(patchTodayJson.data.notes, 'Offered with congregation in mosque');
+    console.log('✓ Test 5 Passed: Successfully verified past record rejection and updated today prayer notes.');
 
     // ------------------------------------------------------------------------
     // Test 6: User Isolation (User B cannot see or alter User A's logs)
@@ -230,18 +264,34 @@ async function runTests() {
     // Test 9: Delete / Reset prayer log
     // ------------------------------------------------------------------------
     console.log('\n9. Testing DELETE /api/prayers/log/:id...');
-    const delRes = await fetch(`${BASE_URL}/api/prayers/log/${maghribLogId}`, {
+    // Attempting to delete past record must return 409 PRAYER_DATE_NOT_TODAY
+    const delPastRes = await fetch(`${BASE_URL}/api/prayers/log/${maghribLogId}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${tokenA}` },
     });
-    assert.equal(delRes.status, 200);
+    assert.equal(delPastRes.status, 409, 'Past date DELETE must return 409 PRAYER_DATE_NOT_TODAY');
+    const delPastJson = await delPastRes.json();
+    assert.equal(delPastJson.code, 'PRAYER_DATE_NOT_TODAY');
 
+    // Deleting today's active prayer log within its window succeeds with 200
+    const activeIshaTime = `${todayStr}T21:00:00+05:30`;
+    const delTodayRes = await fetch(`${BASE_URL}/api/prayers/log/${todayLog.id}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${tokenA}`,
+        'x-test-now': activeIshaTime,
+      },
+    });
+    assert.equal(delTodayRes.status, 200, "Today's active prayer log must be deletable within its window");
+
+    // Clean up one historical log to verify weekly stats recalculation
+    await prisma.prayerLog.delete({ where: { id: maghribLogId } });
     const weekAfterDelete = await fetch(`${BASE_URL}/api/prayers/weekly?startDate=2026-10-05`, {
       headers: { Authorization: `Bearer ${tokenA}` },
     });
     const weekAfterDelJson = await weekAfterDelete.json();
     assert.equal(weekAfterDelJson.data.statistics.completedPrayers, 3, 'Must have 3 prayers after delete');
-    console.log('✓ Test 9 Passed: Successfully reset prayer log and confirmed stats update.');
+    console.log('✓ Test 9 Passed: Successfully verified past-date deletion protection, today prayer reset, and stats update.');
 
     console.log('\n🎉 ALL 9 WEEKLY PRAYER INTEGRATION TESTS PASSED SUCCESSFULLY! 🎉\n');
   } finally {

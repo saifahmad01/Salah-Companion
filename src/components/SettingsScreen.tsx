@@ -98,6 +98,36 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [isPushLoading, setIsPushLoading] = useState(false)
   const [testStatusMessage, setTestStatusMessage] = useState<string | null>(null)
 
+  const [jumuahTime, setJumuahTime] = useState(() => {
+    try {
+      return localStorage.getItem('salah_jumuah_time') || 'default'
+    } catch {
+      return 'default'
+    }
+  })
+
+  const jumuahOptions = [
+    { label: 'Default (Dhuhr Start)', value: 'default' },
+    { label: '1:00 PM', value: '13:00' },
+    { label: '1:15 PM', value: '13:15' },
+    { label: '1:30 PM', value: '13:30' },
+    { label: '1:45 PM', value: '13:45' },
+    { label: '2:00 PM', value: '14:00' },
+  ]
+
+  const handleCycleJumuahTime = () => {
+    const idx = jumuahOptions.findIndex((o) => o.value === jumuahTime)
+    const next = jumuahOptions[(idx + 1) % jumuahOptions.length]
+    setJumuahTime(next.value)
+    try {
+      if (next.value === 'default') {
+        localStorage.removeItem('salah_jumuah_time')
+      } else {
+        localStorage.setItem('salah_jumuah_time', next.value)
+      }
+    } catch {}
+  }
+
   const handleTogglePush = async () => {
     if (onToggleBrowserPush) {
       setIsPushLoading(true)
@@ -317,6 +347,24 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <div className="flex items-center gap-1.5 text-stone-500">
                     <span className="font-medium text-[#1E2E25]">
                       {madhab} {madhab === "Shafi'i" ? '(Asr 2:55 PM)' : '(Asr 3:48 PM)'}
+                    </span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </div>
+                </div>
+
+                {/* Friday Juma Prayer Time */}
+                <div
+                  onClick={handleCycleJumuahTime}
+                  className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                  title="Click to cycle Friday Juma prayer start time"
+                >
+                  <div className="flex items-center gap-2.5 text-[#24352D]">
+                    <Clock className="w-4 h-4 text-stone-500" />
+                    <span className="font-medium">Friday Juma Time (نماز جمعہ)</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-stone-500">
+                    <span className="font-medium text-[#1E2E25]">
+                      {jumuahOptions.find((o) => o.value === jumuahTime)?.label || 'Default (Dhuhr Start)'}
                     </span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </div>

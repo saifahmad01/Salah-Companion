@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { NextPrayerCard } from '../components/NextPrayerCard'
@@ -152,8 +152,25 @@ export const AppDashboard = () => {
     const timer = setInterval(() => {
       setCurrentTime((prev) => new Date(prev.getTime() + 1000))
     }, 1000)
-    return () => clearInterval(timer)
-  }, [])
+
+    const handleFocus = () => {
+      setCurrentTime(new Date())
+      queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+      queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+    }
+
+    window.addEventListener('focus', handleFocus)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) handleFocus()
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    return () => {
+      clearInterval(timer)
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [queryClient])
 
   const is24Hour = timeFormat.includes('24')
 
@@ -223,6 +240,55 @@ export const AppDashboard = () => {
   }, [currentUser])
 
   const todayDateKey = getDateKey(currentTime)
+  const prevDateKeyRef = useRef(todayDateKey)
+
+  // Automatic day rollover: reload records cleanly when calendar day advances
+  useEffect(() => {
+    if (prevDateKeyRef.current !== todayDateKey) {
+      prevDateKeyRef.current = todayDateKey
+      queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+      queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+      setAllPrayerRecords(loadPrayerRecords())
+      if (currentUser) {
+        salahApi
+          .getWeeklyPrayers()
+          .then((res) => {
+            if (res?.data?.days) {
+              setAllPrayerRecords((prev) => {
+                const next = { ...prev }
+                let changed = false
+                res.data.days.forEach((day) => {
+                  if (!next[day.date]) next[day.date] = {}
+                  day.prayers.forEach((p) => {
+                    if (p.status && p.status !== 'pending' && p.status !== 'future') {
+                      const mapped: PrayerStatus =
+                        p.status === 'on_time'
+                          ? 'ON_TIME'
+                          : p.status === 'late'
+                          ? 'LATE'
+                          : p.status === 'qada'
+                          ? 'QADA'
+                          : 'MISSED'
+                      if (next[day.date][p.id] !== mapped) {
+                        next[day.date][p.id] = mapped
+                        changed = true
+                      }
+                    }
+                  })
+                })
+                if (changed) {
+                  saveAllPrayerRecords(next)
+                  return next
+                }
+                return prev
+              })
+            }
+          })
+          .catch(() => {})
+      }
+    }
+  }, [todayDateKey, queryClient, currentUser])
+
   const todayRecords = allPrayerRecords[todayDateKey] || {}
 
   const prayerIds: Array<'fajr' | 'dhuhr' | 'asr' | 'maghrib' | 'isha'> = [
@@ -294,13 +360,6 @@ export const AppDashboard = () => {
       })
       return
     }
-    if (matched.isWindowExpired) {
-      setBanner({
-        type: 'error',
-        message: `${matched.name} prayer window has expired. Cannot mark as completed on time.`,
-      })
-      return
-    }
 
     // Open authentic confirmation modal
     setPendingConfirmation({
@@ -327,11 +386,6 @@ export const AppDashboard = () => {
         setConfirmError(`${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`)
         return
       }
-      if (currentMatched.isWindowExpired) {
-        setIsConfirmSubmitting(false)
-        setConfirmError(`${prayer.name} prayer window has expired while confirming. Cannot mark completed.`)
-        return
-      }
     }
 
     const mappedStatus =
@@ -353,6 +407,7 @@ export const AppDashboard = () => {
         longitude: city.lng,
         calculationMethod,
         madhab,
+        jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
       })
 
       // 2. Only after server confirms 200/201 success, update local UI state
@@ -412,34 +467,85 @@ export const AppDashboard = () => {
   ) => {
     const dateKeyToUse = targetDateKey || todayDateKey
 
-    // If marking as completed (ON_TIME, LATE, QADA), require authentic confirmation dialog!
+    // 1. Strict date boundary enforcement
+    if (dateKeyToUse < todayDateKey) {
+      setBanner({
+        type: 'error',
+        message: 'Previous days are read-only. You cannot edit, complete, or undo past prayer records.',
+      })
+      return
+    }
+    if (dateKeyToUse > todayDateKey) {
+      setBanner({
+        type: 'error',
+        message: 'Future days are read-only. You cannot edit, complete, or undo future prayer records.',
+      })
+      return
+    }
+
+    // 2. Marking as completed (ON_TIME, LATE, QADA) -> require authentic confirmation dialog!
     if (status === 'ON_TIME' || status === 'LATE' || status === 'QADA') {
       requestPrayerConfirmation(prayerId, status, dateKeyToUse)
       return
     }
 
-    // Direct update for MISSED or Reset
-    const updated = updatePrayerStatus(dateKeyToUse, prayerId, status)
-    setAllPrayerRecords(updated)
-    const mappedStatus = status === 'MISSED' ? 'missed' : null
-    if (mappedStatus) {
+    // 3. Undoing completion (status === null)
+    if (!status) {
+      const matched = prayers.find((p) => p.id === prayerId)
+
+      salahApi
+        .deletePrayerLog(prayerId, dateKeyToUse)
+        .then(() => {
+          const updated = updatePrayerStatus(dateKeyToUse, prayerId, null)
+          setAllPrayerRecords(updated)
+          if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
+            setSelectedPrayerDetail({
+              ...selectedPrayerDetail,
+              prayerStatus: null,
+              completed: false,
+            })
+          }
+          queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+          queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+          setBanner({
+            type: 'success',
+            message: `${matched?.name || prayerId} completion has been undone.`,
+          })
+        })
+        .catch((err: any) => {
+          setBanner({
+            type: 'error',
+            message: err?.message || 'Failed to undo prayer completion.',
+          })
+        })
+      return
+    }
+
+    // 4. Marking MISSED
+    if (status === 'MISSED') {
       salahApi
         .upsertPrayerLog({
           prayerName: prayerId,
           date: dateKeyToUse,
-          status: mappedStatus as any,
+          status: 'missed',
           latitude: city.lat,
           longitude: city.lng,
           calculationMethod,
           madhab,
+          jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
         })
         .then(() => {
+          const updated = updatePrayerStatus(dateKeyToUse, prayerId, 'MISSED')
+          setAllPrayerRecords(updated)
           queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
           queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
         })
-    } else {
-      queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
-      queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+        .catch((err: any) => {
+          setBanner({
+            type: 'error',
+            message: err?.message || 'Failed to update prayer status.',
+          })
+        })
     }
   }
 
@@ -458,12 +564,14 @@ export const AppDashboard = () => {
       prayerStatus === 'LATE' ||
       prayerStatus === 'QADA'
 
+    const customJumuahTime = localStorage.getItem('salah_jumuah_time') || undefined
     const status = getPrayerStatusDetails(
       id,
       prayerData,
       currentTime,
       isCompleted,
-      is24Hour
+      is24Hour,
+      customJumuahTime
     )
     return {
       id,
@@ -488,23 +596,13 @@ export const AppDashboard = () => {
     const matched = prayers.find((p) => p.id === id)
     if (matched) {
       if (matched.completed) {
-        setBanner({
-          type: 'success',
-          message: `${matched.name} is already completed. Alhamdulillah!`,
-        })
+        handleOpenPrayerStatusModal(matched)
         return
       }
-      if ((matched.statusBadge === 'upcoming' || matched.isUpcoming)) {
+      if (matched.statusBadge === 'upcoming' || matched.isUpcoming) {
         setBanner({
           type: 'error',
           message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
-        })
-        return
-      }
-      if (matched.isWindowExpired) {
-        setBanner({
-          type: 'error',
-          message: `${matched.name} prayer window has expired.`,
         })
         return
       }

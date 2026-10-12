@@ -12,9 +12,19 @@ export type AllRecords = Record<string, DayRecords>
 const STORAGE_KEY = 'salah_companion_prayer_records_v2'
 
 /**
- * Returns YYYY-MM-DD format for a given date.
+ * Returns YYYY-MM-DD format for a given date, supporting IANA timezones.
  */
-export function getDateKey(date: Date = new Date()): string {
+export function getDateKey(date: Date = new Date(), timeZone?: string): string {
+  if (timeZone && typeof timeZone === 'string') {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(date)
+    } catch {}
+  }
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
   const d = String(date.getDate()).padStart(2, '0')
@@ -253,12 +263,17 @@ export function computeWeeklyStats(
     const isPast = key < realTodayKey
     const isFuture = key > realTodayKey
 
+    const isDayFriday = i === 4
     let dayOffered = 0
     const dayPrayersList: Array<{ id: string; name: string; status: PrayerStatus | null }> = []
 
     for (const pid of prayerIds) {
-      const status = dayData[pid] || null
-      dayPrayersList.push({ id: pid, name: prayerNames[pid].name, status })
+      let status = dayData[pid] || null
+      if (isDayFriday && pid === 'dhuhr' && !status) {
+        status = (dayData as any)['juma'] || null
+      }
+      const displayName = (isDayFriday && pid === 'dhuhr') ? 'Juma' : prayerNames[pid].name
+      dayPrayersList.push({ id: pid, name: displayName, status })
 
       if (status === 'ON_TIME') {
         onTimeCount++

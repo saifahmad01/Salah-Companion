@@ -485,6 +485,7 @@ export const salahApi = {
     calculationMethod?: string;
     madhab?: string;
     notes?: string;
+    jumuahTime?: string;
   }) {
     return await fetchWithAuth('/prayers/log', {
       method: 'POST',
@@ -559,8 +560,9 @@ export const salahApi = {
    * Delete / reset prayer log
    * DELETE /api/prayers/log/:id
    */
-  async deletePrayerLog(logId: string) {
-    return await fetchWithAuth(`/prayers/log/${encodeURIComponent(logId)}`, {
+  async deletePrayerLog(idOrPrayerName: string, date?: string) {
+    const query = date ? `?date=${encodeURIComponent(date)}` : '';
+    return await fetchWithAuth(`/prayers/log/${encodeURIComponent(idOrPrayerName)}${query}`, {
       method: 'DELETE',
     });
   },
