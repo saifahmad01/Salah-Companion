@@ -173,6 +173,10 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
         alert('Cannot mark prayer as completed for a future date. Prayer time has not started yet.')
         return
       }
+      if (dateKey < todayKey) {
+        alert('Previous days are read-only. You can only mark prayers completed for today.')
+        return
+      }
       if (dateKey === todayKey) {
         const matching = prayers.find((p) => p.id === prayerId)
         if (matching && (matching.isUpcoming || matching.statusBadge === 'upcoming') && !matching.completed) {

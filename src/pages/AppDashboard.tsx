@@ -51,6 +51,7 @@ import type { PrayerItem, DeedItem, PrayerStatus } from '../types'
 import { LogOut, Volume2, Shield, Compass, ChevronRight } from 'lucide-react'
 import { useSalahNotifications } from '../hooks/useSalahNotifications'
 import { QiblaCompassModal } from '../components/QiblaCompassModal'
+import { PrayerConfirmationModal } from '../components/PrayerConfirmationModal'
 
 export const AppDashboard = () => {
   const navigate = useNavigate()
@@ -236,9 +237,172 @@ export const AppDashboard = () => {
   const [isPrayerStatusModalOpen, setIsPrayerStatusModalOpen] = useState(false)
   const [prayerForStatusModal, setPrayerForStatusModal] = useState<PrayerItem | null>(null)
 
+  // Authentic Hadith Prayer Confirmation Dialog state
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false)
+  const [pendingConfirmation, setPendingConfirmation] = useState<{
+    prayer: PrayerItem
+    status: PrayerStatus
+    dateKey: string
+  } | null>(null)
+  const [isConfirmSubmitting, setIsConfirmSubmitting] = useState(false)
+  const [confirmError, setConfirmError] = useState<string | null>(null)
+
   const handleOpenPrayerStatusModal = (prayer: PrayerItem) => {
     setPrayerForStatusModal(prayer)
     setIsPrayerStatusModalOpen(true)
+  }
+
+  // Request authentic confirmation before completing any prayer
+  const requestPrayerConfirmation = (
+    prayerId: string,
+    status: PrayerStatus,
+    targetDateKey?: string
+  ) => {
+    const dateKeyToUse = targetDateKey || todayDateKey
+    setConfirmError(null)
+
+    // Strictly enforce active-day rule: only today's date in user's timezone is allowed
+    if (dateKeyToUse > todayDateKey) {
+      setBanner({
+        type: 'error',
+        message: 'Cannot mark prayer as completed for a future date. Prayer time has not started yet.',
+      })
+      return
+    }
+    if (dateKeyToUse < todayDateKey) {
+      setBanner({
+        type: 'error',
+        message: 'Previous days are read-only. You can only mark prayers completed for today.',
+      })
+      return
+    }
+
+    const matched = prayers.find((p) => p.id === prayerId)
+    if (!matched) return
+
+    if (matched.completed) {
+      setBanner({
+        type: 'error',
+        message: `${matched.name} prayer is already completed. Duplicate completion is prevented.`,
+      })
+      return
+    }
+    if (matched.isUpcoming || matched.statusBadge === 'upcoming') {
+      setBanner({
+        type: 'error',
+        message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
+      })
+      return
+    }
+    if (matched.isWindowExpired) {
+      setBanner({
+        type: 'error',
+        message: `${matched.name} prayer window has expired. Cannot mark as completed on time.`,
+      })
+      return
+    }
+
+    // Open authentic confirmation modal
+    setPendingConfirmation({
+      prayer: matched,
+      status,
+      dateKey: dateKeyToUse,
+    })
+    setIsConfirmModalOpen(true)
+  }
+
+  // Execute confirmed prayer completion after explicit user confirmation
+  const handleConfirmPrayer = async () => {
+    if (!pendingConfirmation) return
+
+    const { prayer, status, dateKey } = pendingConfirmation
+    setIsConfirmSubmitting(true)
+    setConfirmError(null)
+
+    // Revalidate eligibility immediately before API call
+    const currentMatched = prayers.find((p) => p.id === prayer.id)
+    if (currentMatched) {
+      if (currentMatched.isUpcoming || currentMatched.statusBadge === 'upcoming') {
+        setIsConfirmSubmitting(false)
+        setConfirmError(`${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`)
+        return
+      }
+      if (currentMatched.isWindowExpired) {
+        setIsConfirmSubmitting(false)
+        setConfirmError(`${prayer.name} prayer window has expired while confirming. Cannot mark completed.`)
+        return
+      }
+    }
+
+    const mappedStatus =
+      status === 'ON_TIME'
+        ? 'on_time'
+        : status === 'LATE'
+        ? 'late'
+        : status === 'QADA'
+        ? 'qada'
+        : 'missed'
+
+    try {
+      // 1. Send to backend Express API (backend validates user session, active date, time window)
+      await salahApi.upsertPrayerLog({
+        prayerName: prayer.id,
+        date: dateKey,
+        status: mappedStatus as any,
+        latitude: city.lat,
+        longitude: city.lng,
+        calculationMethod,
+        madhab,
+      })
+
+      // 2. Only after server confirms 200/201 success, update local UI state
+      const updated = updatePrayerStatus(dateKey, prayer.id, status)
+      setAllPrayerRecords(updated)
+
+      if (dateKey === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayer.id) {
+        setSelectedPrayerDetail({
+          ...selectedPrayerDetail,
+          prayerStatus: status,
+          completed: true,
+        })
+      }
+
+      // Check achievement milestone: all 5 prayers completed today
+      if (dateKey === todayDateKey) {
+        const todaysMap = updated[todayDateKey] || {}
+        const allDone = prayerIds.every((pId) => {
+          const s = pId === prayer.id ? status : todaysMap[pId]
+          return s === 'ON_TIME' || s === 'LATE' || s === 'QADA'
+        })
+        if (allDone) {
+          const milestoneKey = `salah_celebrated_${todayDateKey}`
+          if (!sessionStorage.getItem(milestoneKey)) {
+            sessionStorage.setItem(milestoneKey, 'true')
+            setBanner({
+              type: 'success',
+              message: '🎉 Alhamdulillah! You have completed all 5 prayers today. May Allah accept your salah and bless your day!',
+            })
+          }
+        }
+      }
+
+      queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+      queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+
+      setIsConfirmModalOpen(false)
+      setPendingConfirmation(null)
+      setIsPrayerStatusModalOpen(false)
+      setPrayerForStatusModal(null)
+
+      setBanner({
+        type: 'success',
+        message: `Alhamdulillah! ${prayer.name} prayer recorded as completed. May Allah accept your salah!`,
+      })
+    } catch (err: any) {
+      setConfirmError(err?.message || 'Server rejected completion. Please verify that the prayer time window is active.')
+    } finally {
+      setIsConfirmSubmitting(false)
+    }
   }
 
   const handleSelectPrayerStatus = (
@@ -248,92 +412,17 @@ export const AppDashboard = () => {
   ) => {
     const dateKeyToUse = targetDateKey || todayDateKey
 
-    // Strictly forbid marking future date, past date, unstarted, or expired prayer as completed
+    // If marking as completed (ON_TIME, LATE, QADA), require authentic confirmation dialog!
     if (status === 'ON_TIME' || status === 'LATE' || status === 'QADA') {
-      if (dateKeyToUse > todayDateKey) {
-        setBanner({
-          type: 'error',
-          message: 'Cannot mark prayer as completed for a future date. Prayer time has not started yet.',
-        })
-        return
-      }
-      if (dateKeyToUse < todayDateKey) {
-        setBanner({
-          type: 'error',
-          message: 'Past prayer records cannot be modified through normal tracking.',
-        })
-        return
-      }
-      if (dateKeyToUse === todayDateKey) {
-        const matched = prayers.find((p) => p.id === prayerId)
-        if (matched) {
-          if (matched.completed) {
-            setBanner({
-              type: 'error',
-              message: `${matched.name} prayer is already completed.`,
-            })
-            return
-          }
-          if ((matched.isUpcoming || matched.statusBadge === 'upcoming')) {
-            setBanner({
-              type: 'error',
-              message: `${matched.name} prayer time has not started yet. Available at ${matched.time}.`,
-            })
-            return
-          }
-          if (matched.isWindowExpired) {
-            setBanner({
-              type: 'error',
-              message: `${matched.name} prayer window has expired. Cannot mark as completed on time.`,
-            })
-            return
-          }
-        }
-      }
+      requestPrayerConfirmation(prayerId, status, dateKeyToUse)
+      return
     }
 
-    const previousRecords = { ...allPrayerRecords }
+    // Direct update for MISSED or Reset
     const updated = updatePrayerStatus(dateKeyToUse, prayerId, status)
     setAllPrayerRecords(updated)
-    if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
-      setSelectedPrayerDetail({
-        ...selectedPrayerDetail,
-        prayerStatus: status,
-        completed: status === 'ON_TIME' || status === 'LATE' || status === 'QADA',
-      })
-    }
-
-    // Check for genuine achievement milestone: all 5 prayers completed today
-    if (dateKeyToUse === todayDateKey) {
-      const todaysMap = updated[todayDateKey] || {}
-      const allDone = prayerIds.every((pId) => {
-        const s = pId === prayerId ? status : todaysMap[pId]
-        return s === 'ON_TIME' || s === 'LATE' || s === 'QADA'
-      })
-
-      if (allDone) {
-        const milestoneKey = `salah_celebrated_${todayDateKey}`
-        if (!sessionStorage.getItem(milestoneKey)) {
-          sessionStorage.setItem(milestoneKey, 'true')
-          setBanner({
-            type: 'success',
-            message: '🎉 Alhamdulillah! You have completed all 5 prayers today. May Allah accept your salah and bless your day!',
-          })
-        }
-      }
-    }
-
-    // Sync with backend API
-    if (status) {
-      const mappedStatus =
-        status === 'ON_TIME'
-          ? 'on_time'
-          : status === 'LATE'
-          ? 'late'
-          : status === 'QADA'
-          ? 'qada'
-          : 'missed'
-
+    const mappedStatus = status === 'MISSED' ? 'missed' : null
+    if (mappedStatus) {
       salahApi
         .upsertPrayerLog({
           prayerName: prayerId,
@@ -347,17 +436,6 @@ export const AppDashboard = () => {
         .then(() => {
           queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
           queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
-        })
-        .catch((err: any) => {
-          // Rollback local state on backend rejection (e.g. 409 PRAYER_TIME_NOT_STARTED)
-          setAllPrayerRecords(previousRecords)
-          saveAllPrayerRecords(previousRecords)
-          queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
-          queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
-          setBanner({
-            type: 'error',
-            message: err?.message || 'Prayer time has not started yet. Cannot mark completed.',
-          })
         })
     } else {
       queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
@@ -430,7 +508,7 @@ export const AppDashboard = () => {
         })
         return
       }
-      handleOpenPrayerStatusModal(matched)
+      requestPrayerConfirmation(id, 'ON_TIME', todayDateKey)
     }
   }
 
@@ -1003,12 +1081,29 @@ export const AppDashboard = () => {
           currentCoords={{ lat: city.lat, lng: city.lng }}
           currentCityName={city.name}
         />
+        <PrayerConfirmationModal
+          isOpen={isConfirmModalOpen}
+          onClose={() => {
+            if (!isConfirmSubmitting) {
+              setIsConfirmModalOpen(false)
+              setPendingConfirmation(null)
+              setConfirmError(null)
+            }
+          }}
+          onConfirm={handleConfirmPrayer}
+          prayer={pendingConfirmation?.prayer || null}
+          targetStatus={pendingConfirmation?.status || 'ON_TIME'}
+          isSubmitting={isConfirmSubmitting}
+          error={confirmError}
+        />
         <QiblaCompassModal
           isOpen={isQiblaOpen}
           onClose={() => setIsQiblaOpen(false)}
           latitude={city.lat}
           longitude={city.lng}
           cityName={city.displayShort || city.name}
+          onDetectGPS={handleDetectGPS}
+          onOpenLocationModal={() => setIsLocationOpen(true)}
         />
       </main>
     </div>
