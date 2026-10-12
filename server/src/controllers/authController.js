@@ -250,6 +250,7 @@ export async function register(req, res, next) {
         requiresEmailVerification: true,
         email: normalizedEmail,
         canResend: true,
+        token: rawToken,
         previewUrl: directApiUrl,
         verificationUrl: directApiUrl,
       });
@@ -260,6 +261,7 @@ export async function register(req, res, next) {
       message: 'Verification link sent! Please check your email and click the link to activate your account.',
       requiresEmailVerification: true,
       email: normalizedEmail,
+      token: rawToken,
       previewUrl: directApiUrl,
       verificationUrl: directApiUrl,
     });
@@ -533,6 +535,7 @@ export async function resendVerification(req, res, next) {
     return res.status(200).json({
       success: true,
       message: `A fresh verification link has been sent to ${normalizedEmail}. Please check your inbox.`,
+      token: rawToken,
       previewUrl: directApiUrl,
       verificationUrl: directApiUrl,
     });
@@ -1197,6 +1200,49 @@ export async function setPassword(req, res, next) {
     return res.status(200).json({
       success: true,
       message: user.password ? 'Password changed successfully.' : 'Password created successfully. You can now log in using either Google or your email and password.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * Check whether an email registration has been verified
+ * GET /api/auth/status?email=...
+ */
+export async function checkEmailStatus(req, res, next) {
+  try {
+    const email = req.query.email || req.body?.email;
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({ success: false, error: 'Email parameter required', code: 'MISSING_EMAIL' });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, name: true, email: true, isEmailVerified: true },
+    });
+
+    if (user && user.isEmailVerified) {
+      return res.status(200).json({
+        success: true,
+        verified: true,
+        message: 'Email is verified.',
+        user: { id: user.id, name: user.name, email: user.email },
+      });
+    }
+
+    const pending = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+      select: { id: true, email: true, expiresAt: true },
+    });
+
+    return res.status(200).json({
+      success: true,
+      verified: false,
+      pending: Boolean(pending),
+      expired: pending ? new Date() > new Date(pending.expiresAt) : false,
+      message: pending ? 'Verification pending.' : 'No account found with this email.',
     });
   } catch (err) {
     next(err);

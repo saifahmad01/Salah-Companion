@@ -20,6 +20,16 @@ export const VerifyEmailPage: React.FC = () => {
   const [resendEmail, setResendEmail] = useState(searchParams.get('email') || '')
   const [resending, setResending] = useState(false)
   const [resendResult, setResendResult] = useState<string | null>(null)
+  const [cooldownSeconds, setCooldownSeconds] = useState(0)
+
+  // Live countdown timer for resend cooldown (Amazon/Flipkart standard)
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [cooldownSeconds])
 
   useEffect(() => {
     const handleVerify = async () => {
@@ -83,14 +93,18 @@ export const VerifyEmailPage: React.FC = () => {
 
   const handleResend = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!resendEmail.trim()) return
+    if (!resendEmail.trim() || cooldownSeconds > 0) return
     setResending(true)
     setResendResult(null)
     try {
       const res = await salahApi.resendVerification(resendEmail.trim().toLowerCase())
       setResendResult(res.message || 'A fresh verification link has been sent to your email.')
+      setCooldownSeconds(60)
     } catch (err: any) {
       setResendResult(err.message || 'Failed to resend verification email.')
+      if (err.retryAfter) {
+        setCooldownSeconds(Number(err.retryAfter))
+      }
     } finally {
       setResending(false)
     }
@@ -182,11 +196,21 @@ export const VerifyEmailPage: React.FC = () => {
                   />
                   <button
                     type="submit"
-                    disabled={resending}
-                    className="w-full py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold text-[#14291F] border border-[#D5C9B5] hover:bg-[#F2ECE0] flex items-center justify-center gap-2 cursor-pointer"
+                    disabled={resending || cooldownSeconds > 0}
+                    className={`w-full py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold border flex items-center justify-center gap-2 transition ${
+                      resending || cooldownSeconds > 0
+                        ? 'bg-stone-100 text-stone-400 border-stone-200 cursor-not-allowed'
+                        : 'text-[#14291F] border-[#D5C9B5] hover:bg-[#F2ECE0] cursor-pointer'
+                    }`}
                   >
                     <RefreshCw className={`w-3.5 h-3.5 ${resending ? 'animate-spin' : ''}`} />
-                    <span>{resending ? 'Sending...' : 'Send New Link'}</span>
+                    <span>
+                      {resending
+                        ? 'Sending...'
+                        : cooldownSeconds > 0
+                        ? `Resend link in ${cooldownSeconds}s`
+                        : 'Send New Link'}
+                    </span>
                   </button>
                 </form>
                 {resendResult && (

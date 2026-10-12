@@ -327,10 +327,27 @@ export const salahApi = {
    * Resend email verification link
    * POST /api/auth/resend-verification
    */
-  async resendVerification(email: string): Promise<{ success: boolean; message: string; previewUrl?: string }> {
+  async resendVerification(email: string): Promise<{ success: boolean; message: string; previewUrl?: string; token?: string }> {
     return await fetchWithAuth('/auth/resend-verification', {
       method: 'POST',
       body: JSON.stringify({ email }),
+    });
+  },
+
+  /**
+   * Check verification status of an email
+   * GET /api/auth/status?email=...
+   */
+  async checkEmailStatus(email: string): Promise<{
+    success: boolean;
+    verified: boolean;
+    pending?: boolean;
+    expired?: boolean;
+    message: string;
+    user?: { id: string; name: string; email: string };
+  }> {
+    return await fetchWithAuth(`/auth/status?email=${encodeURIComponent(email)}`, {
+      method: 'GET',
     });
   },
 

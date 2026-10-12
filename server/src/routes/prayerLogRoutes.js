@@ -8,13 +8,14 @@ import {
   updatePrayerLog,
   deletePrayerLog,
 } from '../controllers/prayerLogController.js';
-import { protectRoute, validateBody } from '../middlewares/authMiddleware.js';
+import { protectRoute, requireVerifiedEmail, validateBody } from '../middlewares/authMiddleware.js';
 import { logPrayerInputSchema } from '../schemas/prayerLogSchema.js';
 
 export const prayerLogRouter = Router();
 
-// Enforce authentication on all prayer log routes
+// Enforce authentication & verified email status on all prayer log routes
 prayerLogRouter.use(protectRoute);
+prayerLogRouter.use(requireVerifiedEmail);
 
 // POST /api/prayers/log - Upsert prayer log with dynamic Hadith
 prayerLogRouter.post('/log', validateBody(logPrayerInputSchema), logPrayer);

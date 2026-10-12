@@ -29,5 +29,10 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
+  // Prevent unverified users from accessing protected features
+  if (user.isEmailVerified === false) {
+    return <Navigate to={`/verify-email?email=${encodeURIComponent(user.email)}&verified=false&error=unverified`} replace />
+  }
+
   return children
 }

@@ -187,7 +187,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     } catch (err: any) {
       console.error('[AuthModal Register Error]:', err)
       setErrorMessage(err.message || 'Registration failed. Please check your inputs.')
-      if (err.code) {
+      if (err.code === 'EMAIL_DELIVERY_FAILED') {
+        setErrorCode('EMAIL_DELIVERY_FAILED')
+        setVerificationPendingEmail(err.email || email)
+        setErrorMessage(err.message || 'Account created, but verification email could not be delivered yet. Please click Resend.')
+      } else if (err.code) {
         setErrorCode(err.code)
       } else if (err.message?.toLowerCase().includes('already exists')) {
         setErrorCode('EMAIL_ALREADY_EXISTS')

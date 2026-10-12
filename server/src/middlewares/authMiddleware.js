@@ -173,3 +173,28 @@ export function optionalAuth(req, res, next) {
     next();
   }
 }
+
+/**
+ * Require Verified Email Middleware
+ * Prevents unverified accounts from accessing protected resources
+ */
+export function requireVerifiedEmail(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      error: 'Authentication required. Please log in first.',
+      code: 'UNAUTHORIZED',
+    });
+  }
+
+  if (!req.user.isEmailVerified) {
+    return res.status(403).json({
+      success: false,
+      error: 'Please verify your email address to access this feature.',
+      code: 'EMAIL_NOT_VERIFIED',
+      email: req.user.email,
+    });
+  }
+
+  next();
+}

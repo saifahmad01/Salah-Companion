@@ -14,6 +14,7 @@ import {
   forgotPassword,
   resetPassword,
   setPassword,
+  checkEmailStatus,
 } from '../controllers/authController.js';
 import {
   protectRoute,
@@ -38,6 +39,7 @@ authRouter.post('/login', validateBody(loginSchema), login);
 authRouter.get('/verify-email', verifyEmail);
 authRouter.post('/verify-email', verifyEmail);
 authRouter.post('/resend-verification', validateBody(resendVerificationSchema), resendVerification);
+authRouter.get('/status', checkEmailStatus);
 authRouter.get('/email-health', getEmailHealth);
 
 // Password Reset Routes
