@@ -19,7 +19,12 @@ import {
 import {
   protectRoute,
   validateBody,
+  requireVerifiedEmail,
 } from '../middlewares/authMiddleware.js';
+import {
+  registerIpRateLimiter,
+  resendHourlyRateLimiter,
+} from '../middlewares/rateLimiter.js';
 import {
   registerSchema,
   loginSchema,
@@ -34,11 +39,11 @@ import {
 export const authRouter = Router();
 
 // Public Authentication Routes
-authRouter.post('/register', validateBody(registerSchema), register);
+authRouter.post('/register', registerIpRateLimiter, validateBody(registerSchema), register);
 authRouter.post('/login', validateBody(loginSchema), login);
 authRouter.get('/verify-email', verifyEmail);
 authRouter.post('/verify-email', verifyEmail);
-authRouter.post('/resend-verification', validateBody(resendVerificationSchema), resendVerification);
+authRouter.post('/resend-verification', resendHourlyRateLimiter, validateBody(resendVerificationSchema), resendVerification);
 authRouter.get('/status', checkEmailStatus);
 authRouter.get('/email-health', getEmailHealth);
 
@@ -56,6 +61,6 @@ authRouter.post('/logout', logout);
 
 // Protected routes (Protected via protectRoute: checks HttpOnly cookie or Bearer token)
 authRouter.get('/me', protectRoute, getMe);
-authRouter.patch('/profile', protectRoute, validateBody(updateProfileSchema), updateProfile);
-authRouter.post('/set-password', protectRoute, validateBody(setPasswordSchema), setPassword);
+authRouter.patch('/profile', protectRoute, requireVerifiedEmail, validateBody(updateProfileSchema), updateProfile);
+authRouter.post('/set-password', protectRoute, requireVerifiedEmail, validateBody(setPasswordSchema), setPassword);
 

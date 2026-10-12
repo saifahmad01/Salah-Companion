@@ -305,82 +305,59 @@ export async function verifyEmail(req, res, next) {
     // Compute SHA-256 hash of incoming token
     const tokenHash = hashVerificationToken(rawToken);
 
-    // 1. Look up in PendingRegistration
-    const pending = await prisma.pendingRegistration.findUnique({
-      where: { tokenHash },
-    });
-
-    if (!pending) {
-      // Check legacy User record if any
-      const legacyUser = await prisma.user.findFirst({
-        where: { verificationTokenHash: tokenHash },
+    // Atomically execute verification check and user activation inside a single transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // 1. Look up in PendingRegistration inside transaction
+      const pendingTx = await tx.pendingRegistration.findUnique({
+        where: { tokenHash },
       });
 
-      if (legacyUser) {
-        if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
-          if (isBrowserRequest) {
-            return res.redirect(`${frontendUrl}/verify-email?verified=false&error=token_expired&email=${encodeURIComponent(legacyUser.email)}`);
+      if (!pendingTx) {
+        // Check legacy User record
+        const legacyUser = await tx.user.findFirst({
+          where: { verificationTokenHash: tokenHash },
+        });
+
+        if (legacyUser) {
+          if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
+            return { code: 'TOKEN_EXPIRED', email: legacyUser.email };
           }
-          return res.status(400).json({
-            success: false,
-            error: 'This verification link has expired (links are valid for 24 hours). Please request a new verification email.',
-            code: 'TOKEN_EXPIRED',
-            email: legacyUser.email,
+
+          const verifiedUser = await tx.user.update({
+            where: { id: legacyUser.id },
+            data: {
+              isEmailVerified: true,
+              verificationTokenHash: null,
+              tokenExpiresAt: null,
+            },
           });
+
+          return { code: 'SUCCESS', user: verifiedUser };
         }
 
-        const verifiedUser = await prisma.user.update({
-          where: { id: legacyUser.id },
-          data: {
-            isEmailVerified: true,
-            verificationTokenHash: null,
-            tokenExpiresAt: null,
-          },
+        return { code: 'TOKEN_INVALID' };
+      }
+
+      // Check expiration
+      if (new Date() > new Date(pendingTx.expiresAt)) {
+        return { code: 'TOKEN_EXPIRED', email: pendingTx.email };
+      }
+
+      // Atomically delete pending record (guarantees single-use & eliminates race conditions)
+      try {
+        await tx.pendingRegistration.delete({
+          where: { id: pendingTx.id },
         });
-
-        const token = signToken(verifiedUser);
-        setAuthCookie(res, token);
-
-        if (isBrowserRequest) {
-          return res.redirect(`${frontendUrl}/verify-email?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
+      } catch (delErr) {
+        if (delErr.code === 'P2025') {
+          return { code: 'TOKEN_INVALID' };
         }
-        return res.status(200).json({
-          success: true,
-          message: 'Email verified successfully! You can now log in to your account.',
-          email: verifiedUser.email,
-          token,
-          user: sanitizeUser(verifiedUser),
-        });
+        throw delErr;
       }
 
-      if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=invalid_or_used_token`);
-      }
-      return res.status(400).json({
-        success: false,
-        error: 'This verification link is invalid or has already been used. If your account is already verified, you can log in directly.',
-        code: 'TOKEN_INVALID',
-      });
-    }
-
-    // 2. Check expiration
-    if (new Date() > new Date(pending.expiresAt)) {
-      if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=token_expired&email=${encodeURIComponent(pending.email)}`);
-      }
-      return res.status(400).json({
-        success: false,
-        error: 'This verification link has expired (links are valid for 24 hours). Please request a new verification email.',
-        code: 'TOKEN_EXPIRED',
-        email: pending.email,
-      });
-    }
-
-    // 3. Atomically create User record and delete PendingRegistration record in a transaction
-    const verifiedUser = await prisma.$transaction(async (tx) => {
       // Concurrency safety: check if user was already created
       const existingUser = await tx.user.findUnique({
-        where: { email: pending.email },
+        where: { email: pendingTx.email },
       });
 
       let userRecord;
@@ -391,19 +368,19 @@ export async function verifyEmail(req, res, next) {
             isEmailVerified: true,
             verificationTokenHash: null,
             tokenExpiresAt: null,
-            ...(isPermanentAdmin(pending.email) ? { role: 'ADMIN' } : {}),
+            ...(isPermanentAdmin(pendingTx.email) ? { role: 'ADMIN' } : {}),
           },
         });
       } else {
         userRecord = await tx.user.create({
           data: {
-            name: pending.name,
-            email: pending.email,
-            password: pending.password, // already bcrypt-hashed
-            role: isPermanentAdmin(pending.email) ? 'ADMIN' : 'USER',
-            prayerCalculationMethod: pending.prayerCalculationMethod || 'Karachi',
-            latitude: pending.latitude,
-            longitude: pending.longitude,
+            name: pendingTx.name,
+            email: pendingTx.email,
+            password: pendingTx.password, // already bcrypt-hashed
+            role: isPermanentAdmin(pendingTx.email) ? 'ADMIN' : 'USER',
+            prayerCalculationMethod: pendingTx.prayerCalculationMethod || 'Karachi',
+            latitude: pendingTx.latitude,
+            longitude: pendingTx.longitude,
             isEmailVerified: true,
             verificationTokenHash: null,
             tokenExpiresAt: null,
@@ -412,14 +389,33 @@ export async function verifyEmail(req, res, next) {
         });
       }
 
-      // Single-use guarantee: remove pending record
-      await tx.pendingRegistration.delete({
-        where: { id: pending.id },
-      });
-
-      return userRecord;
+      return { code: 'SUCCESS', user: userRecord };
     });
 
+    if (result.code === 'TOKEN_EXPIRED') {
+      if (isBrowserRequest) {
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=token_expired&email=${encodeURIComponent(result.email)}`);
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'This verification link has expired (links are valid for 24 hours). Please request a new verification email.',
+        code: 'TOKEN_EXPIRED',
+        email: result.email,
+      });
+    }
+
+    if (result.code === 'TOKEN_INVALID') {
+      if (isBrowserRequest) {
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=invalid_or_used_token`);
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'This verification link is invalid or has already been used. If your account is already verified, you can log in directly.',
+        code: 'TOKEN_INVALID',
+      });
+    }
+
+    const verifiedUser = result.user;
     const token = signToken(verifiedUser);
     setAuthCookie(res, token);
 
@@ -436,6 +432,23 @@ export async function verifyEmail(req, res, next) {
       user: sanitizeUser(verifiedUser),
     });
   } catch (err) {
+    if (err.code === 'P2025') {
+      const isApiRequest = Boolean(
+        req.xhr ||
+        req.query.format === 'json' ||
+        (req.headers.accept && req.headers.accept.includes('application/json') && !req.headers.accept.includes('text/html'))
+      );
+      const isBrowserRequest = req.method === 'GET' && !isApiRequest;
+      const frontendUrl = getEffectiveFrontendUrl(req);
+      if (isBrowserRequest) {
+        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=invalid_or_used_token`);
+      }
+      return res.status(400).json({
+        success: false,
+        error: 'This verification link is invalid or has already been used. If your account is already verified, you can log in directly.',
+        code: 'TOKEN_INVALID',
+      });
+    }
     next(err);
   }
 }
