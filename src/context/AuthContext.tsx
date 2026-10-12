@@ -14,6 +14,7 @@ interface AuthContextType {
     latitude?: number
     longitude?: number
   }) => Promise<AuthResponse>
+  verifyOtp: (payload: { email: string; otp: string }) => Promise<AuthResponse>
   logout: () => Promise<void>
   refreshUser: () => Promise<UserProfile | null>
   banner: { type: 'success' | 'error'; message: string } | null
@@ -131,11 +132,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       if (verifiedParam === 'false') {
         const error = params.get('error')
-        let msg = 'Verification failed. The link may be invalid or expired.'
+        let msg = 'Verification failed. The code may be invalid or expired.'
         if (error === 'token_expired') {
-          msg = 'Your verification link has expired (links are valid for 24 hours). Please request a new link.'
+          msg = 'Your verification code has expired (valid for 5 minutes). Please request a fresh 6-digit code.'
         } else if (error === 'invalid_or_used_token') {
-          msg = 'This verification link is invalid or has already been used. If you already verified, please log in.'
+          msg = 'This verification code is invalid or has already been used. If you already verified, please log in.'
         }
         setBanner({
           type: 'error',
@@ -158,7 +159,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         } catch (err: any) {
           setBanner({
             type: 'error',
-            message: err.message || 'Verification link is invalid or expired.',
+            message: err.message || 'Verification code is invalid or expired.',
           })
         } finally {
           setLoading(false)
@@ -200,6 +201,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return res
   }
 
+  const verifyOtp = async (payload: { email: string; otp: string }): Promise<AuthResponse> => {
+    const res = await salahApi.verifyOtp(payload)
+    if (res.user) {
+      setUser(res.user)
+    }
+    return res
+  }
+
   const logout = async (): Promise<void> => {
     try {
       await salahApi.logout()
@@ -217,6 +226,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isAuthenticated: !!user,
         login,
         register,
+        verifyOtp,
         logout,
         refreshUser,
         banner,

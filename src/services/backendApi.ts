@@ -150,9 +150,12 @@ export interface AuthResponse {
   token?: string;
   user?: UserProfile;
   requiresEmailVerification?: boolean;
+  requiresOtp?: boolean;
   email?: string;
+  expiresIn?: number;
   previewUrl?: string;
   verificationUrl?: string;
+  devOtp?: string;
 }
 
 export interface BackendPrayerTimes {
@@ -319,6 +322,57 @@ export const salahApi = {
       authStorage.setToken(data.token);
     }
     return data;
+  },
+
+  /**
+   * Verify 6-digit numeric email OTP
+   * POST /api/auth/verify-otp
+   */
+  async verifyOtp(payload: { email: string; otp: string }): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Send / Resend 6-digit numeric email OTP
+   * POST /api/auth/send-otp
+   */
+  async sendOtp(payload: { email: string; type?: 'VERIFICATION' | 'LOGIN' }): Promise<{
+    success: boolean;
+    message: string;
+    expiresIn?: number;
+    email?: string;
+    retryAfter?: number;
+    devOtp?: string;
+  }> {
+    return await fetchWithAuth('/auth/send-otp', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /**
+   * Resend 6-digit numeric email OTP (alias)
+   * POST /api/auth/resend-otp
+   */
+  async resendOtp(email: string): Promise<{
+    success: boolean;
+    message: string;
+    expiresIn?: number;
+    email?: string;
+    retryAfter?: number;
+    devOtp?: string;
+  }> {
+    return await fetchWithAuth('/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, type: 'VERIFICATION' }),
+    });
   },
 
   /**

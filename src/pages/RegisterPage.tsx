@@ -1,14 +1,13 @@
 import React, { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, User, AlertCircle, ArrowRight, ArrowLeft, CheckCircle2, RefreshCw, ExternalLink, ShieldCheck } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, User, AlertCircle, ArrowRight, ArrowLeft, RefreshCw } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { useUnsavedChanges, useUnsavedChangesWarn } from '../context/UnsavedChangesContext'
 import { salahApi } from '../services/backendApi'
+import { OtpVerificationCard } from '../components/auth/OtpVerificationCard'
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate()
   const { register, banner, setBanner, refreshUser } = useAuth()
-  const { confirmAction } = useUnsavedChanges()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -20,35 +19,12 @@ export const RegisterPage: React.FC = () => {
 
   // Post-registration verification state
   const [verificationPending, setVerificationPending] = useState(false)
-
-  // Track unsaved form edits
-  const isFormDirty = Boolean(name.trim() || email.trim() || password) && !verificationPending && !loading
-  useUnsavedChangesWarn('register_form', isFormDirty, 'Registration Form Details')
   const [registeredEmail, setRegisteredEmail] = useState('')
   const [verificationToken, setVerificationToken] = useState<string | null>(null)
-  const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
-  const [isVerifying, setIsVerifying] = useState(false)
-  const [verificationFeedback, setVerificationFeedback] = useState<{ success: boolean; message: string; userName?: string } | null>(null)
-  const [verificationError, setVerificationError] = useState<string | null>(null)
-  const [resendLoading, setResendLoading] = useState(false)
-  const [resendMessage, setResendMessage] = useState<string | null>(null)
-  const [resendError, setResendError] = useState<string | null>(null)
-  const [deliveryStatus, setDeliveryStatus] = useState<'sent' | 'failed' | 'pending'>('pending')
-  const [cooldownSeconds, setCooldownSeconds] = useState(0)
-
-  // Live countdown timer for resend cooldown (Amazon/Flipkart standard)
-  React.useEffect(() => {
-    if (cooldownSeconds <= 0) return
-    const timer = setInterval(() => {
-      setCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [cooldownSeconds])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    setResendError(null)
 
     if (!name.trim()) {
       setError('Please provide your name.')
@@ -72,159 +48,31 @@ export const RegisterPage: React.FC = () => {
         prayerCalculationMethod: calculationMethod,
       })
 
-      if (res?.requiresEmailVerification || res?.success) {
+      if (res?.requiresEmailVerification || res?.requiresOtp || res?.success) {
         setVerificationPending(true)
         setRegisteredEmail(res.email || email.trim().toLowerCase())
-        setDeliveryStatus('sent')
-        setCooldownSeconds(60)
         if (res.token) {
           setVerificationToken(res.token)
-        }
-        if (res.previewUrl) {
-          setDevPreviewUrl(res.previewUrl)
         }
       } else if (res?.user) {
         navigate('/app', { replace: true })
       } else {
         setVerificationPending(true)
         setRegisteredEmail(email.trim().toLowerCase())
-        setDeliveryStatus('sent')
-        setCooldownSeconds(60)
       }
     } catch (err: any) {
       console.error('[Register Submit Error]:', err)
       if (err.code === 'EMAIL_DELIVERY_FAILED') {
         setVerificationPending(true)
         setRegisteredEmail(err.email || email.trim().toLowerCase())
-        setDeliveryStatus('failed')
-        setResendError(err.message || 'Account created, but verification email could not be delivered yet. Please click Resend.')
         if (err.token) {
           setVerificationToken(err.token)
-        }
-        if (err.previewUrl || err.verificationUrl) {
-          setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
         }
       } else {
         setError(err.message || 'Registration failed. Please check your network connection and try again.')
       }
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleResend = async () => {
-    if (!registeredEmail || cooldownSeconds > 0) return
-    setResendLoading(true)
-    setResendMessage(null)
-    setResendError(null)
-    try {
-      const res = await salahApi.resendVerification(registeredEmail)
-      setDeliveryStatus('sent')
-      setResendMessage(res.message || 'A fresh verification email has been sent!')
-      setCooldownSeconds(60)
-      if (res.token) {
-        setVerificationToken(res.token)
-      }
-      if (res.previewUrl || res.verificationUrl) {
-        setDevPreviewUrl(res.previewUrl || res.verificationUrl || null)
-      }
-    } catch (err: any) {
-      setResendError(err.message || 'Could not resend email.')
-      if (err.token) {
-        setVerificationToken(err.token)
-      }
-      if (err.previewUrl || err.verificationUrl) {
-        setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
-      }
-      if (err.retryAfter) {
-        setCooldownSeconds(Number(err.retryAfter))
-      }
-    } finally {
-      setResendLoading(false)
-    }
-  }
-
-  // Actively check and validate user account token against backend
-  const handleVerifyMyAccount = async () => {
-    setIsVerifying(true)
-    setVerificationError(null)
-    setVerificationFeedback(null)
-
-    try {
-      if (verificationToken) {
-        const res = await salahApi.verifyEmail(verificationToken)
-        setVerificationFeedback({
-          success: true,
-          message: res.message || 'Account validated successfully! Welcome to Salah Companion.',
-          userName: res.user?.name,
-        })
-        await refreshUser()
-        setTimeout(() => {
-          navigate('/app', { replace: true })
-        }, 1200)
-        return
-      }
-
-      if (registeredEmail) {
-        const statusRes = await salahApi.checkEmailStatus(registeredEmail)
-        if (statusRes.verified) {
-          setVerificationFeedback({
-            success: true,
-            message: 'User is verified and active! Launching dashboard...',
-            userName: statusRes.user?.name,
-          })
-          await refreshUser()
-          setTimeout(() => {
-            navigate('/app', { replace: true })
-          }, 1200)
-        } else if (statusRes.expired) {
-          setVerificationError('Verification link for this account has expired. Please click "Resend Verification Email" below.')
-        } else {
-          setVerificationError('User is not verified yet. Please check your inbox and click the verification link, or request a new one below.')
-        }
-        return
-      }
-
-      setVerificationError('No verification token or email found. Please try registering again.')
-    } catch (err: any) {
-      console.error('[Verify Account Check Error]:', err)
-      const errorMsg =
-        err.code === 'TOKEN_INVALID'
-          ? 'Verification failed: Token is invalid, expired, or already used. This user cannot be validated.'
-          : err.code === 'TOKEN_EXPIRED'
-          ? 'Verification failed: Token has expired (24h limit). Please click Resend below to receive a new link.'
-          : err.message || 'Verification check failed: Invalid user or token.'
-      setVerificationError(errorMsg)
-    } finally {
-      setIsVerifying(false)
-    }
-  }
-
-  // For users who clicked the link in their mail app or external tab
-  const handleCheckStatus = async () => {
-    if (!registeredEmail) return
-    setIsVerifying(true)
-    setVerificationError(null)
-    setVerificationFeedback(null)
-    try {
-      const statusRes = await salahApi.checkEmailStatus(registeredEmail)
-      if (statusRes.verified) {
-        setVerificationFeedback({
-          success: true,
-          message: 'Account verified! Launching your dashboard...',
-          userName: statusRes.user?.name,
-        })
-        await refreshUser()
-        setTimeout(() => {
-          navigate('/app', { replace: true })
-        }, 1200)
-      } else {
-        setVerificationError('Verification not completed yet. Please click the link in your email inbox or click "Verify My Account Now & Launch" above.')
-      }
-    } catch (err: any) {
-      setVerificationError(err.message || 'Could not check verification status.')
-    } finally {
-      setIsVerifying(false)
     }
   }
 
@@ -271,241 +119,38 @@ export const RegisterPage: React.FC = () => {
 
       {/* Top Bar with Brand and Back Link */}
       <header className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() =>
-            confirmAction(
-              {
-                title: 'Discard Registration?',
-                message: 'You have entered registration details. Are you sure you want to return to Home?',
-                confirmText: 'Discard & Leave',
-                cancelText: 'Stay on Page',
-                type: 'unsaved',
-              },
-              () => navigate('/')
-            )
-          }
-          className="flex items-center gap-3 text-left cursor-pointer"
-        >
+        <Link to="/" className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl overflow-hidden bg-[#0C4535] border border-amber-400/20 shadow-xs flex items-center justify-center">
             <img src="/images/app-logo.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
           <span className="font-serif font-bold text-xl text-white">Salah Companion</span>
-        </button>
+        </Link>
 
-        <button
-          type="button"
-          onClick={() =>
-            confirmAction(
-              {
-                title: 'Discard Registration?',
-                message: 'You have entered registration details. Are you sure you want to return to Home?',
-                confirmText: 'Discard & Leave',
-                cancelText: 'Stay on Page',
-                type: 'unsaved',
-              },
-              () => navigate('/')
-            )
-          }
-          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors cursor-pointer"
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
-        </button>
+        </Link>
       </header>
 
       {/* Main Card */}
       <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
         <div className="w-full max-w-md bg-[#FAF7EE] rounded-3xl p-6 sm:p-8 border border-[#E4D9C7] shadow-[0_20px_50px_rgba(0,0,0,0.35)] text-[#132A1F] animate-fade-in">
           {verificationPending ? (
-            /* Email Verification Sent Screen */
-            <div className="text-center py-4 space-y-4">
-              <div className={`w-16 h-16 rounded-full border flex items-center justify-center mx-auto shadow-xs ${
-                deliveryStatus === 'failed'
-                  ? 'bg-amber-100 border-amber-300 text-amber-700'
-                  : 'bg-emerald-100 border-emerald-300 text-emerald-700'
-              }`}>
-                {deliveryStatus === 'failed' ? (
-                  <AlertCircle className="w-8 h-8" />
-                ) : (
-                  <CheckCircle2 className="w-8 h-8" />
-                )}
-              </div>
-
-              <div>
-                <span className={`text-[11px] font-semibold tracking-widest uppercase ${
-                  deliveryStatus === 'failed' ? 'text-amber-700' : 'text-[#B58728]'
-                }`}>
-                  {deliveryStatus === 'failed' ? 'Delivery Pending' : 'Step 2: Verification Email Dispatched'}
-                </span>
-                <h2 className="mt-1 font-serif font-bold text-2xl text-[#122A20]">
-                  {deliveryStatus === 'failed' ? 'Temporary Email Delay' : 'Check Your Inbox'}
-                </h2>
-                <div className="mt-2 text-xs sm:text-sm text-[#5D6F66] leading-relaxed">
-                  {deliveryStatus === 'failed' ? (
-                    <p>
-                      Your account details have been safely registered for <strong className="text-[#122A20]">{registeredEmail}</strong>, but our mail provider encountered a temporary network delay. You can click <strong>Resend</strong> below.
-                    </p>
-                  ) : (
-                    <p>
-                      We have dispatched a verification link to <strong className="text-[#122A20]">{registeredEmail}</strong>.
-                      Please click the link within 24 hours to activate your account.
-                    </p>
-                  )}
-                </div>
-
-                <div className="mt-2 flex items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setVerificationPending(false)
-                      setEmail(registeredEmail)
-                    }}
-                    className="text-xs font-semibold text-[#0C4535] hover:underline cursor-pointer"
-                  >
-                    Entered the wrong email? Edit address
-                  </button>
-                </div>
-
-                <p className="mt-3 text-xs text-[#92400E] font-medium bg-[#FFFBEB] p-2.5 rounded-xl border border-[#FDE68A]">
-                  📬 Tip: If the email doesn't appear in your main inbox within 1-2 minutes, please check your <strong>Spam</strong>, <strong>Junk</strong>, or <strong>Promotions</strong> folder!
-                </p>
-              </div>
-
-              {/* Dynamic Verification Feedback */}
-              {verificationFeedback && (
-                <div className="p-4 bg-emerald-950/60 rounded-2xl border border-emerald-500/50 text-left space-y-2 animate-fade-in shadow-md">
-                  <div className="flex items-center gap-2 text-emerald-300 font-bold text-xs sm:text-sm">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                    <span>✓ Valid User Verified Successfully!</span>
-                  </div>
-                  <p className="text-xs text-emerald-200/90 leading-relaxed">
-                    {verificationFeedback.message}
-                  </p>
-                  <div className="flex items-center gap-1.5 text-[11px] text-amber-300 font-medium">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                    <span>Launching your dashboard...</span>
-                  </div>
-                </div>
-              )}
-
-              {verificationError && (
-                <div className="p-4 bg-rose-950/60 rounded-2xl border border-rose-500/50 text-left space-y-1.5 animate-fade-in shadow-md">
-                  <div className="flex items-center gap-2 text-rose-300 font-bold text-xs sm:text-sm">
-                    <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-                    <span>Verification Check Failed</span>
-                  </div>
-                  <p className="text-xs text-rose-200/90 leading-relaxed">
-                    {verificationError}
-                  </p>
-                </div>
-              )}
-
-              {/* Instant Verification Check Action Box */}
-              <div className="p-4 bg-[#0C4535]/10 rounded-2xl border border-[#0C4535]/20 text-left space-y-3">
-                <div className="flex items-start gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-[#0C4535]/15 flex items-center justify-center shrink-0 text-[#0C4535]">
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-bold text-[#122A20]">
-                      Account Verification &amp; Activation
-                    </h3>
-                    <p className="text-[11px] text-[#5D6F66] leading-relaxed mt-0.5">
-                      Click below to check and validate your account. If valid, your account will be activated immediately and launch the dashboard.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleVerifyMyAccount}
-                  disabled={isVerifying || Boolean(verificationFeedback?.success)}
-                  className={`w-full py-3 px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition shadow-md cursor-pointer ${
-                    verificationFeedback?.success
-                      ? 'bg-emerald-600 text-white border border-emerald-500'
-                      : isVerifying
-                      ? 'bg-stone-300 text-stone-600 border border-stone-300 cursor-not-allowed'
-                      : 'bg-[#0C4535] hover:bg-[#0A3B2D] text-amber-300 border border-amber-400/40 hover:shadow-lg active:scale-[0.99]'
-                  }`}
-                >
-                  {isVerifying ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin text-stone-600" />
-                      <span>Checking &amp; Validating User...</span>
-                    </>
-                  ) : verificationFeedback?.success ? (
-                    <>
-                      <CheckCircle2 className="w-4 h-4 text-white" />
-                      <span>Verified! Launching Dashboard...</span>
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="w-4 h-4 text-amber-300" />
-                      <span>Verify My Account Now &amp; Launch</span>
-                    </>
-                  )}
-                </button>
-
-                <div className="pt-1 flex flex-col items-center gap-1.5 text-center">
-                  <button
-                    type="button"
-                    onClick={handleCheckStatus}
-                    disabled={isVerifying}
-                    className="text-[11px] font-semibold text-[#0C4535] hover:underline cursor-pointer inline-flex items-center gap-1"
-                  >
-                    <span>Already opened link in your email app? Check Verification Status</span>
-                  </button>
-
-                  {devPreviewUrl && (
-                    <a
-                      href={devPreviewUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-[10px] text-[#5D6F66] hover:text-[#0C4535] underline"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      <span>Direct verification URL</span>
-                    </a>
-                  )}
-                </div>
-              </div>
-
-              <div className="pt-4 border-t border-[#E8DFC2] space-y-3">
-                <button
-                  type="button"
-                  onClick={handleResend}
-                  disabled={resendLoading || cooldownSeconds > 0}
-                  className={`w-full py-2.5 px-4 rounded-xl text-xs sm:text-sm font-semibold border flex items-center justify-center gap-2 transition ${
-                    resendLoading || cooldownSeconds > 0
-                      ? 'bg-stone-100 text-stone-400 border-stone-200 cursor-not-allowed'
-                      : 'text-[#14291F] border-[#D5C9B5] hover:bg-[#F2ECE0] cursor-pointer'
-                  }`}
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${resendLoading ? 'animate-spin' : ''}`} />
-                  <span>
-                    {resendLoading
-                      ? 'Sending...'
-                      : cooldownSeconds > 0
-                      ? `Resend email in ${cooldownSeconds}s`
-                      : 'Resend Verification Email'}
-                  </span>
-                </button>
-                {resendMessage && (
-                  <p className="text-xs text-emerald-700 font-semibold">{resendMessage}</p>
-                )}
-                {resendError && (
-                  <p className="text-xs text-rose-700 font-semibold">{resendError}</p>
-                )}
-
-                <Link
-                  to="/login"
-                  className="inline-block text-xs font-bold text-[#0C4535] hover:underline"
-                >
-                  Return to Sign In
-                </Link>
-              </div>
-            </div>
+            <OtpVerificationCard
+              email={registeredEmail}
+              devOtp={verificationToken || undefined}
+              onSuccess={async () => {
+                await refreshUser()
+                navigate('/app', { replace: true })
+              }}
+              onBack={() => {
+                setVerificationPending(false)
+                setEmail(registeredEmail)
+              }}
+            />
           ) : (
             /* Registration Form */
             <>

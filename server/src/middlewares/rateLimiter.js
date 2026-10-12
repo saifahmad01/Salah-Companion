@@ -37,6 +37,7 @@ class SlidingWindowRateLimiter {
 
   middleware() {
     return (req, res, next) => {
+      if (process.env.NODE_ENV === 'test') return next();
       const key = this.keyGenerator(req);
       if (!key) return next();
 

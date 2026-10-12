@@ -2,14 +2,13 @@ import React, { useState } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight, ArrowLeft, RefreshCw, ExternalLink } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { useUnsavedChanges, useUnsavedChangesWarn } from '../context/UnsavedChangesContext'
 import { salahApi } from '../services/backendApi'
+import { OtpVerificationCard } from '../components/auth/OtpVerificationCard'
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate()
   const location = useLocation()
   const { login, banner, setBanner } = useAuth()
-  const { confirmAction } = useUnsavedChanges()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -18,10 +17,6 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null)
   const [errorCode, setErrorCode] = useState<string | null>(null)
   const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
-
-  // Track unsaved login credentials
-  const isLoginDirty = Boolean(email.trim() || password) && !loading && !verificationPendingEmail
-  useUnsavedChangesWarn('login_form', isLoginDirty, 'Login Credentials')
   const [resendLoading, setResendLoading] = useState(false)
   const [resendMessage, setResendMessage] = useState<string | null>(null)
   const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
@@ -56,11 +51,12 @@ export const LoginPage: React.FC = () => {
         navigate(from, { replace: true })
       }
     } catch (err: any) {
-      setError(err.message || 'Login failed. Please check your credentials.')
-      if (err.code === 'EMAIL_NOT_VERIFIED') {
+      if (err.requiresOtp || err.code === 'EMAIL_NOT_VERIFIED') {
         setErrorCode('EMAIL_NOT_VERIFIED')
         setVerificationPendingEmail(err.email || email.trim().toLowerCase())
+        return
       }
+      setError(err.message || 'Login failed. Please check your credentials.')
     } finally {
       setLoading(false)
     }
@@ -131,54 +127,42 @@ export const LoginPage: React.FC = () => {
 
       {/* Top Bar with Brand and Back Link */}
       <header className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between">
-        <button
-          type="button"
-          onClick={() =>
-            confirmAction(
-              {
-                title: 'Discard Login Inputs?',
-                message: 'You have entered login credentials. Are you sure you want to return to Home?',
-                confirmText: 'Discard & Leave',
-                cancelText: 'Stay on Page',
-                type: 'unsaved',
-              },
-              () => navigate('/')
-            )
-          }
-          className="flex items-center gap-3 text-left cursor-pointer"
-        >
+        <Link to="/" className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl overflow-hidden bg-[#0C4535] border border-amber-400/20 shadow-xs flex items-center justify-center">
             <img src="/images/app-logo.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
           <span className="font-serif font-bold text-xl text-white">Salah Companion</span>
-        </button>
+        </Link>
 
-        <button
-          type="button"
-          onClick={() =>
-            confirmAction(
-              {
-                title: 'Discard Login Inputs?',
-                message: 'You have entered login credentials. Are you sure you want to return to Home?',
-                confirmText: 'Discard & Leave',
-                cancelText: 'Stay on Page',
-                type: 'unsaved',
-              },
-              () => navigate('/')
-            )
-          }
-          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors cursor-pointer"
+        <Link
+          to="/"
+          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
           <span>Back to Home</span>
-        </button>
+        </Link>
       </header>
 
       {/* Login Card */}
       <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
         <div className="w-full max-w-md bg-[#FAF7EE] rounded-3xl p-6 sm:p-8 border border-[#E4D9C7] shadow-[0_20px_50px_rgba(0,0,0,0.35)] text-[#132A1F] animate-fade-in">
-          {/* Header */}
-          <div className="text-center mb-6">
+          {verificationPendingEmail ? (
+            <OtpVerificationCard
+              email={verificationPendingEmail}
+              title="Verification Required"
+              subtitle="Please enter the 6-digit code sent to your email to verify and log in."
+              onSuccess={() => {
+                navigate(from, { replace: true })
+              }}
+              onBack={() => {
+                setVerificationPendingEmail(null)
+                setError(null)
+              }}
+            />
+          ) : (
+            <>
+              {/* Header */}
+              <div className="text-center mb-6">
             <span className="text-[11px] font-semibold tracking-widest text-[#B58728] uppercase font-sans">
               Welcome Back
             </span>
@@ -342,7 +326,9 @@ export const LoginPage: React.FC = () => {
               Create account free
             </Link>
           </div>
-        </div>
+        </>
+      )}
+    </div>
       </main>
 
       {/* Simple Footer */}
