@@ -15,9 +15,10 @@ import {
   Compass,
   RefreshCw,
   ExternalLink,
+  KeyRound,
 } from 'lucide-react'
 import { salahApi, authStorage, type UserProfile } from '../services/backendApi'
-import { useUnsavedChanges, useUnsavedChangesWarn } from '../context/UnsavedChangesContext'
+import { OtpVerificationCard } from './auth/OtpVerificationCard'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -38,8 +39,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   currentCoords,
   currentCityName,
 }) => {
-  const { confirmAction, promptLogout } = useUnsavedChanges()
-
   const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -51,8 +50,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   // Verification state
   const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
   const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
-  const [isResending, setIsResending] = useState(false)
-  const [resendCooldown, setResendCooldown] = useState(0)
 
   // Forgot password state
   const [forgotEmail, setForgotEmail] = useState('')
@@ -108,14 +105,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   }, [user])
 
-  // Cooldown timer for resend email
-  React.useEffect(() => {
-    if (resendCooldown > 0) {
-      const timer = setTimeout(() => setResendCooldown((prev) => prev - 1), 1000)
-      return () => clearTimeout(timer)
-    }
-  }, [resendCooldown])
-
   // Cooldown timer for forgot password email
   React.useEffect(() => {
     if (forgotCooldown > 0) {
@@ -123,64 +112,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       return () => clearTimeout(timer)
     }
   }, [forgotCooldown])
-
-  // Track if user has unsaved edits in profile settings
-  const isProfileDirty = Boolean(
-    isOpen &&
-      user &&
-      (editName.trim() !== (user.name || '').trim() ||
-        editMethod !== (user.prayerCalculationMethod || 'Karachi') ||
-        Boolean(newPasswordInput.trim()))
-  )
-
-  // Track if guest has unsaved entries in login or register tabs
-  const isAuthDirty = Boolean(
-    isOpen &&
-      !user &&
-      !verificationPendingEmail &&
-      (name.trim() || email.trim() || password)
-  )
-
-  const isModalDirty = isProfileDirty || isAuthDirty
-
-  useUnsavedChangesWarn(
-    'auth_modal',
-    isModalDirty,
-    user ? 'Profile settings changes' : 'Sign in / registration draft'
-  )
-
-  const handleSafeClose = () => {
-    if (isModalDirty) {
-      confirmAction(
-        {
-          title: 'Discard Changes?',
-          message: user
-            ? 'You have unsaved changes in your profile settings. Are you sure you want to discard them?'
-            : 'You have entered details that will be lost. Are you sure you want to close?',
-          confirmLabel: 'Discard & Close',
-          cancelLabel: 'Keep Editing',
-          variant: 'unsaved',
-        },
-        () => {
-          if (user) {
-            setEditName(user.name)
-            setEditMethod(user.prayerCalculationMethod || 'Karachi')
-            setNewPasswordInput('')
-            setConfirmPasswordInput('')
-            setCurrentPasswordInput('')
-            setShowPasswordSection(false)
-          } else {
-            setName('')
-            setEmail('')
-            setPassword('')
-          }
-          onClose()
-        }
-      )
-    } else {
-      onClose()
-    }
-  }
 
   if (!isOpen) return null
 
@@ -201,11 +132,18 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         }, 500)
       }
     } catch (err: any) {
+      if (err.requiresOtp || err.code === 'EMAIL_NOT_VERIFIED') {
+        setErrorCode('EMAIL_NOT_VERIFIED')
+        setVerificationPendingEmail(err.email || email)
+        setDevPreviewUrl(err.token || null)
+        return
+      }
       setErrorMessage(err.message || 'Login failed. Please check your credentials.')
       if (err.code) {
         setErrorCode(err.code)
       } else if (err.message?.toLowerCase().includes('verify')) {
         setErrorCode('EMAIL_NOT_VERIFIED')
+        setVerificationPendingEmail(err.email || email)
       } else if (err.message?.toLowerCase().includes('no account found')) {
         setErrorCode('ACCOUNT_NOT_FOUND')
       }
@@ -263,38 +201,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorCode('EMAIL_UNVERIFIED_EXISTS')
         setVerificationPendingEmail(email)
       }
-      if (err.retryAfter) {
-        setResendCooldown(err.retryAfter)
-      }
     } finally {
       setLoading(false)
-    }
-  }
-
-  const handleResendVerification = async (targetEmail: string) => {
-    if (resendCooldown > 0 || isResending) return
-    setIsResending(true)
-    setErrorMessage(null)
-
-    try {
-      const res = await salahApi.resendVerification(targetEmail)
-      setSuccessMessage(res.message || 'Verification email resent successfully.')
-      if (res.previewUrl || res.verificationUrl) {
-        setDevPreviewUrl(res.previewUrl || res.verificationUrl || null)
-      }
-      setResendCooldown(60) // 60 seconds cooldown
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to resend verification email.')
-      if (err.previewUrl || err.verificationUrl) {
-        setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
-      }
-      if (err.retryAfter || (err.message && err.message.match(/wait (\d+) seconds/))) {
-        const match = err.message && err.message.match(/wait (\d+) seconds/)
-        const waitTime = err.retryAfter || (match ? parseInt(match[1], 10) : 60)
-        setResendCooldown(waitTime)
-      }
-    } finally {
-      setIsResending(false)
     }
   }
 
@@ -477,7 +385,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in"
-      onClick={handleSafeClose}
+      onClick={onClose}
     >
       <div
         className="relative w-full max-w-sm sm:max-w-md rounded-[28px] bg-[#FAF8F3] border border-[#ECE6D8] p-5.5 shadow-2xl overflow-hidden animate-scale-up"
@@ -486,7 +394,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         {/* Close Button */}
         <button
           type="button"
-          onClick={handleSafeClose}
+          onClick={onClose}
           className="absolute right-4 top-4 w-7 h-7 rounded-full bg-stone-200/60 hover:bg-stone-200 flex items-center justify-center text-stone-600 transition cursor-pointer"
         >
           <X className="w-4 h-4" />
@@ -545,21 +453,20 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               </button>
             )}
 
-            {/* Action 3: Email not verified -> Resend link button */}
+            {/* Action 3: Email not verified -> Enter 6-digit OTP code */}
             {(errorCode === 'EMAIL_NOT_VERIFIED' || errorCode === 'EMAIL_UNVERIFIED_EXISTS') && (
-              <div className="flex items-center gap-2 mt-1">
-                <button
-                  type="button"
-                  onClick={() => handleResendVerification(email)}
-                  disabled={isResending || resendCooldown > 0}
-                  className="text-[11px] font-semibold text-[#0E543F] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50 bg-emerald-100/70 border border-emerald-300 px-2 py-1 rounded-lg"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isResending ? 'animate-spin' : ''}`} />
-                  <span>
-                    {resendCooldown > 0 ? `Resend link in ${resendCooldown}s` : 'Resend verification link'}
-                  </span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setVerificationPendingEmail(email.trim().toLowerCase())
+                  setErrorMessage(null)
+                  setErrorCode(null)
+                }}
+                className="self-start text-[11px] font-bold text-[#0E543F] hover:underline flex items-center gap-1.5 mt-1 cursor-pointer bg-emerald-100/70 border border-emerald-300 px-2.5 py-1 rounded-lg"
+              >
+                <KeyRound className="w-3.5 h-3.5 text-amber-700" />
+                <span>👉 Enter 6-Digit Verification Code</span>
+              </button>
             )}
 
             {/* Action 4: Google linked account -> 1-Click Google Sign In */}
@@ -582,83 +489,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {/* SCREEN 1: VERIFICATION PENDING PROMPT */}
+        {/* SCREEN 1: VERIFICATION PENDING OTP INPUT */}
         {verificationPendingEmail && !user ? (
-          <div className="pt-2 text-center space-y-3.5 animate-fade-in">
-            <div className="w-16 h-16 rounded-full bg-emerald-100/80 border border-emerald-200 flex items-center justify-center text-emerald-800 mx-auto relative">
-              <Mail className="w-8 h-8" />
-              <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-[#0C4535] text-white flex items-center justify-center text-[10px] font-bold">
-                ✓
-              </span>
-            </div>
-
-            <div>
-              <h3 className="text-sm font-bold text-[#14261E]">Check Your Inbox</h3>
-              <p className="text-xs text-[#55675E] mt-1 leading-relaxed">
-                We sent a secure verification link to:
-                <br />
-                <span className="font-semibold text-[#0E543F]">{verificationPendingEmail}</span>
-              </p>
-            </div>
-
-            <div className="p-2.5 rounded-xl bg-[#FAF6EE] border border-[#EDE5D5] text-[11px] text-[#697970] text-left space-y-1">
-              <p className="font-medium text-[#1C2C24]">Next Steps:</p>
-              <p>1. Open your email app or Gmail.</p>
-              <p>2. Click the <strong>"Verify My Email Address"</strong> button.</p>
-              <p>3. Return here and sign in to access your prayer tracker.</p>
-              <p className="pt-1 text-[#92400E] font-medium border-t border-[#EDE5D5]/80 mt-1.5">
-                📬 <em>Don't see it?</em> Check your <strong>Spam</strong>, <strong>Junk</strong>, or <strong>Promotions</strong> folder!
-              </p>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="space-y-2 pt-1">
-              <a
-                href="https://mail.google.com"
-                target="_blank"
-                rel="noreferrer"
-                className="w-full py-2.5 rounded-xl bg-[#0C4535] hover:bg-[#083327] active:scale-95 text-white text-xs font-semibold shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <ExternalLink className="w-3.5 h-3.5" />
-                <span>Open Gmail</span>
-              </a>
-
-              <button
-                type="button"
-                onClick={() => handleResendVerification(verificationPendingEmail)}
-                disabled={isResending || resendCooldown > 0}
-                className="w-full py-2 rounded-xl bg-white border border-[#DDD7C8] hover:bg-stone-50 text-xs font-semibold text-[#25392F] transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw className={`w-3.5 h-3.5 ${isResending ? 'animate-spin' : ''}`} />
-                <span>
-                  {resendCooldown > 0 ? `Resend email in ${resendCooldown}s` : 'Resend Verification Email'}
-                </span>
-              </button>
-
-              {devPreviewUrl && (
-                <a
-                  href={devPreviewUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-block text-[10.5px] text-amber-700 hover:underline font-mono pt-1"
-                >
-                  ⚡ Click here for direct local verification
-                </a>
-              )}
-            </div>
-
-            <div className="pt-2 border-t border-stone-200/60">
-              <button
-                type="button"
-                onClick={() => {
-                  setVerificationPendingEmail(null)
-                  setTab('login')
-                }}
-                className="text-xs text-[#0E543F] font-semibold hover:underline cursor-pointer"
-              >
-                Back to Sign In
-              </button>
-            </div>
+          <div className="pt-2">
+            <OtpVerificationCard
+              email={verificationPendingEmail}
+              devOtp={devPreviewUrl || undefined}
+              onSuccess={(verifiedUser) => {
+                onAuthSuccess(verifiedUser)
+                onClose()
+              }}
+              onBack={() => {
+                setVerificationPendingEmail(null)
+                setTab('login')
+              }}
+            />
           </div>
         ) : user ? (
           /* SCREEN 2: LOGGED IN USER PROFILE */
@@ -853,10 +698,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    promptLogout(() => {
-                      onLogout()
-                      onClose()
-                    })
+                    onLogout()
+                    onClose()
                   }}
                   className="px-3.5 py-2.5 rounded-xl bg-stone-200/70 hover:bg-stone-300 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer active:scale-95"
                 >

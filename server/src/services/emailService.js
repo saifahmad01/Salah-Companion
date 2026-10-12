@@ -206,6 +206,282 @@ async function sendViaHttpApi({ to, subject, html, text }) {
 }
 
 /**
+ * Generates the responsive Islamic-themed OTP verification email HTML template
+ */
+function getOtpEmailHtml(name, otp) {
+  return `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Salah Companion Verification Code</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background-color: #F7F5EE;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      color: #1F2D26;
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrapper {
+      width: 100%;
+      background-color: #F7F5EE;
+      padding: 30px 15px;
+      box-sizing: border-box;
+    }
+    .container {
+      max-width: 540px;
+      margin: 0 auto;
+      background-color: #FFFFFF;
+      border-radius: 24px;
+      overflow: hidden;
+      border: 1px solid #ECE7DB;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+    }
+    .header {
+      background: linear-gradient(135deg, #07241A 0%, #0E543F 60%, #157357 100%);
+      padding: 38px 30px 32px;
+      text-align: center;
+      color: #FFFFFF;
+      position: relative;
+    }
+    .header-icon {
+      font-size: 36px;
+      margin-bottom: 8px;
+      display: inline-block;
+    }
+    .header-title {
+      font-size: 25px;
+      font-weight: 700;
+      margin: 0;
+      letter-spacing: -0.3px;
+    }
+    .header-subtitle {
+      font-size: 13px;
+      color: #D1EADE;
+      margin-top: 5px;
+      font-weight: 500;
+      letter-spacing: 0.5px;
+    }
+    .content {
+      padding: 36px 32px 30px;
+      line-height: 1.6;
+    }
+    .greeting {
+      font-size: 17px;
+      font-weight: 700;
+      color: #142820;
+      margin-bottom: 14px;
+    }
+    .text {
+      font-size: 14.5px;
+      color: #4A5B52;
+      margin-bottom: 20px;
+    }
+    .otp-card {
+      background: linear-gradient(135deg, #FAF8F2 0%, #F5F1E6 100%);
+      border: 2px dashed #0E543F;
+      border-radius: 18px;
+      padding: 24px 20px;
+      text-align: center;
+      margin: 28px 0 24px;
+    }
+    .otp-label {
+      font-size: 11px;
+      font-weight: 700;
+      color: #0E543F;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      margin-bottom: 10px;
+    }
+    .otp-digits {
+      font-family: 'SF Mono', Consolas, Monaco, 'Courier New', monospace;
+      font-size: 38px;
+      font-weight: 800;
+      color: #0E543F;
+      letter-spacing: 12px;
+      padding-left: 12px;
+      margin: 8px 0;
+    }
+    .otp-expiry {
+      font-size: 12px;
+      color: #B45309;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+    .security-notice {
+      background-color: #FEF3C7;
+      border-left: 4px solid #D97706;
+      border-radius: 0 10px 10px 0;
+      padding: 12px 16px;
+      margin: 22px 0;
+      font-size: 12.5px;
+      color: #92400E;
+      line-height: 1.5;
+    }
+    .quote-box {
+      background-color: #F8FBF9;
+      border: 1px solid #D2E7DC;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin: 20px 0 10px;
+      font-size: 13px;
+      color: #164E3A;
+      font-style: italic;
+      text-align: center;
+    }
+    .footer {
+      background-color: #FAF8F2;
+      padding: 24px 30px;
+      text-align: center;
+      border-top: 1px solid #EFEAE0;
+      font-size: 11.5px;
+      color: #8A9991;
+      line-height: 1.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="container">
+      <div class="header">
+        <div class="header-icon">🕌</div>
+        <h1 class="header-title">Salah Companion</h1>
+        <div class="header-subtitle">رفیقِ نماز • Verification Code</div>
+      </div>
+      <div class="content">
+        <div class="greeting">Assalamu Alaikum wa Rahmatullah, ${name || 'Dear Brother/Sister'}!</div>
+        <div class="text">
+          Use the following 6-digit verification code to complete your verification on <strong>Salah Companion</strong>:
+        </div>
+        <div class="otp-card">
+          <div class="otp-label">Your 6-Digit Code</div>
+          <div class="otp-digits">${otp}</div>
+          <div class="otp-expiry">⏱️ Valid for 5 minutes only</div>
+        </div>
+        <div class="security-notice">
+          <strong>🔒 Security Notice:</strong> Never share this code with anyone. Salah Companion will never ask for your code. This code is single-use and will be invalidated after verification.
+        </div>
+        <div class="quote-box">
+          ”Indeed, prayer has been decreed upon the believers a decree of specified times.“
+          <br><strong style="font-style: normal; font-size: 11.5px; color: #0E543F;">— Surah An-Nisa (4:103)</strong>
+        </div>
+      </div>
+      <div class="footer">
+        If you did not request this verification code, you can safely ignore this email.<br>
+        © ${new Date().getFullYear()} Salah Companion. May Allah accept your prayers and deeds.
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+}
+
+/**
+ * Sends a 6-digit OTP verification email to the user
+ * @param {string} to Recipient email
+ * @param {string} name Recipient name
+ * @param {string} otp 6-digit numeric OTP code
+ */
+export async function sendOtpEmail(to, name, otp) {
+  const htmlContent = getOtpEmailHtml(name, otp);
+  const textContent = `Assalamu Alaikum ${name || 'Brother/Sister'},\n\nYour Salah Companion verification code is:\n\n${otp}\n\nThis code is valid for 5 minutes only. Do not share this code with anyone.\n\nSalah Companion Team`;
+
+  const mailOptions = {
+    from: config.emailFrom || `"Salah Companion" <${config.emailUser}>`,
+    to,
+    replyTo: config.emailUser || 'salahcompanion786@gmail.com',
+    subject: `${otp} is your Salah Companion verification code`,
+    text: textContent,
+    html: htmlContent,
+    headers: {
+      'X-Entity-Ref-ID': `otp-${Date.now()}`,
+    },
+  };
+
+  try {
+    // 1. First attempt HTTPS REST API if configured (bypasses Render SMTP port blocking)
+    const httpApiResult = await sendViaHttpApi({
+      to,
+      subject: `${otp} is your Salah Companion verification code`,
+      html: htmlContent,
+      text: textContent,
+    });
+    if (httpApiResult?.success) {
+      return {
+        success: true,
+        messageId: httpApiResult.messageId,
+        otp,
+      };
+    }
+
+    const mailer = await getTransporter();
+    const info = await mailer.sendMail(mailOptions);
+    console.log(`[EmailService] OTP email successfully sent to ${to}: ${info.messageId}`);
+
+    return {
+      success: true,
+      messageId: info.messageId,
+      otp,
+    };
+  } catch (err) {
+    console.error(`[EmailService] Primary SMTP delivery failed for OTP to ${to}:`, err.message);
+
+    const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.IS_RENDER);
+
+    // Fallback port retry if Gmail and not on Render
+    if (!isRender && (config.emailHost?.includes('gmail.com') || config.emailService === 'gmail' || !config.emailHost)) {
+      try {
+        const primaryPort = Number(config.emailPort) || 465;
+        const fallbackPort = primaryPort === 465 ? 587 : 465;
+        console.log(`[EmailService] Retrying OTP via fallback Gmail port ${fallbackPort}...`);
+        const fallbackTransporter = nodemailer.createTransport({
+          host: 'smtp.gmail.com',
+          port: fallbackPort,
+          secure: fallbackPort === 465,
+          family: 4,
+          connectionTimeout: 5000,
+          greetingTimeout: 5000,
+          socketTimeout: 8000,
+          auth: {
+            user: config.emailUser,
+            pass: config.emailPass,
+          },
+          tls: {
+            rejectUnauthorized: false,
+          },
+        });
+        const info = await fallbackTransporter.sendMail(mailOptions);
+        console.log(`[EmailService] OTP successfully sent via fallback port ${fallbackPort} to ${to}: ${info.messageId}`);
+        return {
+          success: true,
+          messageId: info.messageId,
+          otp,
+        };
+      } catch (fallbackErr) {
+        console.error(`[EmailService] Fallback OTP delivery failed:`, fallbackErr.message);
+      }
+    }
+
+    let friendlyError = err.message;
+    if (isRender && (err.message?.includes('timeout') || err.message?.includes('ETIMEDOUT') || err.message?.includes('ESOCKETTIMEDOUT'))) {
+      friendlyError = 'Mail server connection timeout. Cloud host (Render) restricts outbound SMTP ports (465/587). Please configure BREVO_API_KEY or RESEND_API_KEY in Render Environment Variables.';
+    } else if (err.message?.includes('535') || err.message?.includes('BadCredentials')) {
+      friendlyError = 'Gmail SMTP authentication rejected. Gmail requires a 16-character App Password (not your personal account password). Please generate an App Password at Google Account > Security > 2-Step Verification > App passwords.';
+    }
+
+    return {
+      success: false,
+      error: friendlyError,
+      otp,
+    };
+  }
+}
+
+/**
  * Generates the responsive Islamic-themed verification email HTML template
  */
 function getVerificationEmailHtml(name, verificationUrl, directApiUrl) {

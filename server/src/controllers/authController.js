@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../db/prisma.js';
 import {
   sendVerificationEmail,
+  sendOtpEmail,
   sendPasswordResetEmail,
   verifyEmailTransport,
 } from '../services/emailService.js';
@@ -109,13 +110,65 @@ export function hashVerificationToken(rawToken) {
 }
 
 /**
- * Generate a new single-use verification token and its SHA-256 hash
+ * Generate a new single-use verification token and its SHA-256 hash (legacy compatibility)
  * @returns {{ rawToken: string, tokenHash: string }}
  */
 export function generateVerificationToken() {
   const rawToken = crypto.randomBytes(32).toString('hex');
   const tokenHash = hashVerificationToken(rawToken);
   return { rawToken, tokenHash };
+}
+
+/**
+ * Generate a cryptographically secure 6-digit numeric OTP code and its SHA-256 hash
+ * @returns {{ otp: string, tokenHash: string }}
+ */
+export function generateOtp() {
+  const otp = crypto.randomInt(100000, 1000000).toString();
+  const tokenHash = hashVerificationToken(otp);
+  return { otp, tokenHash };
+}
+
+// In-memory sliding window for OTP failed attempt tracking and lockout
+// Key: normalizedEmail -> { attempts: number, lockedUntil: number }
+const otpAttemptsMap = new Map();
+const MAX_OTP_ATTEMPTS = 5;
+const OTP_LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes lockout after 5 consecutive failed attempts
+
+export function recordFailedOtpAttempt(email) {
+  const current = otpAttemptsMap.get(email) || { attempts: 0, lockedUntil: 0 };
+  current.attempts += 1;
+  if (current.attempts >= MAX_OTP_ATTEMPTS) {
+    current.lockedUntil = Date.now() + OTP_LOCKOUT_MS;
+  }
+  otpAttemptsMap.set(email, current);
+  return getOtpAttemptStatus(email);
+}
+
+export function getOtpAttemptStatus(email) {
+  const current = otpAttemptsMap.get(email);
+  if (!current) return { attempts: 0, locked: false, remaining: MAX_OTP_ATTEMPTS };
+  if (current.lockedUntil > Date.now()) {
+    return {
+      attempts: current.attempts,
+      locked: true,
+      remaining: 0,
+      retryAfterSec: Math.ceil((current.lockedUntil - Date.now()) / 1000),
+    };
+  }
+  if (current.lockedUntil > 0 && current.lockedUntil <= Date.now()) {
+    otpAttemptsMap.delete(email);
+    return { attempts: 0, locked: false, remaining: MAX_OTP_ATTEMPTS };
+  }
+  return {
+    attempts: current.attempts,
+    locked: false,
+    remaining: Math.max(0, MAX_OTP_ATTEMPTS - current.attempts),
+  };
+}
+
+export function clearOtpFailedAttempts(email) {
+  otpAttemptsMap.delete(email);
 }
 
 /**
@@ -141,7 +194,7 @@ export function sanitizeUser(user) {
 }
 
 /**
- * 1. Register a new user with Email Verification
+ * 1. Register a new user with 6-Digit Email OTP Verification
  * POST /api/auth/register
  *
  * Rules:
@@ -150,9 +203,9 @@ export function sanitizeUser(user) {
  * - Checks if email has a pending registration in `PendingRegistration`.
  *   If yes, checks resend cooldown (60s).
  * - Hashes password (bcrypt salt rounds = 12).
- * - Generates secure random single-use verification token (SHA-256 hash stored).
- * - Sends verification email first via Nodemailer.
- *   If email delivery fails, returns 502 Bad Gateway with diagnostic error (NEVER reports success if email fails).
+ * - Generates cryptographically secure 6-digit numeric OTP (5-minute expiration, SHA-256 hash stored).
+ * - Sends OTP verification email first.
+ *   If email delivery fails, returns 502 Bad Gateway with honest diagnostic error.
  * - If email succeeds, upserts into `PendingRegistration` (User account is NOT created in `users` yet!).
  */
 export async function register(req, res, next) {
@@ -187,7 +240,7 @@ export async function register(req, res, next) {
         const retryAfterSec = Math.ceil((cooldownMs - elapsedMs) / 1000);
         return res.status(429).json({
           success: false,
-          error: `A verification link was recently sent to this email. Please check your inbox or wait ${retryAfterSec} seconds to request another link.`,
+          error: `A verification code was recently sent to this email. Please check your inbox or wait ${retryAfterSec} seconds to request another code.`,
           code: 'RATE_LIMITED',
           email: normalizedEmail,
           retryAfter: retryAfterSec,
@@ -199,13 +252,13 @@ export async function register(req, res, next) {
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    // 4. Generate secure random verification token and SHA-256 hash
-    const { rawToken, tokenHash } = generateVerificationToken();
-    const tokenExpiresAt = new Date(Date.now() + config.verificationTokenTtlHours * 60 * 60 * 1000);
+    // 4. Generate cryptographically secure 6-digit numeric OTP and SHA-256 hash
+    const { otp, tokenHash } = generateOtp();
+    const tokenExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5-minute strict OTP validity
+    const recipientName = name || existingPending?.name || 'Brother/Sister';
 
-    // 5. Send verification email via Nodemailer with the RAW token
-    const clientOrigin = getEffectiveFrontendUrl(req);
-    const emailResult = await sendVerificationEmail(normalizedEmail, name || existingPending?.name || 'Brother/Sister', rawToken, clientOrigin);
+    // 5. Send OTP verification email
+    const emailResult = await sendOtpEmail(normalizedEmail, recipientName, otp);
 
     // 6. Upsert into PendingRegistration so the registration is safely recorded
     if (existingPending) {
@@ -238,32 +291,42 @@ export async function register(req, res, next) {
       });
     }
 
-    const directApiUrl = `${config.appUrl}/api/auth/verify-email?token=${rawToken}`;
+    // Clear any previous failed attempts
+    clearOtpFailedAttempts(normalizedEmail);
+
+    const directApiUrl = `${config.appUrl}/api/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&token=${otp}&otp=${otp}`;
+    const isDev = process.env.NODE_ENV !== 'production';
 
     // 7. If email delivery failed, return 502 with honest diagnostic rather than swallowing the failure
     if (!emailResult.success) {
       console.warn(`[AuthController] Email delivery failure for ${normalizedEmail}: ${emailResult.error}`);
       return res.status(502).json({
         success: false,
-        error: `Account created, but verification email could not be delivered (${emailResult.error || 'SMTP delivery rejected'}). Please verify email configuration or click Resend.`,
+        error: `Account created, but verification code could not be delivered (${emailResult.error || 'SMTP delivery rejected'}). Please verify email configuration or click Resend Code.`,
         code: 'EMAIL_DELIVERY_FAILED',
         requiresEmailVerification: true,
+        requiresOtp: true,
         email: normalizedEmail,
         canResend: true,
-        token: rawToken,
+        expiresIn: 300,
+        token: otp,
         previewUrl: directApiUrl,
         verificationUrl: directApiUrl,
+        ...(isDev ? { devOtp: otp } : {}),
       });
     }
 
     return res.status(201).json({
       success: true,
-      message: 'Verification link sent! Please check your email and click the link to activate your account.',
+      message: 'A 6-digit verification code has been dispatched to your email.',
       requiresEmailVerification: true,
+      requiresOtp: true,
       email: normalizedEmail,
-      token: rawToken,
+      expiresIn: 300,
+      token: otp,
       previewUrl: directApiUrl,
       verificationUrl: directApiUrl,
+      ...(isDev ? { devOtp: otp } : {}),
     });
   } catch (err) {
     next(err);
@@ -282,7 +345,7 @@ export async function register(req, res, next) {
  */
 export async function verifyEmail(req, res, next) {
   try {
-    const rawToken = req.query.token || req.body.token;
+    const rawToken = req.query.token || req.body.token || req.query.otp || req.body.otp;
     const isApiRequest = Boolean(
       req.xhr ||
       req.query.format === 'json' ||
@@ -401,7 +464,7 @@ export async function verifyEmail(req, res, next) {
       }
       return res.status(400).json({
         success: false,
-        error: 'This verification link has expired (links are valid for 24 hours). Please request a new verification email.',
+        error: 'This verification code or link has expired. Please request a fresh 6-digit code.',
         code: 'TOKEN_EXPIRED',
         email: result.email,
       });
@@ -413,7 +476,7 @@ export async function verifyEmail(req, res, next) {
       }
       return res.status(400).json({
         success: false,
-        error: 'This verification link is invalid or has already been used. If your account is already verified, you can log in directly.',
+        error: 'This verification code is invalid or has already been used. If your account is already verified, you can log in directly.',
         code: 'TOKEN_INVALID',
       });
     }
@@ -435,7 +498,7 @@ export async function verifyEmail(req, res, next) {
       user: sanitizeUser(verifiedUser),
     });
   } catch (err) {
-    if (err.code === 'P2025') {
+    if (err.code === 'P2025' || err.code === 'P2002' || err.code === 'P2034') {
       const isApiRequest = Boolean(
         req.xhr ||
         req.query.format === 'json' ||
@@ -448,7 +511,7 @@ export async function verifyEmail(req, res, next) {
       }
       return res.status(400).json({
         success: false,
-        error: 'This verification link is invalid or has already been used. If your account is already verified, you can log in directly.',
+        error: 'This verification code is invalid or has already been used. If your account is already verified, you can log in directly.',
         code: 'TOKEN_INVALID',
       });
     }
@@ -509,14 +572,13 @@ export async function resendVerification(req, res, next) {
       }
     }
 
-    // Generate fresh single-use verification token
-    const { rawToken, tokenHash } = generateVerificationToken();
-    const tokenExpiresAt = new Date(Date.now() + config.verificationTokenTtlHours * 60 * 60 * 1000);
+    // Generate fresh single-use 6-digit numeric OTP with 5-minute strict TTL
+    const { otp, tokenHash } = generateOtp();
+    const tokenExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
     const recipientName = pending ? pending.name : user.name;
 
-    // Send verification email FIRST
-    const clientOrigin = getEffectiveFrontendUrl(req);
-    const emailResult = await sendVerificationEmail(normalizedEmail, recipientName, rawToken, clientOrigin);
+    // Send OTP verification email FIRST
+    const emailResult = await sendOtpEmail(normalizedEmail, recipientName || 'Brother/Sister', otp);
 
     // Update pending registration or user with the fresh single-use token in the database
     if (pending) {
@@ -539,7 +601,9 @@ export async function resendVerification(req, res, next) {
       });
     }
 
-    const directApiUrl = `${config.appUrl}/api/auth/verify-email?token=${rawToken}`;
+    clearOtpFailedAttempts(normalizedEmail);
+    const directApiUrl = `${config.appUrl}/api/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&token=${otp}&otp=${otp}`;
+    const isDev = process.env.NODE_ENV !== 'production';
 
     if (!emailResult.success) {
       return res.status(502).json({
@@ -547,18 +611,21 @@ export async function resendVerification(req, res, next) {
         error: emailResult.error || 'Failed to deliver verification email. Please verify your email configuration.',
         code: 'EMAIL_DELIVERY_FAILED',
         email: normalizedEmail,
-        token: rawToken,
+        token: otp,
         previewUrl: directApiUrl,
         verificationUrl: directApiUrl,
+        ...(isDev ? { devOtp: otp } : {}),
       });
     }
 
     return res.status(200).json({
       success: true,
-      message: `A fresh verification link has been sent to ${normalizedEmail}. Please check your inbox.`,
-      token: rawToken,
+      message: `A fresh 6-digit verification code has been dispatched to ${normalizedEmail}. Please check your inbox.`,
+      token: otp,
+      expiresIn: 300,
       previewUrl: directApiUrl,
       verificationUrl: directApiUrl,
+      ...(isDev ? { devOtp: otp } : {}),
     });
   } catch (err) {
     next(err);
@@ -602,8 +669,9 @@ export async function login(req, res, next) {
       if (!user.isEmailVerified) {
         return res.status(403).json({
           success: false,
-          error: 'Your email address is not verified yet. Please click the verification link sent to your inbox, or request a new verification email.',
+          error: 'Your email address is not verified yet. Please enter the 6-digit verification code sent to your inbox, or request a new code.',
           code: 'EMAIL_NOT_VERIFIED',
+          requiresOtp: true,
           email: user.email,
         });
       }
@@ -637,8 +705,9 @@ export async function login(req, res, next) {
 
       return res.status(403).json({
         success: false,
-        error: 'Your email address is not verified yet. Please click the verification link sent to your inbox, or request a new verification email.',
+        error: 'Your email address is not verified yet. Please enter the 6-digit verification code sent to your inbox, or request a new code.',
         code: 'EMAIL_NOT_VERIFIED',
+        requiresOtp: true,
         email: normalizedEmail,
       });
     }
@@ -1273,4 +1342,404 @@ export async function checkEmailStatus(req, res, next) {
   }
 }
 
+/**
+ * Timing-attack-safe comparison of two hex hashes
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+export function safeCompareHash(a, b) {
+  if (!a || !b || typeof a !== 'string' || typeof b !== 'string') return false;
+  try {
+    const bufA = Buffer.from(a.trim(), 'hex');
+    const bufB = Buffer.from(b.trim(), 'hex');
+    if (bufA.length !== 32 || bufB.length !== 32) return false;
+    return crypto.timingSafeEqual(bufA, bufB);
+  } catch {
+    return false;
+  }
+}
 
+/**
+ * 16. Verify 6-digit numeric OTP code
+ * POST /api/auth/verify-otp
+ *
+ * Enforces:
+ * - 6-digit format check
+ * - 5-attempt sliding lockout (15 minutes)
+ * - 5-minute expiration check
+ * - Cryptographic SHA-256 timing-safe hash comparison
+ * - Atomic transaction activation & cleanup (prevents replay attacks)
+ * - Sets secure HttpOnly session cookie and returns user
+ */
+export async function verifyOtp(req, res, next) {
+  try {
+    const email = req.body?.email || req.query?.email;
+    const otp = req.body?.otp || req.query?.otp;
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Email address is required.',
+        code: 'MISSING_EMAIL',
+      });
+    }
+
+    if (!otp || typeof otp !== 'string' || !/^\d{6}$/.test(otp.trim())) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please enter a valid 6-digit verification code.',
+        code: 'INVALID_OTP_FORMAT',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    const cleanOtp = otp.trim();
+
+    // 1. Check lockout status
+    const attemptStatus = getOtpAttemptStatus(normalizedEmail);
+    if (attemptStatus.locked) {
+      return res.status(429).json({
+        success: false,
+        error: `Too many failed verification attempts. Please wait ${attemptStatus.retryAfterSec} seconds before trying again.`,
+        code: 'OTP_LOCKED',
+        retryAfter: attemptStatus.retryAfterSec,
+      });
+    }
+
+    const inputHash = hashVerificationToken(cleanOtp);
+
+    // Atomically execute verification check and user activation inside a single transaction
+    const result = await prisma.$transaction(async (tx) => {
+      // Priority 1: Check PendingRegistration
+      const pendingTx = await tx.pendingRegistration.findUnique({
+        where: { email: normalizedEmail },
+      });
+
+      if (pendingTx) {
+        // Expiration check (5 minutes strict TTL)
+        if (new Date() > new Date(pendingTx.expiresAt)) {
+          return { code: 'OTP_EXPIRED', email: normalizedEmail };
+        }
+
+        // Timing-safe hash check
+        if (!safeCompareHash(pendingTx.tokenHash, inputHash)) {
+          return { code: 'OTP_MISMATCH', recordId: pendingTx.id, type: 'pending' };
+        }
+
+        // Atomically delete pending record to prevent replay
+        await tx.pendingRegistration.delete({
+          where: { id: pendingTx.id },
+        });
+
+        // Upsert into User
+        const existingUser = await tx.user.findUnique({
+          where: { email: normalizedEmail },
+        });
+
+        let userRecord;
+        if (existingUser) {
+          userRecord = await tx.user.update({
+            where: { id: existingUser.id },
+            data: {
+              isEmailVerified: true,
+              verificationTokenHash: null,
+              tokenExpiresAt: null,
+              lastVerificationSentAt: null,
+              ...(isPermanentAdmin(normalizedEmail) ? { role: 'ADMIN' } : {}),
+            },
+          });
+        } else {
+          userRecord = await tx.user.create({
+            data: {
+              name: pendingTx.name,
+              email: pendingTx.email,
+              password: pendingTx.password,
+              role: isPermanentAdmin(pendingTx.email) ? 'ADMIN' : 'USER',
+              prayerCalculationMethod: pendingTx.prayerCalculationMethod || 'Karachi',
+              latitude: pendingTx.latitude,
+              longitude: pendingTx.longitude,
+              isEmailVerified: true,
+              verificationTokenHash: null,
+              tokenExpiresAt: null,
+              lastVerificationSentAt: null,
+            },
+          });
+        }
+
+        return { code: 'SUCCESS', user: userRecord };
+      }
+
+      // Priority 2: Check User table (for existing unverified users or passwordless OTP)
+      const userTx = await tx.user.findUnique({
+        where: { email: normalizedEmail },
+      });
+
+      if (userTx) {
+        if (!userTx.verificationTokenHash) {
+          if (userTx.isEmailVerified) {
+            return { code: 'ALREADY_VERIFIED', user: userTx };
+          }
+          return { code: 'NO_ACTIVE_OTP' };
+        }
+
+        // Expiry check
+        if (userTx.tokenExpiresAt && new Date() > new Date(userTx.tokenExpiresAt)) {
+          return { code: 'OTP_EXPIRED', email: normalizedEmail };
+        }
+
+        // Timing-safe hash check
+        if (!safeCompareHash(userTx.verificationTokenHash, inputHash)) {
+          return { code: 'OTP_MISMATCH', recordId: userTx.id, type: 'user' };
+        }
+
+        const updatedUser = await tx.user.update({
+          where: { id: userTx.id },
+          data: {
+            isEmailVerified: true,
+            verificationTokenHash: null,
+            tokenExpiresAt: null,
+            lastVerificationSentAt: null,
+          },
+        });
+
+        return { code: 'SUCCESS', user: updatedUser };
+      }
+
+      return { code: 'ACCOUNT_NOT_FOUND' };
+    }, {
+      maxWait: 15000,
+      timeout: 25000,
+    });
+
+    // Handle results
+    if (result.code === 'OTP_MISMATCH') {
+      const failStatus = recordFailedOtpAttempt(normalizedEmail);
+      if (failStatus.locked) {
+        // Invalidate DB token to eliminate any further brute force window
+        try {
+          if (result.type === 'pending') {
+            await prisma.pendingRegistration.update({
+              where: { id: result.recordId },
+              data: { expiresAt: new Date(0) },
+            });
+          } else {
+            await prisma.user.update({
+              where: { id: result.recordId },
+              data: { tokenExpiresAt: new Date(0) },
+            });
+          }
+        } catch {}
+
+        return res.status(429).json({
+          success: false,
+          error: 'Too many incorrect attempts. This code has been invalidated for security. Please wait 15 minutes before requesting a new code.',
+          code: 'OTP_LOCKED',
+          remainingAttempts: 0,
+          retryAfter: failStatus.retryAfterSec,
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: `Incorrect verification code. You have ${failStatus.remaining} attempt${failStatus.remaining === 1 ? '' : 's'} remaining.`,
+        code: 'OTP_INVALID',
+        remainingAttempts: failStatus.remaining,
+        email: normalizedEmail,
+      });
+    }
+
+    if (result.code === 'OTP_EXPIRED') {
+      return res.status(400).json({
+        success: false,
+        error: 'This verification code has expired (codes are valid for 5 minutes). Please request a new code.',
+        code: 'OTP_EXPIRED',
+        email: result.email,
+      });
+    }
+
+    if (result.code === 'ALREADY_VERIFIED') {
+      return res.status(400).json({
+        success: false,
+        error: 'This account is already verified or this verification code has already been used.',
+        code: 'ALREADY_VERIFIED',
+        email: normalizedEmail,
+      });
+    }
+
+    if (result.code === 'NO_ACTIVE_OTP') {
+      return res.status(400).json({
+        success: false,
+        error: 'No active verification code found for this account. Please click Resend Code to receive a new one.',
+        code: 'NO_ACTIVE_OTP',
+        email: normalizedEmail,
+      });
+    }
+
+    if (result.code === 'ACCOUNT_NOT_FOUND') {
+      return res.status(404).json({
+        success: false,
+        error: 'No account or registration request found for this email address. Please register first.',
+        code: 'ACCOUNT_NOT_FOUND',
+        email: normalizedEmail,
+      });
+    }
+
+    // Success! Clear failed attempts
+    clearOtpFailedAttempts(normalizedEmail);
+
+    const verifiedUser = result.user;
+    const token = signToken(verifiedUser);
+    setAuthCookie(res, token);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Email verified successfully! Welcome to Salah Companion.',
+      token,
+      user: sanitizeUser(verifiedUser),
+    });
+  } catch (err) {
+    if (err.code === 'P2025' || err.code === 'P2002' || err.code === 'P2034') {
+      return res.status(400).json({
+        success: false,
+        error: 'This verification code is invalid or has already been used. If your account is already verified, you can log in directly.',
+        code: 'ALREADY_VERIFIED',
+      });
+    }
+    next(err);
+  }
+}
+
+/**
+ * 17. Send / Resend 6-digit numeric OTP code
+ * POST /api/auth/send-otp and POST /api/auth/resend-otp
+ *
+ * Rules:
+ * - Checks lockout status (15 min after 5 failed attempts)
+ * - Checks 60-second cooldown
+ * - Dispatches 6-digit numeric OTP with 5-minute TTL via configured email provider
+ * - Timing-safe mitigation against account enumeration
+ */
+export async function sendOtp(req, res, next) {
+  try {
+    const email = req.body?.email || req.query?.email;
+    const type = req.body?.type || 'VERIFICATION';
+
+    if (!email || typeof email !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Email address is required.',
+        code: 'MISSING_EMAIL',
+      });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Check lockout
+    const attemptStatus = getOtpAttemptStatus(normalizedEmail);
+    if (attemptStatus.locked) {
+      return res.status(429).json({
+        success: false,
+        error: `Too many attempts. Please wait ${attemptStatus.retryAfterSec} seconds before requesting another code.`,
+        code: 'OTP_LOCKED',
+        retryAfter: attemptStatus.retryAfterSec,
+      });
+    }
+
+    // 1. Check PendingRegistration
+    const pending = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    // 2. Check User table
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    const targetRecord = pending || user;
+
+    if (!targetRecord) {
+      // Mitigate account enumeration timing attack
+      await bcrypt.compare('dummy_timing_protection', DUMMY_HASH);
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists with this email address, a 6-digit verification code has been dispatched.',
+        code: 'OTP_DISPATCHED',
+        email: normalizedEmail,
+        expiresIn: 300,
+      });
+    }
+
+    // Check resend cooldown (60 seconds)
+    const lastSentAt = pending ? pending.lastSentAt : user.lastVerificationSentAt;
+    if (lastSentAt) {
+      const elapsedMs = Date.now() - new Date(lastSentAt).getTime();
+      const cooldownMs = config.verificationResendCooldownSec * 1000;
+      if (elapsedMs < cooldownMs) {
+        const retryAfterSec = Math.ceil((cooldownMs - elapsedMs) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${retryAfterSec} seconds before requesting another verification code.`,
+          code: 'RATE_LIMITED',
+          retryAfter: retryAfterSec,
+        });
+      }
+    }
+
+    // Generate fresh 6-digit OTP
+    const { otp, tokenHash } = generateOtp();
+    const tokenExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5-minute strict TTL
+    const recipientName = targetRecord.name || 'Brother/Sister';
+
+    // Send email first
+    const emailResult = await sendOtpEmail(normalizedEmail, recipientName, otp);
+
+    // Update DB record
+    if (pending) {
+      await prisma.pendingRegistration.update({
+        where: { id: pending.id },
+        data: {
+          tokenHash,
+          expiresAt: tokenExpiresAt,
+          lastSentAt: new Date(),
+        },
+      });
+    } else if (user) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          verificationTokenHash: tokenHash,
+          tokenExpiresAt,
+          lastVerificationSentAt: new Date(),
+        },
+      });
+    }
+
+    // Clear failed attempts counter for fresh OTP
+    clearOtpFailedAttempts(normalizedEmail);
+
+    const isDev = process.env.NODE_ENV !== 'production';
+
+    if (!emailResult.success) {
+      console.warn(`[AuthController] OTP dispatch failed for ${normalizedEmail}: ${emailResult.error}`);
+      return res.status(502).json({
+        success: false,
+        error: emailResult.error || 'Failed to dispatch verification email. Please check email service configuration.',
+        code: 'EMAIL_DELIVERY_FAILED',
+        email: normalizedEmail,
+        ...(isDev ? { devOtp: otp } : {}),
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `A fresh 6-digit verification code has been dispatched to ${normalizedEmail}.`,
+      code: 'OTP_SENT',
+      email: normalizedEmail,
+      expiresIn: 300,
+      ...(isDev ? { devOtp: otp } : {}),
+    });
+  } catch (err) {
+    next(err);
+  }
+}

@@ -155,4 +155,25 @@ export const setPasswordSchema = z.object({
   currentPassword: z.string().optional(),
 });
 
+/**
+ * OTP Verification Input Validation Schema
+ */
+export const verifyOtpSchema = z.object({
+  email: emailValidation,
+  otp: z
+    .string({ required_error: 'Verification code is required' })
+    .trim()
+    .length(6, 'Verification code must be exactly 6 digits')
+    .regex(/^\d{6}$/, 'Verification code must contain digits only'),
+});
+
+/**
+ * OTP Send / Resend Input Validation Schema
+ */
+export const sendOtpSchema = z.object({
+  email: emailValidation,
+  type: z.enum(['VERIFICATION', 'LOGIN']).optional(),
+});
+
+
 

@@ -15,6 +15,8 @@ import {
   resetPassword,
   setPassword,
   checkEmailStatus,
+  verifyOtp,
+  sendOtp,
 } from '../controllers/authController.js';
 import {
   protectRoute,
@@ -34,6 +36,8 @@ import {
   forgotPasswordSchema,
   resetPasswordSchema,
   setPasswordSchema,
+  verifyOtpSchema,
+  sendOtpSchema,
 } from '../schemas/authSchema.js';
 
 export const authRouter = Router();
@@ -41,6 +45,9 @@ export const authRouter = Router();
 // Public Authentication Routes
 authRouter.post('/register', registerIpRateLimiter, validateBody(registerSchema), register);
 authRouter.post('/login', validateBody(loginSchema), login);
+authRouter.post('/verify-otp', validateBody(verifyOtpSchema), verifyOtp);
+authRouter.post('/send-otp', resendHourlyRateLimiter, validateBody(sendOtpSchema), sendOtp);
+authRouter.post('/resend-otp', resendHourlyRateLimiter, validateBody(sendOtpSchema), sendOtp);
 authRouter.get('/verify-email', verifyEmail);
 authRouter.post('/verify-email', verifyEmail);
 authRouter.post('/resend-verification', resendHourlyRateLimiter, validateBody(resendVerificationSchema), resendVerification);

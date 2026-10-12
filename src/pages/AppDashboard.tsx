@@ -23,7 +23,6 @@ import {
 import { AuthModal } from '../components/AuthModal'
 import { CalendarModal, type CalendarMode } from '../components/CalendarModal'
 import { useAuth } from '../context/AuthContext'
-import { useUnsavedChanges } from '../context/UnsavedChangesContext'
 import { salahApi } from '../services/backendApi'
 import { HADITH_COLLECTION, type DailyHadith } from '../data/hadiths'
 import {
@@ -49,15 +48,15 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { reverseGeocodeCoordinates } from '../utils/geocoding'
 import type { PrayerItem, DeedItem, PrayerStatus } from '../types'
-import { LogOut, Volume2, Shield, Compass, ChevronRight } from 'lucide-react'
+import { LogOut, Volume2, Shield, Compass, ChevronRight, HeartHandshake, ArrowLeft } from 'lucide-react'
 import { useSalahNotifications } from '../hooks/useSalahNotifications'
 import { QiblaCompassModal } from '../components/QiblaCompassModal'
 import { PrayerConfirmationModal } from '../components/PrayerConfirmationModal'
+import { AppExitModal } from '../components/AppExitModal'
 
 export const AppDashboard = () => {
   const navigate = useNavigate()
   const { user: currentUser, logout, banner, setBanner } = useAuth()
-  const { promptLogout } = useUnsavedChanges()
   const queryClient = useQueryClient()
 
   // Current active Indian city with address persistence
@@ -102,6 +101,9 @@ export const AppDashboard = () => {
       return '12-hour (AM/PM)'
     }
   })
+
+  // Islamic App-Exit confirmation modal state
+  const [showExitModal, setShowExitModal] = useState(false)
 
   // Real-world Salah prayer notification system
   const {
@@ -690,6 +692,116 @@ export const AppDashboard = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [isQiblaOpen, setIsQiblaOpen] = useState(false)
 
+  // Mobile & desktop back navigation:
+  // If an in-app modal is open, pressing back closes that modal.
+  // When no modal is open, browser & phone back button naturally navigates back without being trapped!
+  useEffect(() => {
+    const isAnyModalOpen =
+      showExitModal ||
+      isQiblaOpen ||
+      isLocationOpen ||
+      isAuthModalOpen ||
+      isCalendarOpen ||
+      isHadithOpen ||
+      isLessonOpen ||
+      isNotificationsOpen ||
+      Boolean(pendingConfirmation)
+
+    if (isAnyModalOpen) {
+      window.history.pushState({ modalOpen: true }, '', window.location.href)
+    }
+
+    const handlePopState = () => {
+      if (showExitModal) {
+        setShowExitModal(false)
+      } else if (isQiblaOpen) {
+        setIsQiblaOpen(false)
+      } else if (isLocationOpen) {
+        setIsLocationOpen(false)
+      } else if (isAuthModalOpen) {
+        setIsAuthModalOpen(false)
+      } else if (isCalendarOpen) {
+        setIsCalendarOpen(false)
+      } else if (isHadithOpen) {
+        setIsHadithOpen(false)
+      } else if (isLessonOpen) {
+        setIsLessonOpen(false)
+      } else if (isNotificationsOpen) {
+        setIsNotificationsOpen(false)
+      } else if (pendingConfirmation) {
+        setPendingConfirmation(null)
+      }
+    }
+
+    window.addEventListener('popstate', handlePopState)
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+    }
+  }, [
+    showExitModal,
+    isQiblaOpen,
+    isLocationOpen,
+    isAuthModalOpen,
+    isCalendarOpen,
+    isHadithOpen,
+    isLessonOpen,
+    isNotificationsOpen,
+    pendingConfirmation,
+  ])
+
+  // Explicit in-app Back button handler (desktop & phone)
+  const handleGoBack = () => {
+    if (showExitModal) {
+      setShowExitModal(false)
+      return
+    }
+    if (isQiblaOpen) {
+      setIsQiblaOpen(false)
+      return
+    }
+    if (isLocationOpen) {
+      setIsLocationOpen(false)
+      return
+    }
+    if (isAuthModalOpen) {
+      setIsAuthModalOpen(false)
+      return
+    }
+    if (isCalendarOpen) {
+      setIsCalendarOpen(false)
+      return
+    }
+    if (isHadithOpen) {
+      setIsHadithOpen(false)
+      return
+    }
+    if (isLessonOpen) {
+      setIsLessonOpen(false)
+      return
+    }
+    if (isNotificationsOpen) {
+      setIsNotificationsOpen(false)
+      return
+    }
+    if (pendingConfirmation) {
+      setPendingConfirmation(null)
+      return
+    }
+
+    // Smoothly go back in history, or to landing page if opened directly
+    if (window.history.length > 1) {
+      navigate(-1)
+    } else {
+      navigate('/')
+    }
+  }
+
+  const handleConfirmExit = () => {
+    setShowExitModal(false)
+    // Never logout or wipe session! Preserves login state and all prayer records.
+    navigate('/', { replace: true })
+  }
+
   const handleToggleDeed = (id: string) => {
     setDeeds((prev) =>
       prev.map((item) =>
@@ -796,28 +908,39 @@ export const AppDashboard = () => {
     })
   }
 
-  const handleSignOut = () => {
-    promptLogout(async () => {
-      await logout()
-      navigate('/', { replace: true })
-    })
+  const handleSignOut = async () => {
+    await logout()
+    navigate('/', { replace: true })
   }
 
   return (
     <div className="min-h-screen bg-[#EDE8DE] flex flex-col items-center justify-start sm:py-6 antialiased font-sans">
       {/* Top Application Bar with Navigation to Dashboard Tabs & Logout */}
       <div className="w-full max-w-6xl xl:max-w-7xl px-4 sm:px-6 lg:px-8 mb-3 flex items-center justify-between gap-3">
-        <button
-          type="button"
-          onClick={() => setActiveTab('home')}
-          className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-stone-800 text-xs font-bold shadow-xs border border-stone-200/80 transition cursor-pointer"
-          title="Salah Companion Dashboard Home"
-        >
-          <div className="w-5 h-5 rounded-md overflow-hidden bg-[#0E3D2E] flex-shrink-0">
-            <img src="/images/app-logo.png" alt="Logo" className="w-full h-full object-cover" />
-          </div>
-          <span className="font-serif font-bold text-emerald-950 text-xs sm:text-sm tracking-tight">Salah Companion</span>
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleGoBack}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-[#0C4535] text-xs font-bold shadow-xs border border-stone-200/80 transition cursor-pointer active:scale-95"
+            title="Go Back"
+            aria-label="Go Back"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-[#0C4535]" />
+            <span className="font-sans">Back</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('home')}
+            className="inline-flex items-center gap-2.5 px-3 py-1.5 rounded-full bg-white/95 hover:bg-white text-stone-800 text-xs font-bold shadow-xs border border-stone-200/80 transition cursor-pointer"
+            title="Salah Companion Dashboard Home"
+          >
+            <div className="w-5 h-5 rounded-md overflow-hidden bg-[#0E3D2E] flex-shrink-0">
+              <img src="/images/app-logo.png" alt="Logo" className="w-full h-full object-cover" />
+            </div>
+            <span className="font-serif font-bold text-emerald-950 text-xs sm:text-sm tracking-tight hidden sm:inline">Salah Companion</span>
+          </button>
+        </div>
 
         {/* Center: Desktop Navigation Bar for Post-Login Screens */}
         <nav className="hidden md:flex items-center gap-1 bg-white/90 backdrop-blur-md px-2 py-1 rounded-full border border-stone-200 shadow-xs">
@@ -862,6 +985,16 @@ export const AppDashboard = () => {
               Salam, <strong className="text-emerald-900 font-semibold">{currentUser.name.split(' ')[0]}</strong>
             </span>
           )}
+          <button
+            type="button"
+            onClick={() => setShowExitModal(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAF7EE] hover:bg-[#F0E9D8] text-[#0C4535] text-xs font-semibold shadow-2xs border border-[#D5C9B5] transition cursor-pointer"
+            title="Exit App (Preserves your login session and prayer logs)"
+          >
+            <HeartHandshake className="w-3.5 h-3.5 text-[#B58728]" />
+            <span className="hidden sm:inline">Exit App</span>
+            <span className="hidden md:inline text-[10px] text-[#0C4535]/70 font-medium">خروج</span>
+          </button>
           <button
             type="button"
             onClick={handleSignOut}
@@ -1257,6 +1390,11 @@ export const AppDashboard = () => {
           cityName={city.displayShort || city.name}
           onDetectGPS={handleDetectGPS}
           onOpenLocationModal={() => setIsLocationOpen(true)}
+        />
+        <AppExitModal
+          isOpen={showExitModal}
+          onStay={() => setShowExitModal(false)}
+          onExit={handleConfirmExit}
         />
       </main>
     </div>
