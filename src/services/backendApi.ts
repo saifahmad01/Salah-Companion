@@ -119,9 +119,6 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promi
     error.email = data.email;
     error.availableAt = data.availableAt;
     error.token = data.token;
-    error.previewUrl = data.previewUrl;
-    error.verificationUrl = data.verificationUrl;
-    error.requiresEmailVerification = data.requiresEmailVerification;
     throw error;
   }
 
@@ -149,13 +146,6 @@ export interface AuthResponse {
   message: string;
   token?: string;
   user?: UserProfile;
-  requiresEmailVerification?: boolean;
-  requiresOtp?: boolean;
-  email?: string;
-  expiresIn?: number;
-  previewUrl?: string;
-  verificationUrl?: string;
-  devOtp?: string;
 }
 
 export interface BackendPrayerTimes {
@@ -284,120 +274,8 @@ export interface WeeklyPrayersResponse {
 
 export const salahApi = {
   // ==========================================================================
-  // Authentication & Profile Endpoints
+  // Authentication & Profile Endpoints (Google OAuth & Session Management)
   // ==========================================================================
-
-  /**
-   * Register a new user
-   * POST /api/auth/register
-   */
-  async register(payload: {
-    name: string;
-    email: string;
-    password: string;
-    prayerCalculationMethod?: string;
-    latitude?: number;
-    longitude?: number;
-  }): Promise<AuthResponse> {
-    const data: AuthResponse = await fetchWithAuth('/auth/register', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    if (data.token) {
-      authStorage.setToken(data.token);
-    }
-    return data;
-  },
-
-  /**
-   * Log in user
-   * POST /api/auth/login
-   */
-  async login(payload: { email: string; password: string }): Promise<AuthResponse> {
-    const data: AuthResponse = await fetchWithAuth('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    if (data.token) {
-      authStorage.setToken(data.token);
-    }
-    return data;
-  },
-
-  /**
-   * Verify 6-digit numeric email OTP
-   * POST /api/auth/verify-otp
-   */
-  async verifyOtp(payload: { email: string; otp: string }): Promise<AuthResponse> {
-    const data: AuthResponse = await fetchWithAuth('/auth/verify-otp', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    if (data.token) {
-      authStorage.setToken(data.token);
-    }
-    return data;
-  },
-
-  /**
-   * Send / Resend 6-digit numeric email OTP
-   * POST /api/auth/send-otp
-   */
-  async sendOtp(payload: { email: string; name?: string; type?: 'VERIFICATION' | 'LOGIN' }): Promise<{
-    success: boolean;
-    message: string;
-    expiresIn?: number;
-    email?: string;
-    retryAfter?: number;
-    devOtp?: string;
-  }> {
-    return await fetchWithAuth('/auth/send-otp', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  },
-
-  /**
-   * Resend 6-digit numeric email OTP (alias)
-   * POST /api/auth/resend-otp
-   */
-  async resendOtp(email: string): Promise<{
-    success: boolean;
-    message: string;
-    expiresIn?: number;
-    email?: string;
-    retryAfter?: number;
-    devOtp?: string;
-  }> {
-    return await fetchWithAuth('/auth/resend-otp', {
-      method: 'POST',
-      body: JSON.stringify({ email, type: 'VERIFICATION' }),
-    });
-  },
-
-  /**
-   * Resend verification OTP (backward compatibility alias)
-   */
-  async resendVerification(email: string): Promise<{ success: boolean; message: string; previewUrl?: string; verificationUrl?: string; token?: string; devOtp?: string }> {
-    return await this.sendOtp({ email, type: 'VERIFICATION' }) as any;
-  },
-
-  /**
-   * Check verification status of an email
-   * GET /api/auth/status?email=...
-   */
-  async checkEmailStatus(email: string): Promise<{
-    success: boolean;
-    verified: boolean;
-    pending?: boolean;
-    expired?: boolean;
-    message: string;
-    user?: { id: string; name: string; email: string };
-  }> {
-    return await fetchWithAuth(`/auth/status?email=${encodeURIComponent(email)}`, {
-      method: 'GET',
-    });
-  },
 
   /**
    * Sign in / sign up with Google OAuth 2.0
@@ -461,32 +339,6 @@ export const salahApi = {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
-  },
-
-  /**
-   * Request password reset link via email
-   * POST /api/auth/forgot-password
-   */
-  async forgotPassword(email: string): Promise<{ success: boolean; message: string; previewUrl?: string }> {
-    return await fetchWithAuth('/auth/forgot-password', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
-  },
-
-  /**
-   * Reset password using token from email
-   * POST /api/auth/reset-password
-   */
-  async resetPassword(payload: { token: string; password: string }): Promise<AuthResponse> {
-    const data: AuthResponse = await fetchWithAuth('/auth/reset-password', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-    if (data.token) {
-      authStorage.setToken(data.token);
-    }
-    return data;
   },
 
   /**

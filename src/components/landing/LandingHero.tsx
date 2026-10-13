@@ -55,7 +55,7 @@ export const LandingHero: React.FC = () => {
           <div className="mt-8 sm:mt-10 flex flex-wrap items-center gap-4">
             <button
               type="button"
-              onClick={() => navigate('/register')}
+              onClick={() => navigate('/login')}
               className="inline-flex items-center gap-2.5 px-6 sm:px-7 py-3.5 rounded-xl font-bold text-[#14291F] text-sm sm:text-base bg-gradient-to-r from-[#F0D69A] via-[#E5C67F] to-[#D5AF5E] hover:brightness-105 shadow-[0_4px_20px_rgba(212,175,55,0.25)] transition-all cursor-pointer transform hover:-translate-y-0.5"
             >
               <span>Get Started Free</span>

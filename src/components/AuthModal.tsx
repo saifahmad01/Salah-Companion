@@ -1,24 +1,15 @@
 import React, { useState } from 'react'
 import {
   User,
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
   LogOut,
   MapPin,
   Shield,
   CheckCircle2,
   AlertCircle,
   X,
-  Sparkles,
   Compass,
-  RefreshCw,
-  ExternalLink,
-  KeyRound,
 } from 'lucide-react'
-import { salahApi, authStorage, type UserProfile } from '../services/backendApi'
-import { OtpVerificationCard } from './auth/OtpVerificationCard'
+import { salahApi, type UserProfile } from '../services/backendApi'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -39,57 +30,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   currentCoords,
   currentCityName,
 }) => {
-  const [tab, setTab] = useState<'login' | 'register' | 'forgot'>('login')
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
   const [googleLoading, setGoogleLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
-  const [errorCode, setErrorCode] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
-
-  // Verification state
-  const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
-
-  // Forgot password state
-  const [forgotEmail, setForgotEmail] = useState('')
-  const [forgotLoading, setForgotLoading] = useState(false)
-  const [forgotSubmitted, setForgotSubmitted] = useState(false)
-  const [forgotDevUrl, setForgotDevUrl] = useState<string | null>(null)
-  const [forgotCooldown, setForgotCooldown] = useState(0)
-
-  // Password Setup / Change state for logged-in user
-  const [showPasswordSection, setShowPasswordSection] = useState(false)
-  const [currentPasswordInput, setCurrentPasswordInput] = useState('')
-  const [newPasswordInput, setNewPasswordInput] = useState('')
-  const [confirmPasswordInput, setConfirmPasswordInput] = useState('')
-  const [passwordLoading, setPasswordLoading] = useState(false)
-  const [passwordFeedback, setPasswordFeedback] = useState<string | null>(null)
-  const [passwordError, setPasswordError] = useState<string | null>(null)
-
-  // Form states
-  const [name, setName] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [calculationMethod, setCalculationMethod] = useState('Karachi')
-
-  // Google OAuth configuration states
-  const [googleClientId, setGoogleClientId] = useState(() => {
-    try {
-      const stored = localStorage.getItem('salah_google_client_id')
-      if (stored && stored.includes('.apps.googleusercontent.com')) return stored
-      return (
-        import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-        '520110657430-7cbd1c04pahgar6o59bp2s0lkub9b29q.apps.googleusercontent.com'
-      )
-    } catch {
-      return (
-        import.meta.env.VITE_GOOGLE_CLIENT_ID ||
-        '520110657430-7cbd1c04pahgar6o59bp2s0lkub9b29q.apps.googleusercontent.com'
-      )
-    }
-  })
-  const [showGoogleSetup, setShowGoogleSetup] = useState(false)
-  const [clientIdInput, setClientIdInput] = useState('')
 
   // Edit profile state for logged-in user
   const [editName, setEditName] = useState(user?.name || '')
@@ -104,271 +47,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   }, [user])
 
-  // Cooldown timer for forgot password email
-  React.useEffect(() => {
-    if (forgotCooldown > 0) {
-      const timer = setTimeout(() => setForgotCooldown((prev) => prev - 1), 1000)
-      return () => clearTimeout(timer)
-    }
-  }, [forgotCooldown])
-
   if (!isOpen) return null
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrorMessage(null)
-    setErrorCode(null)
-    setSuccessMessage(null)
-    setLoading(true)
-
-    try {
-      const res = await salahApi.login({ email, password })
-      if (res.user) {
-        setSuccessMessage('Welcome back! Login successful.')
-        setTimeout(() => {
-          onAuthSuccess(res.user!)
-          onClose()
-        }, 500)
-      }
-    } catch (err: any) {
-      if (err.requiresOtp || err.code === 'EMAIL_NOT_VERIFIED') {
-        setErrorCode('EMAIL_NOT_VERIFIED')
-        setVerificationPendingEmail(err.email || email)
-        return
-      }
-      setErrorMessage(err.message || 'Login failed. Please check your credentials.')
-      if (err.code) {
-        setErrorCode(err.code)
-      } else if (err.message?.toLowerCase().includes('verify')) {
-        setErrorCode('EMAIL_NOT_VERIFIED')
-        setVerificationPendingEmail(err.email || email)
-      } else if (err.message?.toLowerCase().includes('no account found')) {
-        setErrorCode('ACCOUNT_NOT_FOUND')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrorMessage(null)
-    setErrorCode(null)
-    setSuccessMessage(null)
-    setLoading(true)
-
-    try {
-      const res = await salahApi.register({
-        name,
-        email,
-        password,
-        prayerCalculationMethod: calculationMethod,
-        latitude: currentCoords?.lat,
-        longitude: currentCoords?.lng,
-      })
-
-      if (res?.requiresEmailVerification || res?.success) {
-        setVerificationPendingEmail(email)
-        setSuccessMessage('Account created! Please check your email to verify.')
-      } else if (res?.user) {
-        setSuccessMessage('Account created successfully! Welcome to Salah Companion.')
-        setTimeout(() => {
-          onAuthSuccess(res.user!)
-          onClose()
-        }, 500)
-      } else {
-        setVerificationPendingEmail(email)
-        setSuccessMessage('Account created! Please check your email to verify.')
-      }
-    } catch (err: any) {
-      console.error('[AuthModal Register Error]:', err)
-      setErrorMessage(err.message || 'Registration failed. Please check your inputs.')
-      if (err.code === 'EMAIL_DELIVERY_FAILED') {
-        setErrorCode('EMAIL_DELIVERY_FAILED')
-        setVerificationPendingEmail(err.email || email)
-        setErrorMessage(err.message || 'Account created, but verification email could not be delivered yet. Please click Resend.')
-      } else if (err.code) {
-        setErrorCode(err.code)
-      } else if (err.message?.toLowerCase().includes('already exists')) {
-        setErrorCode('EMAIL_ALREADY_EXISTS')
-      } else if (err.message?.includes('not verified yet') || err.message?.includes('pending verification')) {
-        setErrorCode('EMAIL_UNVERIFIED_EXISTS')
-        setVerificationPendingEmail(email)
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  const handleForgotPassword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setErrorMessage(null)
-    setForgotLoading(true)
-
-    try {
-      const res = await salahApi.forgotPassword(forgotEmail.trim().toLowerCase())
-      setForgotSubmitted(true)
-      if (res.previewUrl) {
-        setForgotDevUrl(res.previewUrl)
-      }
-      setForgotCooldown(60)
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Unable to request password reset.')
-      if (err.retryAfter) {
-        setForgotCooldown(err.retryAfter)
-      }
-    } finally {
-      setForgotLoading(false)
-    }
-  }
-
-  const handleSetPassword = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setPasswordError(null)
-    setPasswordFeedback(null)
-
-    if (newPasswordInput.length < 8) {
-      setPasswordError('Password must be at least 8 characters long.')
-      return
-    }
-
-    if (!/[A-Za-z]/.test(newPasswordInput) || !/\d/.test(newPasswordInput)) {
-      setPasswordError('Password must contain at least one letter and one number.')
-      return
-    }
-
-    if (newPasswordInput !== confirmPasswordInput) {
-      setPasswordError('New passwords do not match.')
-      return
-    }
-
-    setPasswordLoading(true)
-    try {
-      const res = await salahApi.setPassword({
-        password: newPasswordInput,
-        currentPassword: user?.hasPassword ? currentPasswordInput : undefined,
-      })
-      setPasswordFeedback(res.message || 'Password saved successfully.')
-      setCurrentPasswordInput('')
-      setNewPasswordInput('')
-      setConfirmPasswordInput('')
-      if (user) {
-        onAuthSuccess({ ...user, hasPassword: true })
-      }
-    } catch (err: any) {
-      setPasswordError(err.message || 'Failed to update password.')
-    } finally {
-      setPasswordLoading(false)
-    }
-  }
-
-  // Google OAuth flow: Backend token exchange and session creation
-  const executeGoogleLogin = async (credential: string) => {
-    setErrorMessage(null)
+  const handleGoogleLogin = () => {
     setGoogleLoading(true)
-
-    try {
-      const res = await salahApi.googleLogin({
-        credential,
-        prayerCalculationMethod: calculationMethod,
-        latitude: currentCoords?.lat,
-        longitude: currentCoords?.lng,
-      })
-
-      if (res.user) {
-        if (res.token) {
-          authStorage.setToken(res.token)
-        }
-        setSuccessMessage('Signed in with Google successfully!')
-        setShowGoogleSetup(false)
-        setTimeout(() => {
-          onAuthSuccess(res.user!)
-          onClose()
-        }, 500)
-      }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Google sign-in failed. Please try again.')
-    } finally {
-      setGoogleLoading(false)
-    }
-  }
-
-  // Google OAuth button click handler
-  const handleGoogleSignIn = async () => {
-    setErrorMessage(null)
-    const activeClientId = googleClientId.trim()
-    const isLiveClientId = activeClientId.includes('.apps.googleusercontent.com')
-
-    // 1. If valid Google Web Client ID is configured and GIS is available in window
-    if (isLiveClientId && typeof window !== 'undefined' && (window as any).google?.accounts?.oauth2) {
-      setGoogleLoading(true)
-      try {
-        const tokenClient = (window as any).google.accounts.oauth2.initTokenClient({
-          client_id: activeClientId,
-          scope: 'openid email profile',
-          callback: async (tokenResponse: any) => {
-            if (tokenResponse?.error) {
-              setGoogleLoading(false)
-              setErrorMessage(`Google popup error: ${tokenResponse.error_description || tokenResponse.error}`)
-              return
-            }
-            if (tokenResponse?.access_token) {
-              await executeGoogleLogin(tokenResponse.access_token)
-            }
-          },
-          error_callback: (err: any) => {
-            console.warn('[Google] Popup error:', err)
-            setGoogleLoading(false)
-            setErrorMessage('Google popup was closed or origin is not authorized in Google Cloud Console.')
-          },
-        })
-
-        tokenClient.requestAccessToken()
-        return
-      } catch (err: any) {
-        console.warn('[Google] initTokenClient failed, redirecting to backend OAuth:', err)
-      }
-    }
-
-    // 2. Direct redirect to backend Google OAuth 2.0 endpoint
     window.location.href = salahApi.getGoogleOAuthUrl()
-  }
-
-  const handleSaveCustomClientId = (e: React.FormEvent) => {
-    e.preventDefault()
-    const trimmed = clientIdInput.trim()
-    if (!trimmed) return
-
-    setGoogleClientId(trimmed)
-    try {
-      localStorage.setItem('salah_google_client_id', trimmed)
-    } catch {}
-
-    // If it looks like a Google Client ID, immediately trigger the popup!
-    if (trimmed.includes('.apps.googleusercontent.com')) {
-      setTimeout(() => {
-        handleGoogleSignIn()
-      }, 100)
-    } else {
-      setSuccessMessage('Client ID saved! Click "Continue with Google" to test.')
-    }
   }
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsUpdating(true)
     setErrorMessage(null)
     setSuccessMessage(null)
-    setIsUpdating(true)
 
     try {
       const res = await salahApi.updateProfile({
-        name: editName,
+        name: editName.trim(),
         prayerCalculationMethod: editMethod,
         latitude: currentCoords?.lat,
         longitude: currentCoords?.lng,
       })
-      setSuccessMessage('Profile updated successfully!')
-      onAuthSuccess(res.user)
+      if (res?.user) {
+        onAuthSuccess(res.user)
+        setSuccessMessage('Profile and prayer settings updated.')
+        setTimeout(() => setSuccessMessage(null), 3000)
+      }
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to update profile.')
     } finally {
@@ -377,131 +80,50 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in"
-      onClick={onClose}
-    >
-      <div
-        className="relative w-full max-w-sm sm:max-w-md rounded-[28px] bg-[#FAF8F3] border border-[#ECE6D8] p-5.5 shadow-2xl overflow-hidden animate-scale-up"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Close Button */}
-        <button
-          type="button"
-          onClick={onClose}
-          className="absolute right-4 top-4 w-7 h-7 rounded-full bg-stone-200/60 hover:bg-stone-200 flex items-center justify-center text-stone-600 transition cursor-pointer"
-        >
-          <X className="w-4 h-4" />
-        </button>
-
-        {/* Header Icon & Title */}
-        <div className="flex items-center gap-2.5 mb-3">
-          <div className="w-9 h-9 rounded-2xl bg-[#0C4535] text-white flex items-center justify-center text-lg shadow-sm">
-            🕌
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+      <div className="relative w-full max-w-sm rounded-3xl bg-[#FAF8F2] border border-[#E6E0D2] shadow-2xl p-5 sm:p-6 overflow-hidden">
+        {/* Top Header */}
+        <div className="flex items-center justify-between pb-3.5 mb-3 border-b border-[#EBE5D8]">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-[#0C4535] flex items-center justify-center text-amber-300 font-serif font-bold text-xs shadow-2xs">
+              🕌
+            </div>
+            <div>
+              <span className="text-sm font-bold text-[#14261E] block leading-tight">
+                {user ? 'My Profile' : 'Sign in to Salah Companion'}
+              </span>
+              <span className="text-[10px] text-stone-500 font-sans tracking-wide">
+                {user ? 'Prayer Settings & Account' : 'Sync prayers and daily tracking'}
+              </span>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-bold text-[#14261E] leading-tight">
-              {user ? 'My Profile' : verificationPendingEmail ? 'Verify Your Email' : 'Salah Companion'}
-            </h2>
-            <p className="text-[11px] text-[#55675E] leading-tight mt-0.5">
-              {user ? 'Manage your account & prayer settings' : verificationPendingEmail ? 'Almost there! Activate your account' : 'Sync your prayers across devices'}
-            </p>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="p-1 rounded-full text-stone-400 hover:text-stone-700 hover:bg-stone-200/50 transition cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
-        {/* Global Feedback Banners */}
+        {/* Success / Error Banners */}
         {errorMessage && (
-          <div className="mb-3 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex flex-col gap-1.5 animate-fade-in">
-            <div className="flex items-start gap-2">
-              <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-              <div className="flex-1 font-medium">{errorMessage}</div>
-            </div>
-
-            {/* Action 1: Account does not exist -> 1-Click switch to Create Account */}
-            {errorCode === 'ACCOUNT_NOT_FOUND' && (
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('register')
-                  setErrorMessage(null)
-                  setErrorCode(null)
-                }}
-                className="self-start text-[11px] font-bold text-[#0E543F] hover:underline flex items-center gap-1 mt-1 cursor-pointer bg-emerald-100/70 border border-emerald-300 px-2.5 py-1 rounded-lg"
-              >
-                <span>👉 Create an Account with this email</span>
-              </button>
-            )}
-
-            {/* Action 2: Email already registered -> 1-Click switch to Sign In */}
-            {errorCode === 'EMAIL_ALREADY_EXISTS' && (
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('login')
-                  setErrorMessage(null)
-                  setErrorCode(null)
-                }}
-                className="self-start text-[11px] font-bold text-[#0E543F] hover:underline flex items-center gap-1 mt-1 cursor-pointer bg-emerald-100/70 border border-emerald-300 px-2.5 py-1 rounded-lg"
-              >
-                <span>👉 Sign In to your existing account</span>
-              </button>
-            )}
-
-            {/* Action 3: Email not verified -> Enter 6-digit OTP code */}
-            {(errorCode === 'EMAIL_NOT_VERIFIED' || errorCode === 'EMAIL_UNVERIFIED_EXISTS') && (
-              <button
-                type="button"
-                onClick={() => {
-                  setVerificationPendingEmail(email.trim().toLowerCase())
-                  setErrorMessage(null)
-                  setErrorCode(null)
-                }}
-                className="self-start text-[11px] font-bold text-[#0E543F] hover:underline flex items-center gap-1.5 mt-1 cursor-pointer bg-emerald-100/70 border border-emerald-300 px-2.5 py-1 rounded-lg"
-              >
-                <KeyRound className="w-3.5 h-3.5 text-amber-700" />
-                <span>👉 Enter 6-Digit Verification Code</span>
-              </button>
-            )}
-
-            {/* Action 4: Google linked account -> 1-Click Google Sign In */}
-            {errorCode === 'GOOGLE_ACCOUNT' && (
-              <button
-                type="button"
-                onClick={() => handleGoogleSignIn()}
-                className="self-start text-[11px] font-bold text-blue-700 hover:underline flex items-center gap-1 mt-1 cursor-pointer bg-blue-100/70 border border-blue-300 px-2.5 py-1 rounded-lg"
-              >
-                <span>👉 Continue with Google</span>
-              </button>
-            )}
+          <div className="mb-3 p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+            <span>{errorMessage}</span>
           </div>
         )}
-
         {successMessage && (
-          <div className="mb-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-start gap-2 animate-fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
-            <span className="font-medium">{successMessage}</span>
+          <div className="mb-3 p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-600" />
+            <span>{successMessage}</span>
           </div>
         )}
 
-        {/* SCREEN 1: VERIFICATION PENDING OTP INPUT */}
-        {verificationPendingEmail && !user ? (
-          <div className="pt-2">
-            <OtpVerificationCard
-              email={verificationPendingEmail}
-              onSuccess={(verifiedUser) => {
-                onAuthSuccess(verifiedUser)
-                onClose()
-              }}
-              onBack={() => {
-                setVerificationPendingEmail(null)
-                setTab('login')
-              }}
-            />
-          </div>
-        ) : user ? (
-          /* SCREEN 2: LOGGED IN USER PROFILE */
-          <div className="pt-2">
-            <div className="p-3 rounded-2xl bg-white border border-[#E8E2D4] mb-3.5 flex items-center justify-between">
+        {/* LOGGED IN USER PROFILE */}
+        {user ? (
+          <div className="space-y-3.5">
+            <div className="p-3 rounded-2xl bg-white border border-[#E8E2D4] flex items-center justify-between shadow-2xs">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-full bg-emerald-100 flex items-center justify-center text-[#0E543F] font-bold text-sm">
                   {user.avatarUrl ? (
@@ -520,19 +142,14 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <div className="flex items-center gap-1.5 mt-0.5">
                     <span className="text-[9.5px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded-full inline-flex items-center gap-0.5">
                       <Shield className="w-2.5 h-2.5" />
-                      <span>{user.isEmailVerified ? 'Verified' : 'Unverified'}</span>
+                      <span>Google Account</span>
                     </span>
-                    {user.googleId && (
-                      <span className="text-[9.5px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded-full">
-                        Google Linked
-                      </span>
-                    )}
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Edit Profile Form */}
+            {/* Profile update form */}
             <form onSubmit={handleUpdateProfile} className="space-y-3">
               <div>
                 <label className="text-[11px] font-bold text-[#1F3329] uppercase tracking-wider block mb-1">
@@ -561,7 +178,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     onChange={(e) => setEditMethod(e.target.value)}
                     className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
                   >
-                    <option value="Karachi">University of Islamic Sciences, Karachi (India/Pak)</option>
+                    <option value="Karachi">University of Islamic Sciences, Karachi</option>
                     <option value="MWL">Muslim World League (MWL)</option>
                     <option value="ISNA">Islamic Society of North America (ISNA)</option>
                     <option value="Egypt">Egyptian General Authority of Survey</option>
@@ -571,12 +188,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
 
-              {/* Location Sync Badge */}
+              {/* Location Badge */}
               <div className="p-2.5 rounded-xl bg-[#F4F1E8] border border-[#E4DDD0] text-xs flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <MapPin className="w-3.5 h-3.5 text-[#0E543F]" />
                   <span className="text-[11.5px] font-medium text-[#25392F]">
-                    {currentCityName || 'Location Coordinates'}
+                    {currentCityName || 'Location GPS'}
                   </span>
                 </div>
                 <span className="text-[10px] text-stone-500 font-mono">
@@ -584,538 +201,77 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </span>
               </div>
 
-              {/* Password Management & Account Security */}
-              <div className="p-3 rounded-2xl bg-[#FAF8F2] border border-[#E8E2D4] space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <Lock className="w-3.5 h-3.5 text-[#0E543F]" />
-                    <span className="text-xs font-bold text-[#14261E]">
-                      {user.hasPassword ? 'Password Security' : 'Set Account Password'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowPasswordSection(!showPasswordSection)
-                      setPasswordError(null)
-                      setPasswordFeedback(null)
-                    }}
-                    className="text-[11px] font-semibold text-[#0E543F] hover:underline cursor-pointer"
-                  >
-                    {showPasswordSection ? 'Cancel' : (user.hasPassword ? 'Change' : 'Set Password')}
-                  </button>
-                </div>
-
-                {!user.hasPassword && !showPasswordSection && (
-                  <p className="text-[10.5px] text-[#55675E] leading-relaxed">
-                    You currently sign in using Google. Set a password to also log in with email and password.
-                  </p>
-                )}
-
-                {showPasswordSection && (
-                  <div className="pt-2 border-t border-[#E8E2D4] space-y-2 animate-fade-in">
-                    {passwordError && (
-                      <div className="p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-[11px] flex items-center gap-1.5">
-                        <AlertCircle className="w-3.5 h-3.5 text-rose-600 flex-shrink-0" />
-                        <span>{passwordError}</span>
-                      </div>
-                    )}
-                    {passwordFeedback && (
-                      <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] flex items-center gap-1.5">
-                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-                        <span>{passwordFeedback}</span>
-                      </div>
-                    )}
-
-                    {user.hasPassword && (
-                      <div>
-                        <label className="text-[10.5px] font-semibold text-[#1F3329] block mb-0.5">
-                          Current Password
-                        </label>
-                        <input
-                          type="password"
-                          value={currentPasswordInput}
-                          onChange={(e) => setCurrentPasswordInput(e.target.value)}
-                          placeholder="Current password"
-                          className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                        />
-                      </div>
-                    )}
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-[#1F3329] block mb-0.5">
-                        New Password (min. 8 chars, letter &amp; digit)
-                      </label>
-                      <input
-                        type="password"
-                        value={newPasswordInput}
-                        onChange={(e) => setNewPasswordInput(e.target.value)}
-                        placeholder="New strong password"
-                        className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="text-[10.5px] font-semibold text-[#1F3329] block mb-0.5">
-                        Confirm New Password
-                      </label>
-                      <input
-                        type="password"
-                        value={confirmPasswordInput}
-                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
-                        placeholder="Re-enter new password"
-                        className="w-full px-2.5 py-1.5 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                      />
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleSetPassword}
-                      disabled={passwordLoading || !newPasswordInput}
-                      className="w-full py-2 rounded-xl bg-[#0E543F] hover:bg-[#0A3D2E] text-white text-xs font-semibold shadow-2xs transition cursor-pointer disabled:opacity-50"
-                    >
-                      {passwordLoading ? 'Saving...' : (user.hasPassword ? 'Update Password' : 'Save New Password')}
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="submit"
-                  disabled={isUpdating}
-                  className="flex-1 py-2.5 rounded-xl bg-[#0C4535] hover:bg-[#083327] active:scale-95 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50"
-                >
-                  {isUpdating ? 'Saving...' : 'Save Preferences'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    onLogout()
-                    onClose()
-                  }}
-                  className="px-3.5 py-2.5 rounded-xl bg-stone-200/70 hover:bg-stone-300 text-stone-700 text-xs font-semibold flex items-center justify-center gap-1 transition cursor-pointer active:scale-95"
-                >
-                  <LogOut className="w-3.5 h-3.5 text-stone-600" />
-                  <span>Log Out</span>
-                </button>
-              </div>
+              <button
+                type="submit"
+                disabled={isUpdating}
+                className="w-full py-2.5 rounded-xl bg-[#0C4535] hover:bg-[#082F24] text-white text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isUpdating ? 'Saving Changes...' : 'Save Settings'}
+              </button>
             </form>
+
+            {/* Logout button */}
+            <div className="pt-2 border-t border-[#EAE4D6]">
+              <button
+                type="button"
+                onClick={onLogout}
+                className="w-full py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-semibold flex items-center justify-center gap-2 transition cursor-pointer"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Sign Out</span>
+              </button>
+            </div>
           </div>
         ) : (
-          /* SCREEN 3: AUTHENTICATION TABS (LOGIN VS REGISTER) */
-          <div className="pt-2">
-            {/* Google OAuth Button */}
+          /* LOGGED OUT: GOOGLE SIGN-IN */
+          <div className="py-2 space-y-4">
+            <div className="text-center py-2">
+              <p className="text-xs text-stone-600 leading-relaxed font-sans">
+                Sign in with your Google account to track your daily prayers, record deeds, and sync progress seamlessly.
+              </p>
+            </div>
+
             <button
               type="button"
-              onClick={() => handleGoogleSignIn()}
+              onClick={handleGoogleLogin}
               disabled={googleLoading}
-              className="w-full py-2.5 px-3 rounded-xl bg-white hover:bg-stone-50 border border-[#DDD7C8] text-xs font-semibold text-[#1F2D26] shadow-2xs flex items-center justify-center gap-2.5 transition active:scale-95 cursor-pointer disabled:opacity-60 mb-2"
+              className="w-full flex items-center justify-center gap-3 py-3.5 px-4 rounded-2xl bg-white hover:bg-stone-50 border-2 border-stone-200 hover:border-emerald-500 text-stone-800 font-semibold text-xs sm:text-sm shadow-xs hover:shadow-md transition active:scale-[0.99] cursor-pointer disabled:opacity-75"
             >
-              {/* Google multi-colored G icon */}
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path
-                  fill="#4285F4"
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-                />
-              </svg>
-              <span>{googleLoading ? 'Signing in with Google...' : 'Continue with Google'}</span>
+              {googleLoading ? (
+                <div className="w-4 h-4 border-2 border-emerald-700/30 border-t-emerald-800 rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24">
+                  <path
+                    fill="#4285F4"
+                    d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+                  />
+                </svg>
+              )}
+              <span>{googleLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
             </button>
 
-            {/* Google OAuth Details Panel */}
-            {showGoogleSetup && (
-              <div className="rounded-2xl bg-amber-50/90 border border-amber-200 p-3.5 mb-3 text-left space-y-2.5 animate-fade-in shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
-                    <Sparkles className="w-3.5 h-3.5 text-amber-600" />
-                    <span>Google OAuth 2.0 Ready</span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setShowGoogleSetup(false)}
-                    className="text-stone-400 hover:text-stone-600 p-0.5 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="text-[11px] text-amber-900/90 space-y-2">
-                  <p>
-                    <span className="font-semibold text-emerald-800">✓ Google Client ID:</span>{' '}
-                    <code className="bg-amber-100 px-1 py-0.5 rounded text-[10px] font-mono break-all">{googleClientId}</code>
-                  </p>
-                  <div className="p-2.5 rounded-xl bg-white/95 border border-amber-300 space-y-1.5 text-[10.5px]">
-                    <div className="font-bold text-stone-800 flex items-center justify-between">
-                      <span>Google Cloud Console Settings</span>
-                      <span className="text-[9.5px] font-normal text-amber-800">Fix redirect_uri_mismatch</span>
-                    </div>
-                    <div>
-                      <span className="text-stone-500 font-medium block">Authorized JavaScript origins:</span>
-                      <code className="block bg-stone-100 text-stone-800 px-1.5 py-0.5 rounded font-mono text-[10px] select-all mt-0.5">
-                        {typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5173'}
-                      </code>
-                    </div>
-                    <div>
-                      <span className="text-stone-500 font-medium block">Authorized redirect URIs (Must match exactly):</span>
-                      <code className="block bg-blue-50 text-blue-900 px-1.5 py-0.5 rounded font-mono text-[10px] select-all mt-0.5 font-semibold">
-                        {`${salahApi.getGoogleOAuthUrl()}/callback`}
-                      </code>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Optional Web Client ID Input */}
-                <form onSubmit={handleSaveCustomClientId} className="space-y-1.5">
-                  <input
-                    type="text"
-                    value={clientIdInput}
-                    onChange={(e) => setClientIdInput(e.target.value)}
-                    placeholder="Paste your-client-id.apps.googleusercontent.com"
-                    className="w-full px-2.5 py-1.5 text-[11px] rounded-lg bg-white border border-amber-300 focus:outline-none focus:border-emerald-600 font-mono"
-                  />
-                  {clientIdInput && (
-                    <button
-                      type="submit"
-                      className="w-full py-1.5 rounded-lg bg-emerald-800 hover:bg-emerald-900 text-white text-[11px] font-bold transition cursor-pointer"
-                    >
-                      Save & Launch Google Popup
-                    </button>
-                  )}
-                </form>
-
-                {/* OAuth 2.0 Full Redirect Flow */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    window.location.href = salahApi.getGoogleOAuthUrl()
-                  }}
-                  className="w-full py-2 px-2.5 rounded-xl bg-blue-700 hover:bg-blue-800 text-white text-[11px] font-bold shadow-xs flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-                >
-                  <ExternalLink className="w-3.5 h-3.5 text-blue-200" />
-                  <span>Launch Google OAuth 2.0 Redirect</span>
-                </button>
-              </div>
-            )}
-
-            {/* Divider */}
-            <div className="relative flex py-1 items-center mb-3">
-              <div className="flex-grow border-t border-[#E5E0D4]"></div>
-              <span className="flex-shrink mx-3 text-[10.5px] font-semibold text-stone-400 uppercase tracking-wider">
-                Or with email
+            <div className="pt-2 text-center">
+              <span className="text-[10px] text-stone-500">
+                🔒 Secure Google OAuth 2.0 • No password required
               </span>
-              <div className="flex-grow border-t border-[#E5E0D4]"></div>
             </div>
-
-            {/* Tab switch */}
-            <div className="flex p-1 bg-[#EEE8DC] rounded-xl mb-3.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('login')
-                  setErrorMessage(null)
-                  setErrorCode(null)
-                }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                  tab === 'login' ? 'bg-[#0C4535] text-white shadow-2xs' : 'text-[#47574E] hover:text-[#14261E]'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTab('register')
-                  setErrorMessage(null)
-                  setErrorCode(null)
-                }}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                  tab === 'register' ? 'bg-[#0C4535] text-white shadow-2xs' : 'text-[#47574E] hover:text-[#14261E]'
-                }`}
-              >
-                Create Account
-              </button>
-            </div>
-
-            {/* Login Form */}
-            {tab === 'login' && (
-              <form onSubmit={handleLogin} className="space-y-3">
-                <div>
-                  <label className="text-[11px] font-bold text-[#1F3329] uppercase tracking-wider block mb-1">
-                    Email Address
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 w-4 h-4 text-stone-400" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      placeholder="you@example.com"
-                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-[11px] font-bold text-[#1F3329] uppercase tracking-wider block">
-                      Password
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTab('forgot')
-                        setErrorMessage(null)
-                        setSuccessMessage(null)
-                        setForgotSubmitted(false)
-                        setForgotEmail(email)
-                      }}
-                      className="text-[11px] font-semibold text-[#0E543F] hover:underline cursor-pointer"
-                    >
-                      Forgot password?
-                    </button>
-                  </div>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 w-4 h-4 text-stone-400" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      placeholder="Enter your password"
-                      className="w-full pl-9 pr-9 py-2 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600 cursor-pointer"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loading}
-                  className="w-full py-2.5 mt-2 rounded-xl bg-[#0C4535] hover:bg-[#083327] active:scale-95 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
-                >
-                  {loading ? 'Signing in...' : 'Sign In to Salah Companion'}
-                </button>
-              </form>
-            )}
-
-            {/* Forgot Password Form */}
-            {tab === 'forgot' && (
-              <div className="space-y-3 animate-fade-in">
-                {forgotSubmitted ? (
-                  <div className="p-3.5 rounded-2xl bg-[#FAF6EE] border border-[#EDE5D5] space-y-3 text-center">
-                    <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-800 mx-auto">
-                      <Mail className="w-6 h-6" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-[#14261E]">Reset Link Dispatched</h4>
-                      <p className="text-[11px] text-[#55675E] mt-1 leading-relaxed">
-                        If an account exists for <strong className="text-[#0E543F]">{forgotEmail}</strong>, a password reset link has been sent.
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5 pt-1">
-                      <button
-                        type="button"
-                        onClick={handleForgotPassword}
-                        disabled={forgotLoading || forgotCooldown > 0}
-                        className="w-full py-2 rounded-xl bg-white border border-[#DDD7C8] hover:bg-stone-50 text-xs font-semibold text-[#25392F] transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                      >
-                        <RefreshCw className={`w-3.5 h-3.5 ${forgotLoading ? 'animate-spin' : ''}`} />
-                        <span>
-                          {forgotCooldown > 0 ? `Resend link in ${forgotCooldown}s` : 'Resend Reset Link'}
-                        </span>
-                      </button>
-
-                      {forgotDevUrl && (
-                        <a
-                          href={forgotDevUrl}
-                          className="inline-block text-[10.5px] text-amber-700 hover:underline font-mono pt-1"
-                        >
-                          ⚡ Click here for direct local reset link
-                        </a>
-                      )}
-                    </div>
-
-                    <div className="pt-2 border-t border-stone-200/60">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setTab('login')
-                          setForgotSubmitted(false)
-                        }}
-                        className="text-xs text-[#0E543F] font-semibold hover:underline cursor-pointer"
-                      >
-                        Back to Sign In
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <form onSubmit={handleForgotPassword} className="space-y-3">
-                    <div className="p-2.5 rounded-xl bg-[#FAF8F2] border border-[#ECE7DB] text-[11px] text-[#55675E]">
-                      Enter your account email to receive a secure link to reset your password.
-                    </div>
-
-                    <div>
-                      <label className="text-[11px] font-bold text-[#1F3329] uppercase tracking-wider block mb-1">
-                        Email Address
-                      </label>
-                      <div className="relative">
-                        <Mail className="absolute left-3 top-2.5 w-4 h-4 text-stone-400" />
-                        <input
-                          type="email"
-                          value={forgotEmail}
-                          onChange={(e) => setForgotEmail(e.target.value)}
-                          required
-                          placeholder="you@example.com"
-                          className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                        />
-                      </div>
-                    </div>
-
-                    <button
-                      type="submit"
-                      disabled={forgotLoading}
-                      className="w-full py-2.5 mt-2 rounded-xl bg-[#0C4535] hover:bg-[#083327] active:scale-95 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
-                    >
-                      {forgotLoading ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-white" />
-                          <span>Sending Link...</span>
-                        </>
-                      ) : (
-                        <span>Send Password Reset Link</span>
-                      )}
-                    </button>
-
-                    <div className="text-center pt-1">
-                      <button
-                        type="button"
-                        onClick={() => setTab('login')}
-                        className="text-xs text-[#0E543F] font-semibold hover:underline cursor-pointer"
-                      >
-                        Back to Sign In
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </div>
-            )}
-
-            {/* Registration Form */}
-            {tab === 'register' && (
-              <form onSubmit={handleRegister} className="space-y-2.5">
-                <div>
-                  <label className="text-[10.5px] font-bold text-[#1F3329] uppercase tracking-wider block mb-0.5">
-                    Full Name
-                  </label>
-                  <div className="relative">
-                    <User className="absolute left-3 top-2.5 w-3.5 h-3.5 text-stone-400" />
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      required
-                      placeholder="Your full name"
-                      className="w-full pl-8 pr-3 py-1.8 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10.5px] font-bold text-[#1F3329] uppercase tracking-wider block mb-0.5">
-                    Email Address
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-2.5 w-3.5 h-3.5 text-stone-400" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                      placeholder="you@example.com"
-                      className="w-full pl-8 pr-3 py-1.8 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10.5px] font-bold text-[#1F3329] uppercase tracking-wider block mb-0.5">
-                    Password (min. 8 chars, 1 letter, 1 digit)
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-2.5 w-3.5 h-3.5 text-stone-400" />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      placeholder="At least 8 chars with letter & digit"
-                      className="w-full pl-8 pr-8 py-1.8 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-2.5 top-2.5 text-stone-400 hover:text-stone-600 cursor-pointer"
-                    >
-                      {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="text-[10.5px] font-bold text-[#1F3329] uppercase tracking-wider block mb-0.5">
-                    Prayer Calculation Method
-                  </label>
-                  <select
-                    value={calculationMethod}
-                    onChange={(e) => setCalculationMethod(e.target.value)}
-                    className="w-full px-3 py-1.8 rounded-xl bg-white border border-[#DDD7C8] text-xs text-[#14261E] focus:outline-none focus:border-[#0E543F]"
-                  >
-                    <option value="Karachi">University of Islamic Sciences, Karachi (India/Pak)</option>
-                    <option value="MWL">Muslim World League (MWL)</option>
-                    <option value="ISNA">Islamic Society of North America (ISNA)</option>
-                    <option value="Egypt">Egyptian General Authority of Survey</option>
-                    <option value="Makkah">Umm al-Qura University, Makkah</option>
-                  </select>
-                </div>
-
-                <div className="pt-1">
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-2.5 rounded-xl bg-[#0C4535] hover:bg-[#083327] active:scale-95 text-white text-xs font-semibold shadow-xs transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>{loading ? 'Creating Account...' : 'Create Account with Email'}</span>
-                  </button>
-                  <p className="text-[10px] text-stone-500 text-center mt-1.5">
-                    ✉️ A verification email will be sent to activate your account.
-                  </p>
-                </div>
-              </form>
-            )}
           </div>
         )}
       </div>
     </div>
   )
 }
+
+export default AuthModal

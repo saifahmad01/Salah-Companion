@@ -31,7 +31,7 @@ export const LandingCta: React.FC = () => {
         <div className="mt-6 sm:mt-8 flex justify-center">
           <button
             type="button"
-            onClick={() => navigate('/register')}
+            onClick={() => navigate('/login')}
             className="inline-flex items-center gap-2.5 px-8 sm:px-9 py-3.5 rounded-full font-bold text-[#14291F] text-sm sm:text-base bg-gradient-to-r from-[#F0D69A] via-[#E5C67F] to-[#D5AF5E] hover:brightness-105 shadow-[0_4px_24px_rgba(212,175,55,0.3)] transition-all cursor-pointer transform hover:-translate-y-0.5"
           >
             <span>Start Your Journey</span>
