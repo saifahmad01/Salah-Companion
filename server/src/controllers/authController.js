@@ -628,7 +628,8 @@ export async function resendVerification(req, res, next) {
 
     clearOtpFailedAttempts(normalizedEmail);
     const directApiUrl = `${config.appUrl}/api/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&token=${otp}&otp=${otp}`;
-    const isDev = process.env.NODE_ENV !== 'production';
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret);
 
     if (!emailResult.success) {
       return res.status(502).json({
@@ -636,21 +637,20 @@ export async function resendVerification(req, res, next) {
         error: emailResult.error || 'Failed to deliver verification email. Please verify your email configuration.',
         code: 'EMAIL_DELIVERY_FAILED',
         email: normalizedEmail,
-        token: otp,
-        previewUrl: directApiUrl,
-        verificationUrl: directApiUrl,
-        ...(isDev ? { devOtp: otp } : {}),
+        canResend: true,
+        expiresIn: 300,
+        ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
       });
     }
 
     return res.status(200).json({
       success: true,
       message: `A fresh 6-digit verification code has been dispatched to ${normalizedEmail}. Please check your inbox.`,
-      token: otp,
+      email: normalizedEmail,
       expiresIn: 300,
-      previewUrl: directApiUrl,
-      verificationUrl: directApiUrl,
-      ...(isDev ? { devOtp: otp } : {}),
+      canResend: false,
+      cooldown: 60,
+      ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
     });
   } catch (err) {
     next(err);
