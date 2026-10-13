@@ -49,7 +49,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   // Verification state
   const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
-  const [devPreviewUrl, setDevPreviewUrl] = useState<string | null>(null)
 
   // Forgot password state
   const [forgotEmail, setForgotEmail] = useState('')
@@ -135,7 +134,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (err.requiresOtp || err.code === 'EMAIL_NOT_VERIFIED') {
         setErrorCode('EMAIL_NOT_VERIFIED')
         setVerificationPendingEmail(err.email || email)
-        setDevPreviewUrl(err.token || null)
         return
       }
       setErrorMessage(err.message || 'Login failed. Please check your credentials.')
@@ -171,7 +169,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
       if (res?.requiresEmailVerification || res?.success) {
         setVerificationPendingEmail(email)
-        setDevPreviewUrl(res.previewUrl || null)
         setSuccessMessage('Account created! Please check your email to verify.')
       } else if (res?.user) {
         setSuccessMessage('Account created successfully! Welcome to Salah Companion.')
@@ -190,9 +187,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setErrorCode('EMAIL_DELIVERY_FAILED')
         setVerificationPendingEmail(err.email || email)
         setErrorMessage(err.message || 'Account created, but verification email could not be delivered yet. Please click Resend.')
-        if (err.previewUrl || err.verificationUrl) {
-          setDevPreviewUrl(err.previewUrl || err.verificationUrl || null)
-        }
       } else if (err.code) {
         setErrorCode(err.code)
       } else if (err.message?.toLowerCase().includes('already exists')) {
@@ -494,7 +488,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           <div className="pt-2">
             <OtpVerificationCard
               email={verificationPendingEmail}
-              devOtp={devPreviewUrl || undefined}
               onSuccess={(verifiedUser) => {
                 onAuthSuccess(verifiedUser)
                 onClose()

@@ -15,7 +15,6 @@ interface OtpVerificationCardProps {
   onSuccess: (user: UserProfile) => void
   onBack?: () => void
   initialExpiresIn?: number
-  devOtp?: string
   title?: string
   subtitle?: string
 }
@@ -25,7 +24,6 @@ export const OtpVerificationCard: React.FC<OtpVerificationCardProps> = ({
   onSuccess,
   onBack,
   initialExpiresIn = 300,
-  devOtp,
   title = 'Verify Your Email',
   subtitle,
 }) => {
@@ -82,14 +80,6 @@ export const OtpVerificationCard: React.FC<OtpVerificationCardProps> = ({
   useEffect(() => {
     inputRefs.current[0]?.focus()
   }, [])
-
-  // Auto-fill dev OTP if present in local dev
-  useEffect(() => {
-    if (devOtp && devOtp.length === 6 && digits.every((d) => d === '')) {
-      const splitDigits = devOtp.split('')
-      setDigits(splitDigits)
-    }
-  }, [devOtp])
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60)
