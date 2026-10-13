@@ -1,97 +1,11 @@
 import React, { useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
-import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight, ArrowLeft, RefreshCw, KeyRound } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { ArrowLeft, Compass, ShieldCheck, CheckCircle2 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import { salahApi } from '../services/backendApi'
-import { OtpVerificationCard } from '../components/auth/OtpVerificationCard'
 
 export const LoginPage: React.FC = () => {
-  const navigate = useNavigate()
-  const location = useLocation()
-  const { sendOtp, login, banner, setBanner } = useAuth()
-
-  const [authMode, setAuthMode] = useState<'otp' | 'password'>('otp')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
-  const [showPassword, setShowPassword] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [verificationPendingEmail, setVerificationPendingEmail] = useState<string | null>(null)
-  const [cooldownSeconds, setCooldownSeconds] = useState(0)
-
-  // Live countdown timer for resend cooldown
-  React.useEffect(() => {
-    if (cooldownSeconds <= 0) return
-    const timer = setInterval(() => {
-      setCooldownSeconds((prev) => (prev > 0 ? prev - 1 : 0))
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [cooldownSeconds])
-
-  const from = (location.state as any)?.from?.pathname || '/app'
-
-  // Primary OTP Login submission
-  const handleOtpSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-
-    const cleanEmail = email.trim().toLowerCase()
-    if (!cleanEmail) {
-      setError('Please provide your email address.')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const res = await sendOtp({ email: cleanEmail, type: 'LOGIN' })
-      if (res.success) {
-        setVerificationPendingEmail(cleanEmail)
-      } else {
-        setError(res.message || 'Failed to dispatch verification code.')
-      }
-    } catch (err: any) {
-      console.error('[OTP Send Error]:', err)
-      if (err.code === 'RATE_LIMITED') {
-        setCooldownSeconds(err.retryAfter || 60)
-        setError(err.message || 'Please wait before requesting another code.')
-      } else if (err.code === 'OTP_LOCKED') {
-        setError(err.message || 'Too many attempts. Please try again in 15 minutes.')
-      } else {
-        setError(err.message || 'Unable to deliver verification code. Please check your connection.')
-      }
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  // Password fallback submission
-  const handlePasswordSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-
-    const cleanEmail = email.trim().toLowerCase()
-    if (!cleanEmail || !password) {
-      setError('Please provide both email and password.')
-      return
-    }
-
-    setLoading(true)
-    try {
-      const res = await login({ email: cleanEmail, password })
-      if (res.user) {
-        navigate(from, { replace: true })
-      }
-    } catch (err: any) {
-      if (err.requiresOtp || err.code === 'EMAIL_NOT_VERIFIED') {
-        setVerificationPendingEmail(err.email || cleanEmail)
-        return
-      }
-      setError(err.message || 'Login failed. Please check your credentials.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  const { banner, setBanner } = useAuth()
   const [googleLoading, setGoogleLoading] = useState(false)
 
   const handleGoogleLogin = () => {
@@ -135,257 +49,117 @@ export const LoginPage: React.FC = () => {
 
       {/* Top Bar with Brand and Back Link */}
       <header className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between">
-        <Link to="/" className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl overflow-hidden bg-[#0C4535] border border-amber-400/20 shadow-xs flex items-center justify-center">
+        <Link to="/" className="flex items-center gap-3 group">
+          <div className="w-10 h-10 rounded-xl overflow-hidden bg-[#0C4535] border border-amber-400/20 shadow-xs flex items-center justify-center group-hover:border-amber-400/50 transition">
             <img src="/images/app-logo.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
-          <span className="font-serif font-bold text-xl text-white">Salah Companion</span>
+          <div>
+            <div className="font-serif text-lg font-bold text-white tracking-wide leading-none">
+              Salah Companion
+            </div>
+            <div className="text-[11px] font-sans text-amber-300/80 tracking-widest uppercase mt-0.5">
+              رفیقِ نماز
+            </div>
+          </div>
         </Link>
 
         <Link
           to="/"
-          className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-emerald-200/80 hover:text-white transition-colors"
+          className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-200/80 hover:text-white transition px-3 py-1.5 rounded-lg hover:bg-white/5"
         >
-          <ArrowLeft className="w-4 h-4" />
-          <span>Back to Home</span>
+          <ArrowLeft className="w-3.5 h-3.5" />
+          <span>Home</span>
         </Link>
       </header>
 
-      {/* Main Login Card */}
-      <main className="relative z-10 flex-1 flex items-center justify-center px-4 py-8 sm:py-12">
-        <div className="w-full max-w-md bg-[#FAF7EE] rounded-3xl p-6 sm:p-8 border border-[#E4D9C7] shadow-[0_20px_50px_rgba(0,0,0,0.35)] text-[#132A1F] animate-fade-in">
-          {verificationPendingEmail ? (
-            <OtpVerificationCard
-              email={verificationPendingEmail}
-              title="Enter Verification Code"
-              subtitle="Enter the 6-digit code sent to your email to securely sign in."
-              onSuccess={() => {
-                navigate(from, { replace: true })
-              }}
-              onBack={() => {
-                setVerificationPendingEmail(null)
-                setError(null)
-              }}
-            />
-          ) : (
-            <>
-              {/* Header */}
-              <div className="text-center mb-6">
-                <span className="text-[11px] font-semibold tracking-widest text-[#B58728] uppercase font-sans">
-                  Welcome to Salah Companion
-                </span>
-                <h1 className="mt-1 font-serif font-bold text-2xl sm:text-3xl text-[#122A20] tracking-tight">
-                  Sign In to Your Space
-                </h1>
-                <p className="mt-1.5 text-xs sm:text-sm text-[#5D6F66]">
-                  Quick, passwordless 6-digit OTP verification direct to your email.
-                </p>
+      {/* Main Centered Sign-In Container */}
+      <main className="relative z-10 flex-1 flex items-center justify-center px-4 sm:px-6 py-10">
+        <div className="w-full max-w-md">
+          {/* Main Card */}
+          <div className="bg-[#FAF8F2] border border-[#E6E0D2] rounded-3xl p-6 sm:p-9 shadow-2xl relative overflow-hidden">
+            {/* Top decorative accent */}
+            <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-400 via-emerald-600 to-amber-500" />
+
+            {/* Header info */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-900/10 border border-emerald-900/15 text-emerald-900 mb-4 shadow-xs">
+                <Compass className="w-7 h-7 text-emerald-800" />
               </div>
 
-              {/* Error Message */}
-              {error && (
-                <div className="mb-5 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs sm:text-sm flex items-start gap-2.5">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="font-medium">{error}</p>
-                  </div>
-                </div>
-              )}
+              <h1 className="font-serif text-2xl sm:text-3xl font-bold text-emerald-950 tracking-tight">
+                Welcome to Salah Companion
+              </h1>
+              <p className="text-xs sm:text-sm text-stone-600 mt-2 font-sans max-w-xs mx-auto leading-relaxed">
+                Sign in with your Google account to access your prayer tracker, synchronized records, and reminders.
+              </p>
+            </div>
 
-              {/* Tab Selector (OTP Login vs Password) */}
-              <div className="flex rounded-xl bg-[#EFE9DA] p-1 mb-5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode('otp')
-                    setError(null)
-                  }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    authMode === 'otp'
-                      ? 'bg-white text-[#0C4535] shadow-xs'
-                      : 'text-[#617369] hover:text-[#122A20]'
-                  }`}
-                >
-                  <KeyRound className="w-3.5 h-3.5" />
-                  <span>Email OTP Code</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAuthMode('password')
-                    setError(null)
-                  }}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
-                    authMode === 'password'
-                      ? 'bg-white text-[#0C4535] shadow-xs'
-                      : 'text-[#617369] hover:text-[#122A20]'
-                  }`}
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Password</span>
-                </button>
-              </div>
-
-              {/* Form 1: Email-based OTP Login (Primary) */}
-              {authMode === 'otp' ? (
-                <form onSubmit={handleOtpSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-[#14291F] uppercase tracking-wider mb-1.5">
-                      Your Email Address
-                    </label>
-                    <div className="relative">
-                      <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="yourname@gmail.com"
-                        className="w-full pl-10 pr-4 py-3 bg-white rounded-xl border border-[#DED4C1] text-sm text-[#14291F] placeholder-stone-400 focus:outline-none focus:border-[#0C4535] focus:ring-2 focus:ring-[#0C4535]/15 transition"
-                      />
-                    </div>
-                    <p className="mt-1 text-[11px] text-[#6E8076]">
-                      We will dispatch a 6-digit one-time code to this address. Valid for 5 minutes.
-                    </p>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading || cooldownSeconds > 0}
-                    className="w-full py-3.5 px-4 rounded-xl font-bold text-[#14291F] text-sm bg-gradient-to-r from-[#F0D69A] via-[#E5C67F] to-[#D5AF5E] hover:brightness-105 shadow-md flex items-center justify-center gap-2 cursor-pointer transition transform active:scale-[0.99] disabled:opacity-60"
-                  >
-                    {loading ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin text-[#14291F]" />
-                        <span>Sending 6-Digit Code...</span>
-                      </>
-                    ) : cooldownSeconds > 0 ? (
-                      <span>Wait {cooldownSeconds}s before resending</span>
-                    ) : (
-                      <>
-                        <span>Send 6-Digit Login Code</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </form>
-              ) : (
-                /* Form 2: Password Login (Alternative) */
-                <form onSubmit={handlePasswordSubmit} className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-[#14291F] uppercase tracking-wider mb-1.5">
-                      Email Address
-                    </label>
-                    <div className="relative">
-                      <Mail className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="email"
-                        required
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        placeholder="yourname@gmail.com"
-                        className="w-full pl-10 pr-4 py-3 bg-white rounded-xl border border-[#DED4C1] text-sm text-[#14291F] placeholder-stone-400 focus:outline-none focus:border-[#0C4535] focus:ring-2 focus:ring-[#0C4535]/15 transition"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <label className="block text-xs font-bold text-[#14291F] uppercase tracking-wider">
-                        Password
-                      </label>
-                      <Link
-                        to="/forgot-password"
-                        className="text-xs font-semibold text-[#0C4535] hover:text-[#083327] hover:underline transition"
-                      >
-                        Forgot password?
-                      </Link>
-                    </div>
-                    <div className="relative">
-                      <Lock className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                      <input
-                        type={showPassword ? 'text' : 'password'}
-                        required
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        placeholder="••••••••"
-                        className="w-full pl-10 pr-10 py-3 bg-white rounded-xl border border-[#DED4C1] text-sm text-[#14291F] placeholder-stone-400 focus:outline-none focus:border-[#0C4535] focus:ring-2 focus:ring-[#0C4535]/15 transition"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 focus:outline-none cursor-pointer"
-                      >
-                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full py-3.5 px-4 rounded-xl font-bold text-[#14291F] text-sm bg-gradient-to-r from-[#F0D69A] via-[#E5C67F] to-[#D5AF5E] hover:brightness-105 shadow-md flex items-center justify-center gap-2 cursor-pointer transition transform active:scale-[0.99] disabled:opacity-60"
-                  >
-                    {loading ? (
-                      <>
-                        <RefreshCw className="w-4 h-4 animate-spin text-[#14291F]" />
-                        <span>Signing In...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>Sign In with Password</span>
-                        <ArrowRight className="w-4 h-4" />
-                      </>
-                    )}
-                  </button>
-                </form>
-              )}
-
-              {/* Google OAuth Option */}
-              <div className="mt-5 pt-5 border-t border-[#E8DFC2]">
-                <button
-                  type="button"
-                  onClick={handleGoogleLogin}
-                  disabled={loading || googleLoading}
-                  className="w-full py-3 px-4 rounded-xl font-semibold text-[#14291F] text-xs sm:text-sm bg-white hover:bg-stone-50 border border-[#DED4C1] shadow-xs flex items-center justify-center gap-2.5 transition cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
-                >
-                  <svg className="w-4 h-4" viewBox="0 0 24 24">
+            {/* Google Sign-In Action */}
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                disabled={googleLoading}
+                className="w-full flex items-center justify-center gap-3.5 py-4 px-5 rounded-2xl bg-white hover:bg-stone-50 border-2 border-stone-200 hover:border-emerald-500/50 text-stone-800 font-semibold text-sm sm:text-base shadow-sm hover:shadow-md transition active:scale-[0.99] cursor-pointer disabled:opacity-75 disabled:cursor-not-allowed group"
+              >
+                {googleLoading ? (
+                  <div className="w-5 h-5 border-2 border-emerald-700/30 border-t-emerald-800 rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-5 h-5 transition-transform group-hover:scale-110" viewBox="0 0 24 24">
                     <path
                       fill="#4285F4"
-                      d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.8-2.4 3.66v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.15z"
+                      d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                     />
                     <path
                       fill="#34A853"
-                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.88-3.05c-1.08.72-2.45 1.16-4.05 1.16-3.12 0-5.77-2.1-6.72-4.93H1.25v3.15C3.26 21.36 7.35 24 12 24z"
+                      d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
                     />
                     <path
                       fill="#FBBC05"
-                      d="M5.28 14.27c-.25-.72-.38-1.49-.38-2.27s.13-1.55.38-2.27V6.58H1.25C.45 8.18 0 9.99 0 12s.45 3.82 1.25 5.42l4.03-3.15z"
+                      d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
                     />
                     <path
                       fill="#EA4335"
-                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.35 0 3.26 2.64 1.25 6.58l4.03 3.15c.95-2.83 3.6-4.98 6.72-4.98z"
+                      d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
                     />
                   </svg>
-                  <span>{googleLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
-                </button>
-              </div>
+                )}
+                <span>{googleLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
+              </button>
 
-              {/* Footer Navigation */}
-              <div className="mt-6 text-center text-xs text-[#5D6F66]">
-                Don't have an account yet?{' '}
-                <Link to="/register" className="font-bold text-[#0C4535] hover:underline">
-                  Create account free
-                </Link>
+              {/* Feature Highlights */}
+              <div className="pt-4 border-t border-stone-200/80 space-y-2.5">
+                <div className="flex items-center gap-2.5 text-xs text-stone-600">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>Instant access across mobile, tablet, and desktop</span>
+                </div>
+                <div className="flex items-center gap-2.5 text-xs text-stone-600">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>Existing prayer logs and streaks linked automatically</span>
+                </div>
+                <div className="flex items-center gap-2.5 text-xs text-stone-600">
+                  <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>Strict zero-spam policy & secure encrypted session</span>
+                </div>
               </div>
-            </>
-          )}
+            </div>
+
+            {/* Ayah Quote Footer */}
+            <div className="mt-7 pt-5 border-t border-stone-200/60 text-center">
+              <p className="text-[12px] italic text-emerald-950/80 font-serif leading-relaxed">
+                ”Indeed, prayer has been decreed upon the believers a decree of specified times.“
+              </p>
+              <p className="text-[10px] text-stone-500 font-sans uppercase tracking-wider mt-1 font-semibold">
+                Surah An-Nisa (4:103)
+              </p>
+            </div>
+          </div>
         </div>
       </main>
 
-      {/* Simple Footer */}
-      <footer className="relative z-10 w-full py-4 text-center text-[11px] text-emerald-200/50">
-        &copy; {new Date().getFullYear()} Salah Companion. Authentic Prayer Tracking & Spiritual Growth.
+      {/* Minimal Footer */}
+      <footer className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 py-6 text-center text-xs text-emerald-200/60 font-sans">
+        <p>© {new Date().getFullYear()} Salah Companion. May Allah accept your prayers and steadfast deeds.</p>
       </footer>
     </div>
   )

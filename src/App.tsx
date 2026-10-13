@@ -6,9 +6,6 @@ import { AdminRoute } from './components/AdminRoute'
 import { ServerWarmupNotice } from './components/ServerWarmupNotice'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
-import ForgotPasswordPage from './pages/ForgotPasswordPage'
-import ResetPasswordPage from './pages/ResetPasswordPage'
 import AppDashboard from './pages/AppDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 
@@ -28,7 +25,7 @@ export default function App() {
             }
           />
 
-          {/* Authentication Routes (Public only - redirects to dashboard if already signed in) */}
+          {/* Authentication Route (Google Sign-In) */}
           <Route
             path="/login"
             element={
@@ -37,27 +34,11 @@ export default function App() {
               </PublicOnlyRoute>
             }
           />
-          <Route
-            path="/register"
-            element={
-              <PublicOnlyRoute>
-                <RegisterPage />
-              </PublicOnlyRoute>
-            }
-          />
-          <Route
-            path="/forgot-password"
-            element={
-              <PublicOnlyRoute>
-                <ForgotPasswordPage />
-              </PublicOnlyRoute>
-            }
-          />
 
-          {/* Password Reset Callback Route */}
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-
-          {/* Email Verification Route Redirects directly to OTP Login */}
+          {/* Legacy & Alternative Auth Routes Cleanly Redirected to Google Sign-In */}
+          <Route path="/register" element={<Navigate to="/login" replace />} />
+          <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
+          <Route path="/reset-password" element={<Navigate to="/login" replace />} />
           <Route path="/verify-email" element={<Navigate to="/login" replace />} />
 
           {/* Protected Routes (Requires authenticated user session) */}

@@ -187,14 +187,6 @@ export function requireVerifiedEmail(req, res, next) {
     });
   }
 
-  if (!req.user.isEmailVerified) {
-    return res.status(403).json({
-      success: false,
-      error: 'Please verify your email address to access this feature.',
-      code: 'EMAIL_NOT_VERIFIED',
-      email: req.user.email,
-    });
-  }
-
+  // Email verification requirement has been removed from authentication flow
   next();
 }

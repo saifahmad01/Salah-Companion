@@ -73,29 +73,6 @@ export const config = {
     (process.env.NODE_ENV === 'production' || process.env.RENDER ? 'https://salah-companion-z3i4.onrender.com' : `http://localhost:${process.env.PORT || '8080'}`)
   ).replace(/\/+$/, ''),
 
-  // Email Configuration (SMTP / Transactional Service)
-  emailService: process.env.EMAIL_SERVICE || 'gmail',
-  emailHost: process.env.EMAIL_HOST || 'smtp.gmail.com',
-  emailPort: parseInt(process.env.EMAIL_PORT || '465', 10),
-  emailSecure: process.env.EMAIL_SECURE === 'true' || process.env.EMAIL_PORT === '465',
-  emailUser: process.env.EMAIL_USER || 'salahcompanion786@gmail.com',
-  emailPass: process.env.EMAIL_PASS || 'tcynoikdurlgcves',
-  emailFrom: process.env.EMAIL_FROM || '"Salah Companion" <salahcompanion786@gmail.com>',
-
-  // OTP Verification Expiration & Rate Limiting (5-minute strict TTL, 60-second cooldown)
-  otpTtlMinutes: parseInt(process.env.OTP_TTL_MINUTES || '5', 10),
-  otpResendCooldownSec: parseInt(process.env.OTP_RESEND_COOLDOWN_SEC || '60', 10),
-  verificationResendCooldownSec: parseInt(process.env.OTP_RESEND_COOLDOWN_SEC || process.env.VERIFICATION_RESEND_COOLDOWN_SEC || '60', 10),
-
-  // Transactional Email HTTP API Keys (HTTPS Port 443 - Immune to Cloud Firewall / Render SMTP Blocking)
-  resendApiKey: process.env.RESEND_API_KEY || '',
-  resendFrom: process.env.RESEND_FROM || 'Salah Companion <onboarding@resend.dev>',
-  brevoApiKey: process.env.BREVO_API_KEY || '',
-  brevoFrom: process.env.BREVO_FROM || 'salahcompanion786@gmail.com',
-  sendgridApiKey: process.env.SENDGRID_API_KEY || '',
-  mailgunApiKey: process.env.MAILGUN_API_KEY || '',
-  mailgunDomain: process.env.MAILGUN_DOMAIN || '',
-
   // Google OAuth 2.0 Credentials
   googleClientId: process.env.GOOGLE_CLIENT_ID || '',
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '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',

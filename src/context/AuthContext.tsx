@@ -1,28 +1,10 @@
 import React, { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react'
-import { salahApi, authStorage, type UserProfile, type AuthResponse } from '../services/backendApi'
+import { salahApi, authStorage, type UserProfile } from '../services/backendApi'
 
 interface AuthContextType {
   user: UserProfile | null
   loading: boolean
   isAuthenticated: boolean
-  sendOtp: (payload: { email: string; name?: string; type?: 'VERIFICATION' | 'LOGIN' }) => Promise<{
-    success: boolean
-    message: string
-    expiresIn?: number
-    email?: string
-    retryAfter?: number
-    devOtp?: string
-  }>
-  verifyOtp: (payload: { email: string; otp: string }) => Promise<AuthResponse>
-  login: (payload: { email: string; password: string }) => Promise<AuthResponse>
-  register: (payload: {
-    name: string
-    email: string
-    password: string
-    prayerCalculationMethod?: string
-    latitude?: number
-    longitude?: number
-  }) => Promise<AuthResponse>
   logout: () => Promise<void>
   refreshUser: () => Promise<UserProfile | null>
   banner: { type: 'success' | 'error'; message: string } | null
@@ -96,12 +78,11 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (authError) {
         const errorDescriptions: Record<string, string> = {
           CSRF_STATE_MISMATCH: 'Security validation failed (CSRF mismatch). Please try again.',
-          EMAIL_NOT_VERIFIED: 'Your Google account does not have a verified email address.',
           access_denied: 'Google sign-in was cancelled.',
           GOOGLE_NOT_CONFIGURED: 'Google Sign-In is not configured yet. Please configure a valid Google Web Client ID (.apps.googleusercontent.com) from Google Cloud Console in your server environment.',
-          redirect_uri_mismatch: 'Google OAuth Redirect URI mismatch: Please register your backend callback URL (http://localhost:5000/api/auth/google/callback) under "Authorized redirect URIs" in Google Cloud Console.',
+          redirect_uri_mismatch: 'Google OAuth Redirect URI mismatch: Please register your backend callback URL under "Authorized redirect URIs" in Google Cloud Console.',
           MISSING_AUTH_CODE: 'Google did not return an authorization code. Please try again.',
-          AUTH_FAILED: 'Google authentication failed. Please try again or sign in with your email.',
+          AUTH_FAILED: 'Google authentication failed. Please try again.',
         }
         setBanner({
           type: 'error',
@@ -115,10 +96,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Notice toast (e.g. redirected from legacy route)
       const noticeParam = params.get('notice')
-      if (noticeParam === 'use_otp') {
+      if (noticeParam === 'use_google') {
         setBanner({
           type: 'success',
-          message: 'Please enter your email to receive a 6-digit login code.',
+          message: 'Please sign in with Google to access your Salah Companion account.',
         })
       }
 
@@ -132,41 +113,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
     initAuth()
   }, [])
-
-  const login = async (payload: { email: string; password: string }): Promise<AuthResponse> => {
-    const res = await salahApi.login(payload)
-    if (res.user) {
-      setUser(res.user)
-    }
-    return res
-  }
-
-  const register = async (payload: {
-    name: string
-    email: string
-    password: string
-    prayerCalculationMethod?: string
-    latitude?: number
-    longitude?: number
-  }): Promise<AuthResponse> => {
-    const res = await salahApi.register(payload)
-    if (res.user && !res.requiresEmailVerification) {
-      setUser(res.user)
-    }
-    return res
-  }
-
-  const sendOtp = async (payload: { email: string; name?: string; type?: 'VERIFICATION' | 'LOGIN' }) => {
-    return await salahApi.sendOtp(payload)
-  }
-
-  const verifyOtp = async (payload: { email: string; otp: string }): Promise<AuthResponse> => {
-    const res = await salahApi.verifyOtp(payload)
-    if (res.user) {
-      setUser(res.user)
-    }
-    return res
-  }
 
   const logout = async (): Promise<void> => {
     try {
@@ -183,10 +129,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         loading,
         isAuthenticated: !!user,
-        sendOtp,
-        verifyOtp,
-        login,
-        register,
         logout,
         refreshUser,
         banner,
