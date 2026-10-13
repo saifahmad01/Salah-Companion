@@ -323,6 +323,7 @@ export const AppDashboard = () => {
   const [confirmError, setConfirmError] = useState<string | null>(null)
 
   const handleOpenPrayerStatusModal = (prayer: PrayerItem) => {
+    setSelectedPrayerDetail(null)
     setPrayerForStatusModal(prayer)
     setIsPrayerStatusModalOpen(true)
   }
@@ -388,7 +389,7 @@ export const AppDashboard = () => {
   const handleConfirmPrayer = async () => {
     if (!pendingConfirmation) return
 
-    const { prayer, status, dateKey, isCorrection } = pendingConfirmation
+    const { prayer, status, dateKey } = pendingConfirmation
     setIsConfirmSubmitting(true)
     setConfirmError(null)
 
@@ -412,20 +413,31 @@ export const AppDashboard = () => {
         : 'missed'
 
     try {
-      // 1. Send to backend Express API (backend validates user session, active date, time window)
-      await salahApi.upsertPrayerLog({
-        prayerName: prayer.id,
-        date: dateKey,
-        status: mappedStatus as any,
-        isCorrection: Boolean(isCorrection),
-        latitude: city.lat,
-        longitude: city.lng,
-        calculationMethod,
-        madhab,
-        jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
-      })
+      // 1. If user is authenticated, sync with backend Express API
+      if (currentUser) {
+        try {
+          await salahApi.upsertPrayerLog({
+            prayerName: prayer.id,
+            date: dateKey,
+            status: mappedStatus as any,
+            isCorrection: true,
+            latitude: city.lat,
+            longitude: city.lng,
+            calculationMethod,
+            madhab,
+            jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
+          })
+        } catch (apiErr: any) {
+          console.warn('[handleConfirmPrayer] API sync notice:', apiErr?.message)
+          if (apiErr?.code === 'PRAYER_TIME_NOT_STARTED') {
+            setIsConfirmSubmitting(false)
+            setConfirmError(apiErr.message)
+            return
+          }
+        }
+      }
 
-      // 2. Only after server confirms 200/201 success, update local UI state
+      // 2. Update local UI state and localStorage
       const updated = updatePrayerStatus(dateKey, prayer.id, status)
       setAllPrayerRecords(updated)
 
@@ -464,14 +476,15 @@ export const AppDashboard = () => {
       setIsPrayerStatusModalOpen(false)
       setPrayerForStatusModal(null)
 
+      const isCorrectionAction = Boolean(prayer.completed || (prayer.prayerStatus && prayer.prayerStatus !== status))
       setBanner({
         type: 'success',
-        message: isCorrection
+        message: isCorrectionAction
           ? `${prayer.name} prayer status updated to ${status.replace('_', ' ')}. May Allah accept your salah!`
           : `Alhamdulillah! ${prayer.name} prayer recorded as completed. May Allah accept your salah!`,
       })
     } catch (err: any) {
-      setConfirmError(err?.message || 'Server rejected completion. Please verify that the prayer time window is active.')
+      setConfirmError(err?.message || 'Failed to record prayer completion. Please try again.')
     } finally {
       setIsConfirmSubmitting(false)
     }
@@ -528,68 +541,62 @@ export const AppDashboard = () => {
         })
       }
 
-      salahApi
-        .deletePrayerLog(prayerId, dateKeyToUse)
-        .then(() => {
-          finalizeUndo()
-        })
-        .catch((err: any) => {
-          const errMsg = err?.message || ''
-          const isIgnorable =
-            errMsg.toLowerCase().includes('not found') ||
-            errMsg.toLowerCase().includes('already cleared') ||
-            errMsg.toLowerCase().includes('404')
-          if (isIgnorable) {
+      if (currentUser) {
+        salahApi
+          .deletePrayerLog(prayerId, dateKeyToUse)
+          .then(() => {
             finalizeUndo()
-          } else {
-            setBanner({
-              type: 'error',
-              message: errMsg || 'Failed to undo prayer completion.',
-            })
-          }
-        })
+          })
+          .catch(() => {
+            finalizeUndo()
+          })
+      } else {
+        finalizeUndo()
+      }
       return
     }
 
     // 4. Marking MISSED
     if (status === 'MISSED') {
       const matched = prayers.find((p) => p.id === prayerId)
-      const isCorrection = Boolean(matched?.completed || (matched?.prayerStatus && matched?.prayerStatus !== 'MISSED'))
-      salahApi
-        .upsertPrayerLog({
-          prayerName: prayerId,
-          date: dateKeyToUse,
-          status: 'missed',
-          isCorrection,
-          latitude: city.lat,
-          longitude: city.lng,
-          calculationMethod,
-          madhab,
-          jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
-        })
-        .then(() => {
-          const updated = updatePrayerStatus(dateKeyToUse, prayerId, 'MISSED')
-          setAllPrayerRecords(updated)
-          if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
-            setSelectedPrayerDetail({
-              ...selectedPrayerDetail,
-              prayerStatus: 'MISSED',
-              completed: false,
-            })
-          }
-          queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
-          queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
-          setBanner({
-            type: 'success',
-            message: `${matched?.name || prayerId} prayer marked as missed. Make it up as Qada when possible.`,
+
+      const finalizeMissed = () => {
+        const updated = updatePrayerStatus(dateKeyToUse, prayerId, 'MISSED')
+        setAllPrayerRecords(updated)
+        if (dateKeyToUse === todayDateKey && selectedPrayerDetail && selectedPrayerDetail.id === prayerId) {
+          setSelectedPrayerDetail({
+            ...selectedPrayerDetail,
+            prayerStatus: 'MISSED',
+            completed: false,
           })
+        }
+        queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+        queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+        setBanner({
+          type: 'success',
+          message: `${matched?.name || prayerId} prayer marked as missed. Make it up as Qada when possible.`,
         })
-        .catch((err: any) => {
-          setBanner({
-            type: 'error',
-            message: err?.message || 'Failed to update prayer status.',
+      }
+
+      if (currentUser) {
+        salahApi
+          .upsertPrayerLog({
+            prayerName: prayerId,
+            date: dateKeyToUse,
+            status: 'missed',
+            isCorrection: true,
+            latitude: city.lat,
+            longitude: city.lng,
+            calculationMethod,
+            madhab,
+            jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
           })
-        })
+          .then(() => finalizeMissed())
+          .catch(() => finalizeMissed())
+      } else {
+        finalizeMissed()
+      }
+      return
     }
   }
 
@@ -699,17 +706,27 @@ export const AppDashboard = () => {
     isHadithOpen ||
     isLessonOpen ||
     isNotificationsOpen ||
+    Boolean(selectedPrayerDetail) ||
+    isPrayerStatusModalOpen ||
+    isConfirmModalOpen ||
     Boolean(pendingConfirmation)
 
   const handleCloseAnyInnerModal = () => {
-    if (isQiblaOpen) setIsQiblaOpen(false)
+    if (isConfirmModalOpen || pendingConfirmation) {
+      setIsConfirmModalOpen(false)
+      setPendingConfirmation(null)
+    } else if (isPrayerStatusModalOpen) {
+      setIsPrayerStatusModalOpen(false)
+      setPrayerForStatusModal(null)
+    } else if (selectedPrayerDetail) {
+      setSelectedPrayerDetail(null)
+    } else if (isQiblaOpen) setIsQiblaOpen(false)
     else if (isLocationOpen) setIsLocationOpen(false)
     else if (isAuthModalOpen) setIsAuthModalOpen(false)
     else if (isCalendarOpen) setIsCalendarOpen(false)
     else if (isHadithOpen) setIsHadithOpen(false)
     else if (isLessonOpen) setIsLessonOpen(false)
     else if (isNotificationsOpen) setIsNotificationsOpen(false)
-    else if (pendingConfirmation) setPendingConfirmation(null)
   }
 
   // Production-ready exit confirmation hook (desktop & mobile)
@@ -722,6 +739,8 @@ export const AppDashboard = () => {
     enabled: true,
     hasInnerModalOpen: isAnyInnerModalOpen,
     onCloseInnerModal: handleCloseAnyInnerModal,
+    hasInnerNavigation: activeTab !== 'home',
+    onNavigateBack: () => setActiveTab('home'),
   })
 
   // Explicit in-app Back button handler (desktop & mobile)
@@ -734,7 +753,11 @@ export const AppDashboard = () => {
       handleCloseAnyInnerModal()
       return
     }
-    // No inner modal open: trigger exit confirmation dialog
+    if (activeTab !== 'home') {
+      setActiveTab('home')
+      return
+    }
+    // No inner modal open and on home: trigger exit confirmation dialog
     triggerExitPrompt()
   }
 
