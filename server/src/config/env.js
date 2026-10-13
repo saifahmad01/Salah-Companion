@@ -9,12 +9,14 @@ const __dirname = path.dirname(__filename);
 
 const activeEnv = process.env.NODE_ENV || 'development';
 
-// Cascade load environment files: profile-specific files take priority over default .env
+// Cascade load environment files: local .env takes priority, falling back to profile defaults
 const candidateEnvPaths = [
-  path.resolve(__dirname, `../../.env.${activeEnv}`),
+  path.resolve(__dirname, '../../.env.local'),
   path.resolve(__dirname, '../../.env'),
-  path.resolve(__dirname, `../../../.env.${activeEnv}`),
+  path.resolve(__dirname, `../../.env.${activeEnv}`),
+  path.resolve(__dirname, '../../../.env.local'),
   path.resolve(__dirname, '../../../.env'),
+  path.resolve(__dirname, `../../../.env.${activeEnv}`),
 ];
 
 for (const envPath of candidateEnvPaths) {

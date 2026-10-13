@@ -86,7 +86,7 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs transition-opacity animate-fade-in select-none"
+      className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs transition-opacity animate-fade-in select-none"
       onKeyDown={handleKeyDown}
       role="dialog"
       aria-modal="true"
@@ -193,7 +193,7 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
             type="button"
             onClick={onClose}
             disabled={isSubmitting}
-            className="flex-1 py-2.5 px-3 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 text-stone-700 font-semibold text-xs transition cursor-pointer active:scale-98 disabled:opacity-50 text-center"
+            className="flex-1 py-2.5 px-3 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 text-stone-700 font-semibold text-xs transition cursor-pointer active:scale-98 disabled:opacity-50 text-center touch-manipulation"
           >
             Cancel
           </button>
@@ -201,7 +201,7 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
             type="button"
             onClick={onConfirm}
             disabled={isSubmitting}
-            className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#0C4535] to-[#0E543F] hover:from-[#083327] hover:to-[#0C4535] text-white font-bold text-xs transition shadow-sm cursor-pointer active:scale-98 flex items-center justify-center gap-1.5 disabled:opacity-60"
+            className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#0C4535] to-[#0E543F] hover:from-[#083327] hover:to-[#0C4535] text-white font-bold text-xs transition shadow-sm cursor-pointer active:scale-98 flex items-center justify-center gap-1.5 disabled:opacity-60 touch-manipulation"
           >
             {isSubmitting ? (
               <>

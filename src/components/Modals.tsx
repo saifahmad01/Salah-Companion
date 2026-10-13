@@ -25,6 +25,7 @@ interface ModalWrapperProps {
   onClose: () => void
   title: string
   children: React.ReactNode
+  zIndexClass?: string
 }
 
 export const ModalWrapper: React.FC<ModalWrapperProps> = ({
@@ -32,11 +33,15 @@ export const ModalWrapper: React.FC<ModalWrapperProps> = ({
   onClose,
   title,
   children,
+  zIndexClass = 'z-50',
 }) => {
   if (!isOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs transition-opacity animate-fade-in">
+    <div
+      className={`fixed inset-0 ${zIndexClass} flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs transition-opacity animate-fade-in`}
+      onClick={onClose}
+    >
       <div
         className="relative w-full max-w-[430px] sm:max-w-[500px] md:max-w-[540px] bg-[#FAF8F3] rounded-t-[28px] sm:rounded-[28px] max-h-[85vh] overflow-y-auto shadow-2xl border border-stone-200 p-6 animate-slide-up"
         onClick={(e) => e.stopPropagation()}
@@ -923,7 +928,7 @@ export const PrayerStatusModal: React.FC<{
   ]
 
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="Prayer Status (نماز کی کیفیت)">
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="Prayer Status (نماز کی کیفیت)" zIndexClass="z-[60]">
       <div className="space-y-3.5">
         {/* Prayer Header Summary */}
         <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#0C4535] to-[#082E22] text-white flex items-center justify-between shadow-xs">
@@ -991,7 +996,7 @@ export const PrayerStatusModal: React.FC<{
                   onSelectStatus(prayer.id, opt.status)
                   onClose()
                 }}
-                className={`w-full p-3 rounded-2xl border text-left transition-all flex items-start gap-3 ${
+                className={`w-full p-3 rounded-2xl border text-left transition-all flex items-start gap-3 touch-manipulation ${
                   isDisabled
                     ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
                     : isSelected

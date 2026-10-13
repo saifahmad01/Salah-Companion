@@ -112,11 +112,10 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
             <button
               key={prayer.id}
               type="button"
-              disabled={isDisabled}
               onClick={() => onTogglePrayer(prayer.id)}
-              className={`flex flex-col items-center justify-between py-2.5 sm:py-3.5 px-1 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-all duration-200 select-none text-center ${
+              className={`flex flex-col items-center justify-between py-2.5 sm:py-3.5 px-1 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-all duration-200 select-none text-center touch-manipulation ${
                 isDisabled
-                  ? 'cursor-not-allowed'
+                  ? 'cursor-not-allowed opacity-90'
                   : 'cursor-pointer active:scale-95'
               } ${cardBgClass}`}
               title={buttonTitle}

@@ -11,7 +11,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Detect whether we are connecting to PostgreSQL (Supabase / Render) or local SQLite
-const dbUrl = config.databaseUrl || process.env.DATABASE_URL || '';
+const rawDbUrl = config.databaseUrl || process.env.DATABASE_URL || '';
+const isProduction = (process.env.NODE_ENV === 'production' || config.nodeEnv === 'production');
+const isProdSupabase = rawDbUrl.includes('ttsaxxdduezaputwakin') || rawDbUrl.includes('pooler.supabase.com');
+
+let dbUrl = rawDbUrl;
+if (!isProduction && isProdSupabase && process.env.ALLOW_DEV_PROD_ACCESS !== 'true') {
+  console.warn('\x1b[33m%s\x1b[0m', '════════════════════════════════════════════════════════════════════════════════');
+  console.warn('\x1b[33m%s\x1b[0m', ' [DATABASE ISOLATION GUARD] BLOCKED CONNECTION TO PRODUCTION SUPABASE!');
+  console.warn('\x1b[33m%s\x1b[0m', ` Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.warn('\x1b[33m%s\x1b[0m', ' Development/tests are strictly prohibited from writing to production database.');
+  console.warn('\x1b[33m%s\x1b[0m', ` Diverting to isolated local SQLite (${config.dbPath}).`);
+  console.warn('\x1b[33m%s\x1b[0m', ' (To intentionally bypass this guard, set ALLOW_DEV_PROD_ACCESS=true)');
+  console.warn('\x1b[33m%s\x1b[0m', '════════════════════════════════════════════════════════════════════════════════');
+  dbUrl = '';
+}
+
 const isPostgresUrl = dbUrl.startsWith('postgresql://') || dbUrl.startsWith('postgres://');
 
 let pool = null;
@@ -96,6 +111,17 @@ export function normalizeSqlForPostgres(sql) {
 }
 
 /**
+ * Converts boolean parameters to integers 1/0 for SQLite (better-sqlite3) compatibility
+ */
+export function normalizeParamsForSqlite(params) {
+  if (!Array.isArray(params)) return params;
+  return params.map((p) => {
+    if (typeof p === 'boolean') return p ? 1 : 0;
+    return p;
+  });
+}
+
+/**
  * Execute parameterized query using the active database driver (PostgreSQL Pool or SQLite)
  *
  * @param {string} sql SQL query string
@@ -124,12 +150,13 @@ export async function query(sql, params = []) {
     const trimmed = sql.trim();
     const isSelect = /^SELECT/i.test(trimmed);
     const stmt = sqliteDb.prepare(sql);
+    const normParams = normalizeParamsForSqlite(params);
 
     if (isSelect) {
-      const rows = stmt.all(...params);
+      const rows = stmt.all(...normParams);
       return { rows, rowCount: rows.length };
     } else {
-      const info = stmt.run(...params);
+      const info = stmt.run(...normParams);
       return {
         rows: [],
         rowCount: info.changes,
@@ -225,8 +252,19 @@ export const db = {
       };
     }
 
-    // Direct SQLite prepare
-    return sqliteDb.prepare(sql);
+    // Direct SQLite prepare with boolean parameter normalization
+    const stmt = sqliteDb.prepare(sql);
+    return {
+      all(...params) {
+        return stmt.all(...normalizeParamsForSqlite(params));
+      },
+      get(...params) {
+        return stmt.get(...normalizeParamsForSqlite(params));
+      },
+      run(...params) {
+        return stmt.run(...normalizeParamsForSqlite(params));
+      },
+    };
   },
 
   /**

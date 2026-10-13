@@ -34,14 +34,13 @@ server/.env.*.local
 *.sqlite
 *.sqlite3
 *.db
+*.db-*
 *.sqlite-wal
 *.sqlite-shm
-server/*.sqlite
-server/*.sqlite-wal
-server/*.sqlite-shm
-server/prisma/*.sqlite
-server/prisma/*.sqlite-wal
-server/prisma/*.sqlite-shm
+server/*.sqlite*
+server/*.db*
+server/prisma/*.sqlite*
+server/prisma/*.db*
 server/backups/
 backups/
 

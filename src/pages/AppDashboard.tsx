@@ -48,10 +48,11 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { reverseGeocodeCoordinates } from '../utils/geocoding'
 import type { PrayerItem, DeedItem, PrayerStatus } from '../types'
-import { LogOut, Volume2, Shield, Compass, ChevronRight, HeartHandshake, ArrowLeft } from 'lucide-react'
+import { LogOut, Volume2, Shield, Compass, ChevronRight, ArrowLeft } from 'lucide-react'
 import { useSalahNotifications } from '../hooks/useSalahNotifications'
 import { QiblaCompassModal } from '../components/QiblaCompassModal'
 import { PrayerConfirmationModal } from '../components/PrayerConfirmationModal'
+import { SignOutConfirmationModal } from '../components/SignOutConfirmationModal'
 import { AppExitModal } from '../components/AppExitModal'
 import { useExitConfirmation } from '../hooks/useExitConfirmation'
 
@@ -375,6 +376,10 @@ export const AppDashboard = () => {
 
     const isCorrection = Boolean(matched.completed || (matched.prayerStatus && matched.prayerStatus !== status))
 
+    // Dismiss any underlying prayer detail or status modal to prevent stacked z-index traps on mobile
+    setSelectedPrayerDetail(null)
+    setIsPrayerStatusModalOpen(false)
+
     // Open authentic confirmation modal
     setPendingConfirmation({
       prayer: matched,
@@ -695,10 +700,12 @@ export const AppDashboard = () => {
   const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   const [calendarMode, setCalendarMode] = useState<CalendarMode>('gregorian')
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
+  const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false)
   const [isQiblaOpen, setIsQiblaOpen] = useState(false)
 
   // Inner modals state evaluation
   const isAnyInnerModalOpen =
+    isSignOutModalOpen ||
     isQiblaOpen ||
     isLocationOpen ||
     isAuthModalOpen ||
@@ -712,7 +719,8 @@ export const AppDashboard = () => {
     Boolean(pendingConfirmation)
 
   const handleCloseAnyInnerModal = () => {
-    if (isConfirmModalOpen || pendingConfirmation) {
+    if (isSignOutModalOpen) setIsSignOutModalOpen(false)
+    else if (isConfirmModalOpen || pendingConfirmation) {
       setIsConfirmModalOpen(false)
       setPendingConfirmation(null)
     } else if (isPrayerStatusModalOpen) {
@@ -734,7 +742,6 @@ export const AppDashboard = () => {
     showExitModal,
     handleStay,
     handleLeave,
-    triggerExitPrompt,
   } = useExitConfirmation({
     enabled: true,
     hasInnerModalOpen: isAnyInnerModalOpen,
@@ -757,8 +764,9 @@ export const AppDashboard = () => {
       setActiveTab('home')
       return
     }
-    // No inner modal open and on home: trigger exit confirmation dialog
-    triggerExitPrompt()
+    if (window.history.length > 1) {
+      window.history.back()
+    }
   }
 
   const handleToggleDeed = (id: string) => {
@@ -867,9 +875,18 @@ export const AppDashboard = () => {
     })
   }
 
-  const handleSignOut = async () => {
-    await logout()
-    navigate('/', { replace: true })
+  const handleSignOutClick = () => {
+    setIsSignOutModalOpen(true)
+  }
+
+  const handleConfirmSignOut = async () => {
+    try {
+      await logout()
+      queryClient.clear()
+    } finally {
+      setIsSignOutModalOpen(false)
+      navigate('/', { replace: true })
+    }
   }
 
   return (
@@ -946,17 +963,7 @@ export const AppDashboard = () => {
           )}
           <button
             type="button"
-            onClick={triggerExitPrompt}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAF7EE] hover:bg-[#F0E9D8] text-[#0C4535] text-xs font-semibold shadow-2xs border border-[#D5C9B5] transition cursor-pointer"
-            title="Leave Salah Companion (Preserves your login session and prayer logs)"
-          >
-            <HeartHandshake className="w-3.5 h-3.5 text-[#B58728]" />
-            <span className="hidden sm:inline">Leave</span>
-            <span className="hidden md:inline text-[10px] text-[#0C4535]/70 font-medium">خروج</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleSignOut}
+            onClick={handleSignOutClick}
             className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-800 text-xs font-semibold shadow-xs border border-rose-200 transition cursor-pointer"
             title="Sign out of your account"
           >
@@ -1321,9 +1328,15 @@ export const AppDashboard = () => {
           onClose={() => setIsAuthModalOpen(false)}
           user={currentUser}
           onAuthSuccess={() => {}}
-          onLogout={handleSignOut}
+          onLogout={handleSignOutClick}
           currentCoords={{ lat: city.lat, lng: city.lng }}
           currentCityName={city.name}
+        />
+        <SignOutConfirmationModal
+          isOpen={isSignOutModalOpen}
+          onClose={() => setIsSignOutModalOpen(false)}
+          onConfirmSignOut={handleConfirmSignOut}
+          userName={currentUser?.name}
         />
         <PrayerConfirmationModal
           isOpen={isConfirmModalOpen}
