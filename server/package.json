@@ -12,7 +12,7 @@
     "db:setup": "node scripts/initSupabaseTables.js",
     "db:migrate:data": "node scripts/migrateSqliteToSupabase.js",
     "db:list": "node scripts/dbManager.js list",
-    "db:studio": "prisma studio",
+    "db:studio": "prisma studio --schema=prisma/schema.sqlite.prisma",
     "db:clean": "node scripts/dbManager.js clear-test",
     "db:manage": "node scripts/dbManager.js",
     "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/emailOtpAuth.test.js && node tests/passwordAuth.test.js && node tests/exitConfirmation.test.js && node tests/notificationService.test.js && node tests/weeklyPrayer.test.js && node tests/timingEnforcement.test.js && node tests/qiblaAndJumuah.test.js",
