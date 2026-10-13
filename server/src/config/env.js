@@ -93,7 +93,7 @@ export const config = {
   brevoSmtpUser: process.env.BREVO_SMTP_USER || process.env.SMTP_USER || process.env.EMAIL_USER || '',
   brevoSmtpKey: process.env.BREVO_SMTP_KEY || process.env.BREVO_SMTP_PASSWORD || process.env.SMTP_PASS || process.env.EMAIL_PASS || '',
   brevoApiKey: process.env.BREVO_API_KEY || '',
-  brevoSenderEmail: process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_FROM_ADDRESS || 'salahcompanion786@gmail.com',
+  brevoSenderEmail: process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM || process.env.EMAIL_FROM_ADDRESS || 'salahcompanion786@gmail.com',
   brevoSenderName: process.env.BREVO_SENDER_NAME || 'Salah Companion',
   otpTtlMinutes: parseInt(process.env.OTP_TTL_MINUTES || '5', 10),
   otpResendCooldownSec: parseInt(process.env.OTP_RESEND_COOLDOWN_SEC || '60', 10),

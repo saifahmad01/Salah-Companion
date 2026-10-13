@@ -41,7 +41,7 @@ class BrevoEmailService {
    * Resolves verified sender details
    */
   getSender() {
-    const email = process.env.BREVO_SENDER_EMAIL || process.env.EMAIL_FROM_ADDRESS || config.brevoSenderEmail || 'salahcompanion786@gmail.com';
+    const email = process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM || process.env.EMAIL_FROM_ADDRESS || config.brevoSenderEmail || 'salahcompanion786@gmail.com';
     const name = process.env.BREVO_SENDER_NAME || config.brevoSenderName || 'Salah Companion';
     return { email, name };
   }
