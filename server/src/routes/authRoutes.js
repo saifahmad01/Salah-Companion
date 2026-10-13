@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import {
   register,
+  registerVerify,
+  registerResend,
   login,
   forgotPassword,
   resetPassword,
@@ -43,8 +45,11 @@ export const authRouter = Router();
 
 // ============================================================================
 // 1. Production-Ready Email + Password Authentication (Amazon / Flipkart UX)
+//    Requires mandatory Brevo 6-Digit Email OTP verification before account activation
 // ============================================================================
 authRouter.post('/register', registerIpRateLimiter, validateBody(registerSchema), register);
+authRouter.post('/register-verify', otpVerifyRateLimiter, validateBody(verifyOtpSchema), registerVerify);
+authRouter.post('/register-resend', otpSendRateLimiter, validateBody(resendOtpSchema), registerResend);
 authRouter.post('/login', authIpRateLimiter, validateBody(loginSchema), login);
 authRouter.post('/forgot-password', authIpRateLimiter, validateBody(forgotPasswordSchema), forgotPassword);
 authRouter.post('/reset-password', authIpRateLimiter, validateBody(resetPasswordSchema), resetPassword);

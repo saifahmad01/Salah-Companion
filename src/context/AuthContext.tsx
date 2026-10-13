@@ -15,7 +15,9 @@ interface AuthContextType {
     prayerCalculationMethod?: string
     latitude?: number | null
     longitude?: number | null
-  }) => Promise<UserProfile>
+  }) => Promise<{ success: boolean; requiresVerification: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }>
+  registerVerify: (email: string, otp: string) => Promise<UserProfile>
+  registerResend: (email: string) => Promise<{ success: boolean; message: string; cooldownSeconds?: number; expiresInSeconds?: number }>
   forgotPassword: (email: string) => Promise<{ success: boolean; message: string; resetToken?: string; resetUrl?: string }>
   resetPassword: (payload: { token: string; password: string }) => Promise<UserProfile>
   sendOtp: (email: string, name?: string) => Promise<{ success: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }>
@@ -74,13 +76,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     prayerCalculationMethod?: string
     latitude?: number | null
     longitude?: number | null
-  }): Promise<UserProfile> => {
-    const res = await salahApi.register(payload)
+  }) => {
+    return await salahApi.register(payload)
+  }
+
+  const registerVerify = async (email: string, otp: string): Promise<UserProfile> => {
+    const res = await salahApi.registerVerify(email, otp)
     if (!res.user) {
-      throw new Error('User profile missing in registration response')
+      throw new Error('User profile missing in registration verification response')
     }
     setUser(res.user)
     return res.user
+  }
+
+  const registerResend = async (email: string) => {
+    return await salahApi.registerResend(email)
   }
 
   const forgotPassword = async (email: string) => {
@@ -207,6 +217,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         refreshUser,
         login,
         register,
+        registerVerify,
+        registerResend,
         forgotPassword,
         resetPassword,
         sendOtp,

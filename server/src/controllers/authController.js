@@ -575,7 +575,7 @@ export async function resendOtp(req, res, next) {
 }
 
 /**
- * 11. Register a new user with Email + Password
+ * 11. Initiate Registration with Email + Password & Brevo 6-Digit OTP Verification
  * POST /api/auth/register
  */
 export async function register(req, res, next) {
@@ -583,6 +583,7 @@ export async function register(req, res, next) {
     const { name, email, password, prayerCalculationMethod, latitude, longitude } = req.body;
     const normalizedEmail = email.trim().toLowerCase();
 
+    // 1. Check if user already exists
     const existingUser = await prisma.user.findUnique({
       where: { email: normalizedEmail },
     });
@@ -595,31 +596,265 @@ export async function register(req, res, next) {
       });
     }
 
+    // 2. Check 60-second cooldown on pending registration
+    const existingPending = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    const now = Date.now();
+    if (existingPending && existingPending.lastSentAt) {
+      const elapsed = now - new Date(existingPending.lastSentAt).getTime();
+      if (elapsed < 60 * 1000) {
+        const remainingSeconds = Math.ceil((60 * 1000 - elapsed) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${remainingSeconds} seconds before requesting a new verification code.`,
+          code: 'RESEND_COOLDOWN',
+          retryAfter: remainingSeconds,
+        });
+      }
+    }
+
+    // 3. Pre-hash password with bcrypt (salt rounds: 12)
     const saltRounds = 12;
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-    const user = await prisma.user.create({
-      data: {
+    // 4. Generate 6-digit OTP and store HMAC-SHA256 hash
+    const otp = otpService.generateOtp();
+    const otpHash = otpService.hashOtp(otp);
+    const expiresAt = new Date(now + 5 * 60 * 1000); // 5 minutes
+    const tokenHashValue = `${otpHash}:0:${now}`; // hash:failedAttempts:timestamp
+
+    await prisma.pendingRegistration.upsert({
+      where: { email: normalizedEmail },
+      update: {
+        name: name.trim(),
+        password: hashedPassword,
+        prayerCalculationMethod: prayerCalculationMethod || 'Karachi',
+        latitude: typeof latitude === 'number' ? latitude : null,
+        longitude: typeof longitude === 'number' ? longitude : null,
+        tokenHash: tokenHashValue,
+        expiresAt,
+        lastSentAt: new Date(now),
+      },
+      create: {
         name: name.trim(),
         email: normalizedEmail,
         password: hashedPassword,
         prayerCalculationMethod: prayerCalculationMethod || 'Karachi',
         latitude: typeof latitude === 'number' ? latitude : null,
         longitude: typeof longitude === 'number' ? longitude : null,
-        isEmailVerified: true,
-        role: isPermanentAdmin(normalizedEmail) ? 'ADMIN' : 'USER',
+        tokenHash: tokenHashValue,
+        expiresAt,
+        lastSentAt: new Date(now),
       },
     });
 
+    // 5. Send OTP verification email via Brevo
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    try {
+      await brevoEmailService.sendOtpEmail({
+        to: normalizedEmail,
+        name: name.trim(),
+        otp,
+        expiresInMinutes: 5,
+        isAuthorizedTest,
+      });
+    } catch (err) {
+      console.error(`[AuthController] Registration OTP delivery error:`, err.message);
+      return res.status(500).json({
+        success: false,
+        error: `Failed to deliver verification code to ${normalizedEmail}. ${err.message}`,
+        code: 'SEND_OTP_FAILED',
+      });
+    }
+
+    const responsePayload = {
+      success: true,
+      requiresVerification: true,
+      message: 'A 6-digit verification code has been sent to your email. Please verify to complete account creation.',
+      email: normalizedEmail,
+      expiresInSeconds: 300,
+      cooldownSeconds: 60,
+    };
+
+    if (isAuthorizedTest) {
+      responsePayload.testOtp = otp;
+    }
+
+    return res.status(200).json(responsePayload);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 11b. Verify 6-Digit OTP and Complete Registration
+ * POST /api/auth/register-verify
+ */
+export async function registerVerify(req, res, next) {
+  try {
+    const { email, otp } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 1. Fetch pending registration
+    const pending = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!pending) {
+      return res.status(400).json({
+        success: false,
+        error: 'No pending registration found for this email. Please submit the sign up form first.',
+        code: 'NO_PENDING_REGISTRATION',
+      });
+    }
+
+    // 2. Check expiration (5 minutes)
+    if (new Date() > new Date(pending.expiresAt)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Your verification code has expired. Please request a new code.',
+        code: 'OTP_EXPIRED',
+      });
+    }
+
+    // 3. Verify OTP code with attempt limiting (max 5 attempts)
+    const parts = pending.tokenHash.split(':');
+    const storedHash = parts[0];
+    const attempts = parseInt(parts[1], 10) || 0;
+    const isMatch = otpService.verifyHash(otp, storedHash);
+
+    if (!isMatch) {
+      const newAttempts = attempts + 1;
+      if (newAttempts >= 5) {
+        await prisma.pendingRegistration.delete({ where: { email: normalizedEmail } }).catch(() => {});
+        return res.status(403).json({
+          success: false,
+          error: 'Too many incorrect attempts. Please sign up again.',
+          code: 'OTP_MAX_ATTEMPTS_EXCEEDED',
+        });
+      }
+      await prisma.pendingRegistration.update({
+        where: { email: normalizedEmail },
+        data: { tokenHash: `${storedHash}:${newAttempts}:${Date.now()}` },
+      });
+      return res.status(400).json({
+        success: false,
+        error: `Invalid verification code. ${5 - newAttempts} attempts remaining.`,
+        code: 'OTP_MISMATCH',
+        remainingAttempts: 5 - newAttempts,
+      });
+    }
+
+    // 4. Create official verified user record in database
+    const user = await prisma.user.create({
+      data: {
+        name: pending.name,
+        email: pending.email,
+        password: pending.password,
+        prayerCalculationMethod: pending.prayerCalculationMethod,
+        latitude: pending.latitude,
+        longitude: pending.longitude,
+        isEmailVerified: true,
+        role: isPermanentAdmin(pending.email) ? 'ADMIN' : 'USER',
+      },
+    });
+
+    // 5. Clean up pending registration
+    await prisma.pendingRegistration.delete({ where: { email: normalizedEmail } }).catch(() => {});
+
+    // 6. Issue JWT session token + HttpOnly cookie
     const token = signToken(user);
     setAuthCookie(res, token);
 
     return res.status(201).json({
       success: true,
-      message: 'Account created successfully.',
+      message: 'Account verified and created successfully. Welcome to Salah Companion!',
       token,
       user: sanitizeUser(user),
     });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 11c. Resend Registration 6-Digit OTP via Brevo
+ * POST /api/auth/register-resend
+ */
+export async function registerResend(req, res, next) {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const pending = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!pending) {
+      return res.status(400).json({
+        success: false,
+        error: 'No pending registration found for this email. Please submit the sign up form first.',
+        code: 'NO_PENDING_REGISTRATION',
+      });
+    }
+
+    const now = Date.now();
+    if (pending.lastSentAt) {
+      const elapsed = now - new Date(pending.lastSentAt).getTime();
+      if (elapsed < 60 * 1000) {
+        const remainingSeconds = Math.ceil((60 * 1000 - elapsed) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${remainingSeconds} seconds before requesting a new code.`,
+          code: 'RESEND_COOLDOWN',
+          retryAfter: remainingSeconds,
+        });
+      }
+    }
+
+    const otp = otpService.generateOtp();
+    const hash = otpService.hashOtp(otp);
+    const expiresAt = new Date(now + 5 * 60 * 1000);
+
+    await prisma.pendingRegistration.update({
+      where: { email: normalizedEmail },
+      data: {
+        tokenHash: `${hash}:0:${now}`,
+        expiresAt,
+        lastSentAt: new Date(now),
+      },
+    });
+
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    await brevoEmailService.sendOtpEmail({
+      to: normalizedEmail,
+      name: pending.name,
+      otp,
+      expiresInMinutes: 5,
+      isAuthorizedTest,
+    });
+
+    const responsePayload = {
+      success: true,
+      message: 'A new 6-digit verification code has been sent to your email.',
+      email: normalizedEmail,
+      cooldownSeconds: 60,
+      expiresInSeconds: 300,
+    };
+
+    if (isAuthorizedTest) {
+      responsePayload.testOtp = otp;
+    }
+
+    return res.status(200).json(responsePayload);
   } catch (err) {
     next(err);
   }

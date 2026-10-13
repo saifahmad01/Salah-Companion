@@ -293,7 +293,7 @@ export const salahApi = {
   },
 
   /**
-   * Register with Email + Password
+   * Register with Email + Password (Triggers 6-digit OTP verification via Brevo)
    * POST /api/auth/register
    */
   async register(payload: {
@@ -303,15 +303,37 @@ export const salahApi = {
     prayerCalculationMethod?: string;
     latitude?: number | null;
     longitude?: number | null;
-  }): Promise<AuthResponse> {
-    const data: AuthResponse = await fetchWithAuth('/auth/register', {
+  }): Promise<{ success: boolean; requiresVerification: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }> {
+    return await fetchWithAuth('/auth/register', {
       method: 'POST',
       body: JSON.stringify(payload),
+    });
+  },
+
+  /**
+   * Verify registration 6-digit OTP code to complete account activation
+   * POST /api/auth/register-verify
+   */
+  async registerVerify(email: string, otp: string): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/register-verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
     });
     if (data.token) {
       authStorage.setToken(data.token);
     }
     return data;
+  },
+
+  /**
+   * Resend registration 6-digit OTP code via Brevo
+   * POST /api/auth/register-resend
+   */
+  async registerResend(email: string): Promise<{ success: boolean; message: string; cooldownSeconds?: number; expiresInSeconds?: number }> {
+    return await fetchWithAuth('/auth/register-resend', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
   },
 
   /**

@@ -31,6 +31,8 @@ export const LoginPage: React.FC = () => {
     setBanner,
     login,
     register,
+    registerVerify,
+    registerResend,
     forgotPassword,
     sendOtp,
     verifyOtp,
@@ -59,6 +61,7 @@ export const LoginPage: React.FC = () => {
   // Sync mode with search params
   const handleModeChange = (newMode: AuthMode) => {
     setMode(newMode)
+    setRegisterStep('form')
     setFormError(null)
     setFormSuccess(null)
     if (newMode === 'login') {
@@ -78,6 +81,13 @@ export const LoginPage: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
+  // Registration OTP step: 'form' | 'otp'
+  const [registerStep, setRegisterStep] = useState<'form' | 'otp'>('form')
+  const [registerOtpDigits, setRegisterOtpDigits] = useState<string[]>(['', '', '', '', '', ''])
+  const [registerExpiresIn, setRegisterExpiresIn] = useState<number>(300)
+  const [registerCooldown, setRegisterCooldown] = useState<number>(0)
+  const registerDigitInputRefs = useRef<(HTMLInputElement | null)[]>([])
+
   // OTP Sub-step: 'input_email' | 'enter_code'
   const [otpStep, setOtpStep] = useState<'input_email' | 'enter_code'>('input_email')
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', ''])
@@ -96,6 +106,23 @@ export const LoginPage: React.FC = () => {
   const hasLetter = /[A-Za-z]/.test(password)
   const hasNumber = /\d/.test(password)
   const passwordsMatch = password.length > 0 && password === confirmPassword
+
+  // Registration OTP Timers
+  useEffect(() => {
+    if (mode !== 'register' || registerStep !== 'otp' || registerExpiresIn <= 0) return
+    const timer = setInterval(() => {
+      setRegisterExpiresIn((prev) => (prev <= 1 ? 0 : prev - 1))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [mode, registerStep, registerExpiresIn])
+
+  useEffect(() => {
+    if (registerCooldown <= 0) return
+    const timer = setInterval(() => {
+      setRegisterCooldown((prev) => (prev <= 1 ? 0 : prev - 1))
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [registerCooldown])
 
   // OTP Timers
   useEffect(() => {
@@ -198,19 +225,133 @@ export const LoginPage: React.FC = () => {
 
     setIsLoading(true)
     try {
-      await register({
+      const res = await register({
         name: trimmedName,
         email: trimmedEmail,
         password,
       })
-      setFormSuccess('Account created successfully! Welcome to Salah Companion.')
+      setRegisterStep('otp')
+      setRegisterExpiresIn(res.expiresInSeconds || 300)
+      setRegisterCooldown(res.cooldownSeconds || 60)
+      setRegisterOtpDigits(['', '', '', '', '', ''])
+      setFormSuccess('Verification code sent! Please check your email to complete registration.')
+
+      setTimeout(() => {
+        registerDigitInputRefs.current[0]?.focus()
+      }, 150)
+    } catch (err: any) {
+      if (err.code === 'RESEND_COOLDOWN' && err.retryAfter) {
+        setRegisterCooldown(err.retryAfter)
+      }
+      setFormError(err.message || 'Registration failed. Please check your information.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Handle Verify Registration OTP
+  const handleVerifyRegisterOtp = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
+    setFormError(null)
+    setFormSuccess(null)
+
+    const otpCode = registerOtpDigits.join('').trim()
+    if (otpCode.length !== 6 || !/^\d{6}$/.test(otpCode)) {
+      setFormError('Please enter all 6 digits of your verification code.')
+      return
+    }
+
+    if (registerExpiresIn <= 0) {
+      setFormError('Your verification code has expired. Please request a new code.')
+      return
+    }
+
+    setIsLoading(true)
+    try {
+      await registerVerify(email.trim().toLowerCase(), otpCode)
+      setFormSuccess('Account verified and created successfully! Entering your prayer sanctuary...')
       setTimeout(() => {
         navigate('/app', { replace: true })
       }, 500)
     } catch (err: any) {
-      setFormError(err.message || 'Registration failed. Please check your information.')
+      setFormError(err.message || 'Invalid verification code. Please check and try again.')
+      if (err.code === 'OTP_MAX_ATTEMPTS_EXCEEDED' || err.code === 'OTP_EXPIRED') {
+        setRegisterOtpDigits(['', '', '', '', '', ''])
+      }
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  // Handle Resend Registration OTP
+  const handleResendRegisterOtp = async () => {
+    if (registerCooldown > 0 || isLoading) return
+    setFormError(null)
+    setFormSuccess(null)
+
+    setIsLoading(true)
+    try {
+      const res = await registerResend(email.trim().toLowerCase())
+      setRegisterExpiresIn(res.expiresInSeconds || 300)
+      setRegisterCooldown(res.cooldownSeconds || 60)
+      setRegisterOtpDigits(['', '', '', '', '', ''])
+      setFormSuccess('A new 6-digit verification code has been sent to your email.')
+      setTimeout(() => {
+        registerDigitInputRefs.current[0]?.focus()
+      }, 100)
+    } catch (err: any) {
+      if (err.code === 'RESEND_COOLDOWN' && err.retryAfter) {
+        setRegisterCooldown(err.retryAfter)
+      }
+      setFormError(err.message || 'Failed to resend code. Please try again.')
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Digit handling for Registration OTP
+  const handleRegisterDigitChange = (index: number, value: string) => {
+    const numericChar = value.replace(/\D/g, '')
+    const newDigits = [...registerOtpDigits]
+    if (numericChar.length > 0) {
+      newDigits[index] = numericChar.slice(-1)
+      setRegisterOtpDigits(newDigits)
+      if (index < 5) {
+        registerDigitInputRefs.current[index + 1]?.focus()
+      } else {
+        const fullCode = newDigits.join('')
+        if (fullCode.length === 6) {
+          setTimeout(() => handleVerifyRegisterOtp(), 100)
+        }
+      }
+    } else {
+      newDigits[index] = ''
+      setRegisterOtpDigits(newDigits)
+    }
+  }
+
+  const handleRegisterKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !registerOtpDigits[index] && index > 0) {
+      registerDigitInputRefs.current[index - 1]?.focus()
+    }
+  }
+
+  const handleRegisterPaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
+    e.preventDefault()
+    const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
+    if (!pastedData) return
+
+    const newDigits = [...registerOtpDigits]
+    for (let i = 0; i < 6; i++) {
+      newDigits[i] = pastedData[i] || ''
+    }
+    setRegisterOtpDigits(newDigits)
+
+    const nextIndex = Math.min(pastedData.length, 5)
+    registerDigitInputRefs.current[nextIndex]?.focus()
+
+    if (pastedData.length === 6) {
+      setTimeout(() => handleVerifyRegisterOtp(), 100)
     }
   }
 
@@ -660,7 +801,7 @@ export const LoginPage: React.FC = () => {
             {/* ======================================================= */}
             {/* 2. CREATE ACCOUNT (REGISTRATION)                        */}
             {/* ======================================================= */}
-            {mode === 'register' && (
+            {mode === 'register' && registerStep === 'form' && (
               <div>
                 <div className="text-center mb-6">
                   <h1 className="font-serif text-2xl sm:text-3xl font-bold text-emerald-950 tracking-tight">
@@ -859,6 +1000,108 @@ export const LoginPage: React.FC = () => {
                     Sign in here
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Registration Step 2: 6-Digit Email OTP Verification */}
+            {mode === 'register' && registerStep === 'otp' && (
+              <div>
+                <div className="text-center mb-6">
+                  <div className="inline-flex items-center justify-center w-13 h-13 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-800 mb-3 shadow-xs">
+                    <KeyRound className="w-6 h-6 text-[#9A7B2C]" />
+                  </div>
+
+                  <h1 className="font-serif text-2xl sm:text-3xl font-bold text-emerald-950 tracking-tight">
+                    Verify Your Email
+                  </h1>
+
+                  <div className="mt-2 text-xs sm:text-sm text-stone-600 font-sans max-w-xs mx-auto leading-relaxed">
+                    <span>We've sent a 6-digit verification code to </span>
+                    <strong className="text-emerald-900 font-semibold">{email}</strong>.
+                    <span className="block mt-1 text-[11px] text-stone-500">
+                      Enter the code below to complete and activate your account.
+                    </span>
+                  </div>
+
+                  {/* Expiry Countdown Banner */}
+                  <div className="mt-3 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium">
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Expires in: </span>
+                    <strong className="font-mono">{formatTime(registerExpiresIn)}</strong>
+                  </div>
+                </div>
+
+                <form onSubmit={handleVerifyRegisterOtp} className="space-y-5">
+                  {/* 6 Digit Inputs */}
+                  <div className="flex justify-between items-center gap-2 sm:gap-2.5">
+                    {registerOtpDigits.map((digit, idx) => (
+                      <input
+                        key={idx}
+                        ref={(el) => {
+                          registerDigitInputRefs.current[idx] = el
+                        }}
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleRegisterDigitChange(idx, e.target.value)}
+                        onKeyDown={(e) => handleRegisterKeyDown(idx, e)}
+                        onPaste={idx === 0 ? handleRegisterPaste : undefined}
+                        className={`w-11 sm:w-12 h-14 sm:h-15 text-center text-xl sm:text-2xl font-bold font-mono rounded-2xl bg-white border-2 transition outline-hidden ${
+                          digit
+                            ? 'border-emerald-700 text-emerald-950 bg-emerald-50/40 shadow-xs'
+                            : 'border-[#DDD7C8] text-stone-800 focus:border-emerald-600'
+                        }`}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Verify Action Button */}
+                  <button
+                    type="submit"
+                    disabled={isLoading || registerOtpDigits.join('').length !== 6 || registerExpiresIn <= 0}
+                    className="w-full py-3.5 px-5 rounded-2xl font-bold text-[#14291F] text-sm sm:text-base bg-gradient-to-r from-[#F0D69A] via-[#E5C67F] to-[#D5AF5E] hover:brightness-105 shadow-[0_4px_16px_rgba(212,175,55,0.25)] transition-all cursor-pointer active:scale-[0.99] disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                  >
+                    {isLoading ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-emerald-900/30 border-t-emerald-950 rounded-full animate-spin" />
+                        <span>Verifying & Activating Account...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck className="w-4 h-4 text-[#14291F]" />
+                        <span>Verify & Create Account</span>
+                      </>
+                    )}
+                  </button>
+
+                  {/* Resend and Edit Details links */}
+                  <div className="pt-2 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
+                    <button
+                      type="button"
+                      onClick={handleResendRegisterOtp}
+                      disabled={registerCooldown > 0 || isLoading}
+                      className="inline-flex items-center gap-1.5 text-emerald-800 hover:text-emerald-950 font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed transition py-1"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                      <span>{registerCooldown > 0 ? `Resend code in ${registerCooldown}s` : 'Resend Code'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegisterStep('form')
+                        setFormError(null)
+                        setFormSuccess(null)
+                      }}
+                      className="inline-flex items-center gap-1.5 text-stone-500 hover:text-stone-800 font-medium cursor-pointer transition py-1"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                      <span>Change Details</span>
+                    </button>
+                  </div>
+                </form>
               </div>
             )}
 
