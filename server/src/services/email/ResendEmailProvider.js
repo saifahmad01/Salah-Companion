@@ -50,8 +50,14 @@ export class ResendEmailProvider extends EmailProvider {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
+        let parsedMessage = '';
+        try {
+          const parsed = JSON.parse(errorText);
+          parsedMessage = parsed.message || '';
+        } catch (_) {}
         console.warn(`[ResendEmailProvider] HTTP ${response.status} Error: ${errorText}`);
-        throw new Error(`Resend API rejected delivery (${response.status})`);
+        const errMsg = parsedMessage || `Resend API rejected delivery (${response.status})`;
+        throw new Error(errMsg);
       }
 
       const data = await response.json().catch(() => ({}));
