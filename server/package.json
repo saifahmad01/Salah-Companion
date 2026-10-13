@@ -15,7 +15,7 @@
     "db:studio": "prisma studio",
     "db:clean": "node scripts/dbManager.js clear-test",
     "db:manage": "node scripts/dbManager.js",
-    "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/authRetirement.test.js && node tests/exitConfirmation.test.js && node tests/notificationService.test.js && node tests/weeklyPrayer.test.js && node tests/timingEnforcement.test.js && node tests/qiblaAndJumuah.test.js",
+    "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/emailOtpAuth.test.js && node tests/exitConfirmation.test.js && node tests/notificationService.test.js && node tests/weeklyPrayer.test.js && node tests/timingEnforcement.test.js && node tests/qiblaAndJumuah.test.js",
     "test:timing": "node tests/timingEnforcement.test.js",
     "test:qibla": "node tests/qiblaAndJumuah.test.js"
   },
@@ -32,6 +32,7 @@
     "express": "^4.21.2",
     "google-auth-library": "^11.2.0",
     "jsonwebtoken": "^9.0.3",
+    "nodemailer": "^10.1.0",
     "pg": "^8.23.1",
     "prisma": "^6.19.3",
     "web-push": "^3.6.7",

@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   User,
   LogOut,
@@ -8,6 +9,7 @@ import {
   AlertCircle,
   X,
   Compass,
+  Mail,
 } from 'lucide-react'
 import { salahApi, type UserProfile } from '../services/backendApi'
 
@@ -30,6 +32,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   currentCoords,
   currentCityName,
 }) => {
+  const navigate = useNavigate()
   const [googleLoading, setGoogleLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -233,9 +236,21 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
             <button
               type="button"
+              onClick={() => {
+                onClose()
+                navigate('/login')
+              }}
+              className="w-full flex items-center justify-center gap-2.5 py-3.5 px-4 rounded-2xl bg-gradient-to-r from-[#F0D69A] via-[#E5C67F] to-[#D5AF5E] hover:brightness-105 text-[#14291F] font-bold text-xs sm:text-sm shadow-xs transition active:scale-[0.99] cursor-pointer"
+            >
+              <Mail className="w-4 h-4 text-[#14291F]" />
+              <span>Sign In with Email OTP</span>
+            </button>
+
+            <button
+              type="button"
               onClick={handleGoogleLogin}
               disabled={googleLoading}
-              className="w-full flex items-center justify-center gap-3 py-3.5 px-4 rounded-2xl bg-white hover:bg-stone-50 border-2 border-stone-200 hover:border-emerald-500 text-stone-800 font-semibold text-xs sm:text-sm shadow-xs hover:shadow-md transition active:scale-[0.99] cursor-pointer disabled:opacity-75"
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 rounded-2xl bg-white hover:bg-stone-50 border border-stone-200 text-stone-800 font-semibold text-xs shadow-xs hover:shadow-sm transition active:scale-[0.99] cursor-pointer disabled:opacity-75"
             >
               {googleLoading ? (
                 <div className="w-4 h-4 border-2 border-emerald-700/30 border-t-emerald-800 rounded-full animate-spin" />
@@ -259,12 +274,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   />
                 </svg>
               )}
-              <span>{googleLoading ? 'Connecting to Google...' : 'Continue with Google'}</span>
+              <span>Continue with Google</span>
             </button>
 
-            <div className="pt-2 text-center">
+            <div className="pt-1 text-center">
               <span className="text-[10px] text-stone-500">
-                🔒 Secure Google OAuth 2.0 • No password required
+                🔒 Secure Brevo OTP & Google Sign-In • No password required
               </span>
             </div>
           </div>

@@ -9,6 +9,7 @@ import {
 } from '../services/googleAuthService.js';
 import { config } from '../config/env.js';
 import { isPermanentAdmin } from '../constants/admins.js';
+import { otpService } from '../services/otpService.js';
 
 const JWT_SECRET = config.jwtSecret || process.env.JWT_SECRET || 'fallback_secret_for_dev_only_change_in_production';
 const JWT_EXPIRES_IN = config.jwtExpiresIn || process.env.JWT_EXPIRES_IN || '7d';
@@ -460,17 +461,131 @@ export async function setPassword(req, res, next) {
 }
 
 /**
- * 8. Handler for retired email-based authentication endpoints
- * Returns 410 Gone ensuring no old email-login endpoint remains active
+ * 8. Request 6-Digit OTP via Brevo
+ * POST /api/auth/send-otp
+ */
+export async function sendOtp(req, res, next) {
+  try {
+    const { email, name } = req.body;
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email address is required.',
+        code: 'EMAIL_REQUIRED',
+      });
+    }
+
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    const result = await otpService.requestOtp({ email, name, isAuthorizedTest });
+    return res.status(200).json(result);
+  } catch (err) {
+    if (err.code === 'RESEND_COOLDOWN') {
+      return res.status(429).json({
+        success: false,
+        error: err.message,
+        code: 'RESEND_COOLDOWN',
+        retryAfter: err.retryAfter,
+      });
+    }
+    console.error('[AuthController] sendOtp error:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to send verification code. Please check email configuration.',
+      code: 'SEND_OTP_FAILED',
+    });
+  }
+}
+
+/**
+ * 9. Verify 6-Digit OTP and Log In
+ * POST /api/auth/verify-otp
+ */
+export async function verifyOtp(req, res, next) {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email and 6-digit verification code are required.',
+        code: 'MISSING_FIELDS',
+      });
+    }
+
+    const result = await otpService.verifyOtp({ email, otp });
+    const user = result.user;
+
+    const token = signToken(user);
+    setAuthCookie(res, token);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged in successfully.',
+      token,
+      user: sanitizeUser(user),
+    });
+  } catch (err) {
+    if (err.code === 'OTP_MISMATCH') {
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        code: 'OTP_MISMATCH',
+        remainingAttempts: err.remainingAttempts,
+      });
+    }
+    if (err.code === 'OTP_MAX_ATTEMPTS_EXCEEDED') {
+      return res.status(403).json({
+        success: false,
+        error: err.message,
+        code: 'OTP_MAX_ATTEMPTS_EXCEEDED',
+      });
+    }
+    if (err.code === 'OTP_EXPIRED') {
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        code: 'OTP_EXPIRED',
+      });
+    }
+    if (err.code === 'NO_ACTIVE_OTP' || err.code === 'INVALID_OTP_FORMAT') {
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+      });
+    }
+    console.error('[AuthController] verifyOtp error:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Verification failed. Please try again.',
+      code: 'VERIFY_OTP_FAILED',
+    });
+  }
+}
+
+/**
+ * 10. Resend 6-Digit OTP via Brevo
+ * POST /api/auth/resend-otp
+ */
+export async function resendOtp(req, res, next) {
+  return sendOtp(req, res, next);
+}
+
+/**
+ * 11. Handler for retired legacy authentication links
+ * Returns 410 Gone informing clients that verification links are replaced with 6-digit OTP
  */
 export function handleRetiredEmailAuth(req, res) {
   if (req.method === 'GET') {
     const frontendUrl = getEffectiveFrontendUrl(req);
-    return res.redirect(`${frontendUrl}/login?notice=use_google`);
+    return res.redirect(`${frontendUrl}/login?notice=use_otp`);
   }
   return res.status(410).json({
     success: false,
-    error: 'Email-based login and verification have been retired. Please sign in with Google.',
+    error: 'Old email verification links have been replaced with 6-digit OTP codes. Please use /api/auth/send-otp.',
     code: 'EMAIL_AUTH_RETIRED',
   });
 }
+

@@ -7,6 +7,9 @@ interface AuthContextType {
   isAuthenticated: boolean
   logout: () => Promise<void>
   refreshUser: () => Promise<UserProfile | null>
+  sendOtp: (email: string, name?: string) => Promise<{ success: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }>
+  verifyOtp: (email: string, otp: string) => Promise<UserProfile>
+  resendOtp: (email: string) => Promise<{ success: boolean; message: string; cooldownSeconds?: number }>
   banner: { type: 'success' | 'error'; message: string } | null
   setBanner: React.Dispatch<React.SetStateAction<{ type: 'success' | 'error'; message: string } | null>>
 }
@@ -42,6 +45,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(null)
       return null
     }
+  }
+
+  const sendOtp = async (email: string, name?: string) => {
+    return await salahApi.sendOtp(email, name)
+  }
+
+  const verifyOtp = async (email: string, otp: string): Promise<UserProfile> => {
+    const res = await salahApi.verifyOtp(email, otp)
+    if (!res.user) {
+      throw new Error('User profile missing in verification response')
+    }
+    setUser(res.user)
+    return res.user
+  }
+
+  const resendOtp = async (email: string) => {
+    return await salahApi.resendOtp(email)
   }
 
   useEffect(() => {
@@ -96,10 +116,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Notice toast (e.g. redirected from legacy route)
       const noticeParam = params.get('notice')
-      if (noticeParam === 'use_google') {
+      if (noticeParam === 'use_otp') {
         setBanner({
           type: 'success',
-          message: 'Please sign in with Google to access your Salah Companion account.',
+          message: 'Please enter your email to receive a secure 6-digit verification code.',
+        })
+      } else if (noticeParam === 'use_google') {
+        setBanner({
+          type: 'success',
+          message: 'Please sign in with Google or Email OTP to access your account.',
         })
       }
 
@@ -131,6 +156,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isAuthenticated: !!user,
         logout,
         refreshUser,
+        sendOtp,
+        verifyOtp,
+        resendOtp,
         banner,
         setBanner,
       }}

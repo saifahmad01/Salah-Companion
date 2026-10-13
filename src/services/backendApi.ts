@@ -274,8 +274,46 @@ export interface WeeklyPrayersResponse {
 
 export const salahApi = {
   // ==========================================================================
-  // Authentication & Profile Endpoints (Google OAuth & Session Management)
+  // Authentication & Profile Endpoints (Brevo Email OTP & Google OAuth)
   // ==========================================================================
+
+  /**
+   * Request a 6-digit OTP code to be sent to user's email via Brevo
+   * POST /api/auth/send-otp
+   */
+  async sendOtp(email: string, name?: string): Promise<{ success: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }> {
+    return await fetchWithAuth('/auth/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, name }),
+    });
+  },
+
+  /**
+   * Verify the 6-digit OTP code and authenticate
+   * POST /api/auth/verify-otp
+   */
+  async verifyOtp(email: string, otp: string): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Resend a 6-digit OTP code via Brevo
+   * POST /api/auth/resend-otp
+   */
+  async resendOtp(email: string): Promise<{ success: boolean; message: string; cooldownSeconds?: number }> {
+    return await fetchWithAuth('/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
 
   /**
    * Sign in / sign up with Google OAuth 2.0
