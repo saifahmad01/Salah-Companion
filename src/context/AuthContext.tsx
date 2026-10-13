@@ -5,6 +5,15 @@ interface AuthContextType {
   user: UserProfile | null
   loading: boolean
   isAuthenticated: boolean
+  sendOtp: (payload: { email: string; name?: string; type?: 'VERIFICATION' | 'LOGIN' }) => Promise<{
+    success: boolean
+    message: string
+    expiresIn?: number
+    email?: string
+    retryAfter?: number
+    devOtp?: string
+  }>
+  verifyOtp: (payload: { email: string; otp: string }) => Promise<AuthResponse>
   login: (payload: { email: string; password: string }) => Promise<AuthResponse>
   register: (payload: {
     name: string
@@ -14,7 +23,6 @@ interface AuthContextType {
     latitude?: number
     longitude?: number
   }) => Promise<AuthResponse>
-  verifyOtp: (payload: { email: string; otp: string }) => Promise<AuthResponse>
   logout: () => Promise<void>
   refreshUser: () => Promise<UserProfile | null>
   banner: { type: 'success' | 'error'; message: string } | null
@@ -62,11 +70,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const params = new URLSearchParams(window.location.search)
       const authStatus = params.get('auth')
       const authError = params.get('auth_error')
-      const verifiedParam = params.get('verified')
       const tokenParam = params.get('token')
-      const verifyTokenParam =
-        params.get('verify_token') ||
-        (window.location.pathname.includes('/verify-email') ? params.get('token') : null)
 
       // 1. Google OAuth Callback
       if (authStatus === 'google_success') {
@@ -109,65 +113,16 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         return
       }
 
-      // 2. Email verification callback
-      if (verifiedParam === 'true') {
-        try {
-          if (tokenParam) {
-            authStorage.setToken(tokenParam)
-          }
-          const profile = await refreshUser()
-          setBanner({
-            type: 'success',
-            message: profile?.name
-              ? `🎉 Assalamu Alaikum ${profile.name}! Your email has been verified and you are now signed in.`
-              : '🎉 Welcome to Salah Companion! Your email has been verified and you are now signed in.',
-          })
-        } finally {
-          const targetPath = window.location.pathname.startsWith('/app') ? window.location.pathname : '/app'
-          window.history.replaceState({}, document.title, targetPath)
-          setLoading(false)
-        }
-        return
-      }
-
-      if (verifiedParam === 'false') {
-        const error = params.get('error')
-        let msg = 'Verification failed. The code may be invalid or expired.'
-        if (error === 'token_expired') {
-          msg = 'Your verification code has expired (valid for 5 minutes). Please request a fresh 6-digit code.'
-        } else if (error === 'invalid_or_used_token') {
-          msg = 'This verification code is invalid or has already been used. If you already verified, please log in.'
-        }
+      // Notice toast (e.g. redirected from legacy route)
+      const noticeParam = params.get('notice')
+      if (noticeParam === 'use_otp') {
         setBanner({
-          type: 'error',
-          message: msg,
+          type: 'success',
+          message: 'Please enter your email to receive a 6-digit login code.',
         })
-        const targetPath = window.location.pathname.includes('/verify-email') ? window.location.pathname : '/login'
-        window.history.replaceState({}, document.title, targetPath)
-        setLoading(false)
-        return
       }
 
-      if (verifyTokenParam && !window.location.pathname.includes('/verify-email')) {
-        try {
-          const res = await salahApi.verifyEmail(verifyTokenParam)
-          if (res.user) setUser(res.user)
-          setBanner({
-            type: 'success',
-            message: `🎉 Email verified successfully! Welcome ${res.user?.name || ''}.`,
-          })
-        } catch (err: any) {
-          setBanner({
-            type: 'error',
-            message: err.message || 'Verification code is invalid or expired.',
-          })
-        } finally {
-          setLoading(false)
-        }
-        return
-      }
-
-      // 3. Regular session restoration
+      // 2. Regular session restoration
       try {
         await refreshUser()
       } finally {
@@ -201,6 +156,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return res
   }
 
+  const sendOtp = async (payload: { email: string; name?: string; type?: 'VERIFICATION' | 'LOGIN' }) => {
+    return await salahApi.sendOtp(payload)
+  }
+
   const verifyOtp = async (payload: { email: string; otp: string }): Promise<AuthResponse> => {
     const res = await salahApi.verifyOtp(payload)
     if (res.user) {
@@ -224,9 +183,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         loading,
         isAuthenticated: !!user,
+        sendOtp,
+        verifyOtp,
         login,
         register,
-        verifyOtp,
         logout,
         refreshUser,
         banner,

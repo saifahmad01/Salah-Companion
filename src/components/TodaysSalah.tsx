@@ -83,8 +83,10 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
           const status = prayer.prayerStatus
           const isUpcoming = !isDone && (prayer.statusBadge === 'upcoming' || prayer.isUpcoming)
           const isUpdating = updatingPrayerId === prayer.id
-          // Active-day Salah: Users can mark, undo, or correct at any time during current day, even after individual prayer time has passed
-          const isDisabled = isUpcoming || Boolean(updatingPrayerId)
+          // Active-day Salah: Users can mark, undo, or correct at any time during current day.
+          // Only disable the button while any prayer is actively saving to avoid duplicate network requests.
+          // Upcoming prayers remain interactive so mobile touch/taps trigger immediate feedback about prayer times.
+          const isBusy = Boolean(updatingPrayerId)
 
           const cardBgClass =
             isUpdating
@@ -94,49 +96,52 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
               : status === 'LATE'
               ? 'bg-[#FFFBEB] border border-[#FDE68A] shadow-[0_1px_3px_rgba(217,119,6,0.06)]'
               : status === 'QADA'
-              ? 'bg-[#FAF5FF] border border-[#E9D5FF] shadow-[0_1px_3px_rgba(124,58,237,0.06)]'
+              ? 'bg-[#FAF8F3] border border-[#E9D5FF] shadow-[0_1px_3px_rgba(124,58,237,0.06)]'
               : status === 'MISSED'
               ? 'bg-[#FFF1F2] border border-[#FECDD3] shadow-[0_1px_3px_rgba(225,29,72,0.06)]'
               : isDone
               ? 'bg-[#EBF5EF] border border-[#CEE5D8]'
               : prayer.statusBadge === 'active'
-              ? 'bg-white border-2 border-emerald-500 shadow-[0_1px_4px_rgba(16,185,129,0.15)]'
+              ? 'bg-white border-2 border-emerald-500 shadow-[0_1px_4px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/20'
               : prayer.statusBadge === 'passed'
               ? 'bg-white border border-amber-300/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-emerald-400'
               : isUpcoming
-              ? 'bg-[#FAF8F3] border border-[#EAE6DC] opacity-90'
+              ? 'bg-[#FAF8F3] border border-[#EAE6DC] opacity-90 hover:border-stone-400'
               : 'bg-white border border-[#EBE7DD] shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-emerald-300'
 
           const buttonTitle = isUpdating
             ? `Updating ${prayer.name} status...`
             : isUpcoming
-            ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
+            ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}. Tap for details.`
             : isDone
-            ? `${prayer.name} is completed. Click to manage or undo at any time today.`
-            : `Click to log status for ${prayer.name}`
+            ? `${prayer.name} is completed. Tap to view or change status at any time today.`
+            : `Tap to log status for ${prayer.name}`
 
           return (
             <button
               key={prayer.id}
               type="button"
-              disabled={isDisabled}
+              disabled={isBusy}
+              aria-disabled={isUpcoming}
               onClick={() => onTogglePrayer(prayer.id)}
-              className={`flex flex-col items-center justify-between py-2.5 sm:py-3.5 px-1 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-all duration-200 select-none text-center touch-manipulation pointer-events-auto ${
-                isDisabled
-                  ? isUpdating ? 'cursor-wait opacity-90' : 'cursor-not-allowed opacity-90'
-                  : 'cursor-pointer active:scale-95'
+              className={`relative z-10 w-full min-h-[76px] sm:min-h-[84px] flex flex-col items-center justify-between py-2 sm:py-3.5 px-0.5 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-colors duration-150 select-none text-center touch-manipulation pointer-events-auto ${
+                isUpdating
+                  ? 'cursor-wait opacity-90'
+                  : isUpcoming
+                  ? 'cursor-pointer active:bg-stone-200/60'
+                  : 'cursor-pointer active:bg-emerald-50 active:ring-2 active:ring-emerald-500/30 hover:border-emerald-400'
               } ${cardBgClass}`}
               title={buttonTitle}
               aria-label={buttonTitle}
             >
               {/* Icon Container */}
-              <div className="h-5.5 flex items-center justify-center mb-1">
+              <div className="h-5.5 flex items-center justify-center mb-1 pointer-events-none">
                 {renderIcon(prayer.iconType)}
               </div>
 
               {/* Prayer Name */}
-              <div className="flex flex-col items-center">
-                <span className={`text-[12.5px] sm:text-[14px] font-bold leading-tight ${
+              <div className="flex flex-col items-center pointer-events-none">
+                <span className={`text-[12px] sm:text-[14px] font-bold leading-tight ${
                   isUpcoming ? 'text-[#3B4D43]' : 'text-[#172720]'
                 }`}>
                   {prayer.name}
@@ -160,12 +165,12 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
               </div>
 
               {/* Prayer Time */}
-              <span className="text-[9.5px] sm:text-[11px] text-[#55675E] font-medium leading-tight mt-0.5 mb-2">
+              <span className="text-[9.5px] sm:text-[11px] text-[#55675E] font-medium leading-tight mt-0.5 mb-2 pointer-events-none">
                 {prayer.time}
               </span>
 
               {/* Status Badge */}
-              <div className="flex items-center justify-center gap-1 w-full pt-0.5">
+              <div className="flex items-center justify-center gap-1 w-full pt-0.5 pointer-events-none">
                 {isUpdating ? (
                   <>
                     <Loader2 className="w-3 h-3 text-[#0E543F] animate-spin flex-shrink-0" />

@@ -82,9 +82,10 @@ export const config = {
   emailPass: process.env.EMAIL_PASS || 'tcynoikdurlgcves',
   emailFrom: process.env.EMAIL_FROM || '"Salah Companion" <salahcompanion786@gmail.com>',
 
-  // Verification Token Expiration & Rate Limiting
-  verificationTokenTtlHours: parseInt(process.env.VERIFICATION_TOKEN_TTL_HOURS || '24', 10),
-  verificationResendCooldownSec: parseInt(process.env.VERIFICATION_RESEND_COOLDOWN_SEC || '60', 10),
+  // OTP Verification Expiration & Rate Limiting (5-minute strict TTL, 60-second cooldown)
+  otpTtlMinutes: parseInt(process.env.OTP_TTL_MINUTES || '5', 10),
+  otpResendCooldownSec: parseInt(process.env.OTP_RESEND_COOLDOWN_SEC || '60', 10),
+  verificationResendCooldownSec: parseInt(process.env.OTP_RESEND_COOLDOWN_SEC || process.env.VERIFICATION_RESEND_COOLDOWN_SEC || '60', 10),
 
   // Transactional Email HTTP API Keys (HTTPS Port 443 - Immune to Cloud Firewall / Render SMTP Blocking)
   resendApiKey: process.env.RESEND_API_KEY || '',

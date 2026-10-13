@@ -3,7 +3,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db/prisma.js';
 import {
-  sendVerificationEmail,
   sendOtpEmail,
   sendPasswordResetEmail,
   verifyEmailTransport,
@@ -111,16 +110,6 @@ const DUMMY_HASH = '$2a$12$e80yq9X1K5pU77m4x9iFPeu8YpEev6J4l0k0vR5jU4M0d9F0A3x7W
  */
 export function hashVerificationToken(rawToken) {
   return crypto.createHash('sha256').update(rawToken.trim()).digest('hex');
-}
-
-/**
- * Generate a new single-use verification token and its SHA-256 hash (legacy compatibility)
- * @returns {{ rawToken: string, tokenHash: string }}
- */
-export function generateVerificationToken() {
-  const rawToken = crypto.randomBytes(32).toString('hex');
-  const tokenHash = hashVerificationToken(rawToken);
-  return { rawToken, tokenHash };
 }
 
 /**
@@ -300,8 +289,6 @@ export async function register(req, res, next) {
 
     const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
       (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret);
-    const directApiUrl = `${config.appUrl}/api/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&token=${otp}&otp=${otp}`;
-
     // 7. If email delivery failed, return 502 with honest diagnostic rather than swallowing the failure
     if (!emailResult.success) {
       console.warn(`[AuthController] Email delivery failure for ${normalizedEmail}: ${emailResult.error}`);
@@ -314,7 +301,7 @@ export async function register(req, res, next) {
         email: normalizedEmail,
         canResend: true,
         expiresIn: 300,
-        ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
+        ...(isAuthorizedTest ? { token: otp, devOtp: otp } : {}),
       });
     }
 
@@ -325,7 +312,7 @@ export async function register(req, res, next) {
       requiresOtp: true,
       email: normalizedEmail,
       expiresIn: 300,
-      ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
+      ...(isAuthorizedTest ? { token: otp, devOtp: otp } : {}),
     });
   } catch (err) {
     next(err);
@@ -333,306 +320,7 @@ export async function register(req, res, next) {
 }
 
 /**
- * 2. Verify Email Token
- * GET /api/auth/verify-email?token=... or POST /api/auth/verify-email
- *
- * Rules:
- * - Validates single-use token against SHA-256 hash in PendingRegistration
- * - Enforces expiration (24h)
- * - Creates active user in User and deletes PendingRegistration atomically inside a transaction
- * - Issues JWT session cookie and responds with user or redirects to frontend
- */
-export async function verifyEmail(req, res, next) {
-  try {
-    const rawToken = req.query.token || req.body.token || req.query.otp || req.body.otp;
-    const isApiRequest = Boolean(
-      req.xhr ||
-      req.query.format === 'json' ||
-      (req.headers.accept && req.headers.accept.includes('application/json') && !req.headers.accept.includes('text/html'))
-    );
-    const isBrowserRequest = req.method === 'GET' && !isApiRequest;
-    const frontendUrl = getEffectiveFrontendUrl(req);
-
-    if (!rawToken || typeof rawToken !== 'string') {
-      if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=missing_token`);
-      }
-      return res.status(400).json({
-        success: false,
-        error: 'Verification token is missing. Please check the link in your email.',
-        code: 'MISSING_TOKEN',
-      });
-    }
-
-    // Compute SHA-256 hash of incoming token
-    const tokenHash = hashVerificationToken(rawToken);
-
-    // Atomically execute verification check and user activation inside a single transaction
-    const result = await prisma.$transaction(async (tx) => {
-      // 1. Look up in PendingRegistration inside transaction
-      let pendingTx = await tx.pendingRegistration.findUnique({
-        where: { tokenHash },
-      });
-
-      if (!pendingTx) {
-        // Check legacy User record
-        const legacyUser = await tx.user.findFirst({
-          where: { verificationTokenHash: tokenHash },
-        });
-
-        if (legacyUser) {
-          if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
-            return { code: 'TOKEN_EXPIRED', email: legacyUser.email };
-          }
-
-          const verifiedUser = await tx.user.update({
-            where: { id: legacyUser.id },
-            data: {
-              isEmailVerified: true,
-              verificationTokenHash: null,
-              tokenExpiresAt: null,
-            },
-          });
-
-          return { code: 'SUCCESS', user: verifiedUser };
-        }
-
-        return { code: 'TOKEN_INVALID' };
-      }
-
-      // Check expiration
-      if (new Date() > new Date(pendingTx.expiresAt)) {
-        return { code: 'TOKEN_EXPIRED', email: pendingTx.email };
-      }
-
-      // Atomically delete pending record (guarantees single-use & eliminates race conditions)
-      try {
-        await tx.pendingRegistration.delete({
-          where: { id: pendingTx.id },
-        });
-      } catch (delErr) {
-        if (delErr.code === 'P2025') {
-          return { code: 'TOKEN_INVALID' };
-        }
-        throw delErr;
-      }
-
-      // Concurrency safety: check if user was already created
-      const existingUser = await tx.user.findUnique({
-        where: { email: pendingTx.email },
-      });
-
-      let userRecord;
-      if (existingUser) {
-        userRecord = await tx.user.update({
-          where: { id: existingUser.id },
-          data: {
-            isEmailVerified: true,
-            verificationTokenHash: null,
-            tokenExpiresAt: null,
-            ...(isPermanentAdmin(pendingTx.email) ? { role: 'ADMIN' } : {}),
-          },
-        });
-      } else {
-        userRecord = await tx.user.create({
-          data: {
-            name: pendingTx.name,
-            email: pendingTx.email,
-            password: pendingTx.password, // already bcrypt-hashed
-            role: isPermanentAdmin(pendingTx.email) ? 'ADMIN' : 'USER',
-            prayerCalculationMethod: pendingTx.prayerCalculationMethod || 'Karachi',
-            latitude: pendingTx.latitude,
-            longitude: pendingTx.longitude,
-            isEmailVerified: true,
-            verificationTokenHash: null,
-            tokenExpiresAt: null,
-            lastVerificationSentAt: null,
-          },
-        });
-      }
-
-      return { code: 'SUCCESS', user: userRecord };
-    }, {
-      maxWait: 15000,
-      timeout: 25000,
-    });
-
-    if (result.code === 'TOKEN_EXPIRED') {
-      if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=token_expired&email=${encodeURIComponent(result.email)}`);
-      }
-      return res.status(400).json({
-        success: false,
-        error: 'This verification code or link has expired. Please request a fresh 6-digit code.',
-        code: 'TOKEN_EXPIRED',
-        email: result.email,
-      });
-    }
-
-    if (result.code === 'TOKEN_INVALID') {
-      if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=invalid_or_used_token`);
-      }
-      return res.status(400).json({
-        success: false,
-        error: 'This verification code is invalid or has already been used. If your account is already verified, you can log in directly.',
-        code: 'TOKEN_INVALID',
-      });
-    }
-
-    const verifiedUser = result.user;
-    const token = signToken(verifiedUser);
-    setAuthCookie(res, token);
-
-    // If request was from browser, redirect user directly to their app dashboard
-    if (isBrowserRequest) {
-      return res.redirect(`${frontendUrl}/verify-email?verified=true&token=${token}&email=${encodeURIComponent(verifiedUser.email)}`);
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: 'Email verified successfully! Your account has been activated.',
-      email: verifiedUser.email,
-      token,
-      user: sanitizeUser(verifiedUser),
-    });
-  } catch (err) {
-    if (err.code === 'P2025' || err.code === 'P2002' || err.code === 'P2034') {
-      const isApiRequest = Boolean(
-        req.xhr ||
-        req.query.format === 'json' ||
-        (req.headers.accept && req.headers.accept.includes('application/json') && !req.headers.accept.includes('text/html'))
-      );
-      const isBrowserRequest = req.method === 'GET' && !isApiRequest;
-      const frontendUrl = getEffectiveFrontendUrl(req);
-      if (isBrowserRequest) {
-        return res.redirect(`${frontendUrl}/verify-email?verified=false&error=invalid_or_used_token`);
-      }
-      return res.status(400).json({
-        success: false,
-        error: 'This verification code is invalid or has already been used. If your account is already verified, you can log in directly.',
-        code: 'TOKEN_INVALID',
-      });
-    }
-    next(err);
-  }
-}
-
-/**
- * 3. Resend Verification Email with Rate Limiting
- * POST /api/auth/resend-verification
- */
-export async function resendVerification(req, res, next) {
-  try {
-    const { email } = req.body;
-    const normalizedEmail = email.trim().toLowerCase();
-
-    // 1. Check if user is already verified in `User`
-    const user = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    });
-
-    if (user && user.isEmailVerified) {
-      return res.status(400).json({
-        success: false,
-        error: 'This email address is already verified! You can log in directly.',
-        code: 'ALREADY_VERIFIED',
-        email: user.email,
-      });
-    }
-
-    // 2. Check PendingRegistration (primary) and unverified legacy User (secondary)
-    const pending = await prisma.pendingRegistration.findUnique({
-      where: { email: normalizedEmail },
-    });
-
-    if (!pending && !user) {
-      return res.status(404).json({
-        success: false,
-        error: 'No account found with this email address. Please click "Create Account" to register.',
-        code: 'ACCOUNT_NOT_FOUND',
-        email: normalizedEmail,
-      });
-    }
-
-    // Rate limiting: enforce cooldown between resend requests
-    const lastSentAt = pending ? pending.lastSentAt : user.lastVerificationSentAt;
-    if (lastSentAt) {
-      const elapsedMs = Date.now() - new Date(lastSentAt).getTime();
-      const cooldownMs = config.verificationResendCooldownSec * 1000;
-      if (elapsedMs < cooldownMs) {
-        const retryAfterSec = Math.ceil((cooldownMs - elapsedMs) / 1000);
-        return res.status(429).json({
-          success: false,
-          error: `Please wait ${retryAfterSec} seconds before requesting another verification email.`,
-          code: 'RATE_LIMITED',
-          retryAfter: retryAfterSec,
-        });
-      }
-    }
-
-    // Generate fresh single-use 6-digit numeric OTP with 5-minute strict TTL
-    const { otp, tokenHash } = generateOtp();
-    const tokenExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
-    const recipientName = pending ? pending.name : user.name;
-
-    // Send OTP verification email FIRST
-    const emailResult = await sendOtpEmail(normalizedEmail, recipientName || 'Brother/Sister', otp);
-
-    // Update pending registration or user with the fresh single-use token in the database
-    if (pending) {
-      await prisma.pendingRegistration.update({
-        where: { id: pending.id },
-        data: {
-          tokenHash,
-          expiresAt: tokenExpiresAt,
-          lastSentAt: new Date(),
-        },
-      });
-    } else if (user) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          verificationTokenHash: tokenHash,
-          tokenExpiresAt,
-          lastVerificationSentAt: new Date(),
-        },
-      });
-    }
-
-    clearOtpFailedAttempts(normalizedEmail);
-    const directApiUrl = `${config.appUrl}/api/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&token=${otp}&otp=${otp}`;
-    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
-      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret);
-
-    if (!emailResult.success) {
-      return res.status(502).json({
-        success: false,
-        error: emailResult.error || 'Failed to deliver verification email. Please verify your email configuration.',
-        code: 'EMAIL_DELIVERY_FAILED',
-        email: normalizedEmail,
-        canResend: true,
-        expiresIn: 300,
-        ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: `A fresh 6-digit verification code has been dispatched to ${normalizedEmail}. Please check your inbox.`,
-      email: normalizedEmail,
-      expiresIn: 300,
-      canResend: false,
-      cooldown: 60,
-      ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
-    });
-  } catch (err) {
-    next(err);
-  }
-}
-
-/**
- * 4. Log in an existing user
+ * 2. Log in an existing user
  * POST /api/auth/login
  */
 export async function login(req, res, next) {
@@ -1455,7 +1143,7 @@ export async function verifyOtp(req, res, next) {
             data: {
               name: pendingTx.name,
               email: pendingTx.email,
-              password: pendingTx.password,
+              password: pendingTx.password && pendingTx.password.trim() ? pendingTx.password : null,
               role: isPermanentAdmin(pendingTx.email) ? 'ADMIN' : 'USER',
               prayerCalculationMethod: pendingTx.prayerCalculationMethod || 'Karachi',
               latitude: pendingTx.latitude,
@@ -1659,22 +1347,17 @@ export async function sendOtp(req, res, next) {
       where: { email: normalizedEmail },
     });
 
-    const targetRecord = pending || user;
-
-    if (!targetRecord) {
-      // Mitigate account enumeration timing attack
-      await bcrypt.compare('dummy_timing_protection', DUMMY_HASH);
-      return res.status(200).json({
-        success: true,
-        message: 'If an account exists with this email address, a 6-digit verification code has been dispatched.',
-        code: 'OTP_DISPATCHED',
-        email: normalizedEmail,
-        expiresIn: 300,
-      });
+    let targetName = 'Brother/Sister';
+    if (user) {
+      targetName = user.name || targetName;
+    } else if (pending) {
+      targetName = req.body?.name || pending.name || targetName;
+    } else {
+      targetName = req.body?.name || targetName;
     }
 
     // Check resend cooldown (60 seconds)
-    const lastSentAt = pending ? pending.lastSentAt : user.lastVerificationSentAt;
+    const lastSentAt = pending ? pending.lastSentAt : (user ? user.lastVerificationSentAt : null);
     if (lastSentAt) {
       const elapsedMs = Date.now() - new Date(lastSentAt).getTime();
       const cooldownMs = config.verificationResendCooldownSec * 1000;
@@ -1692,17 +1375,17 @@ export async function sendOtp(req, res, next) {
     // Generate fresh 6-digit OTP
     const { otp, tokenHash } = generateOtp();
     const tokenExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5-minute strict TTL
-    const recipientName = targetRecord.name || 'Brother/Sister';
 
     // Send email first
-    const emailResult = await sendOtpEmail(normalizedEmail, recipientName, otp);
+    const emailResult = await sendOtpEmail(normalizedEmail, targetName, otp);
 
-    // Update DB record
+    // Update DB record or create pending registration for new OTP users
     if (pending) {
       await prisma.pendingRegistration.update({
         where: { id: pending.id },
         data: {
           tokenHash,
+          name: req.body?.name || pending.name,
           expiresAt: tokenExpiresAt,
           lastSentAt: new Date(),
         },
@@ -1714,6 +1397,17 @@ export async function sendOtp(req, res, next) {
           verificationTokenHash: tokenHash,
           tokenExpiresAt,
           lastVerificationSentAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.pendingRegistration.create({
+        data: {
+          name: targetName,
+          email: normalizedEmail,
+          password: '',
+          tokenHash,
+          expiresAt: tokenExpiresAt,
+          lastSentAt: new Date(),
         },
       });
     }

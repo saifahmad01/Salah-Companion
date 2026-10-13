@@ -73,6 +73,14 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
   isCorrection = false,
   error = null,
 }) => {
+  const [mountedAt, setMountedAt] = React.useState(() => Date.now())
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setMountedAt(Date.now())
+    }
+  }, [isOpen])
+
   if (!isOpen || !prayer) return null
 
   const prayerKey = prayer.id.toLowerCase()
@@ -90,6 +98,8 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
       onKeyDown={handleKeyDown}
       onClick={(e) => {
         if (e.target === e.currentTarget && !isSubmitting) {
+          // Prevent ghost clicks on mobile touchscreens from dismissing dialog immediately
+          if (Date.now() - mountedAt < 250) return
           onClose()
         }
       }}
@@ -98,7 +108,7 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
       aria-labelledby="confirm-prayer-title"
     >
       <div
-        className="relative w-full max-w-[440px] max-h-[90vh] overflow-y-auto bg-[#FAF8F3] rounded-[24px] sm:rounded-[28px] shadow-2xl border border-stone-200/90 p-5 sm:p-6 animate-scale-up pointer-events-auto"
+        className="relative w-full max-w-[440px] max-h-[90vh] overflow-y-auto bg-[#FAF8F3] rounded-[24px] sm:rounded-[28px] shadow-2xl border border-stone-200/90 p-5 pb-7 sm:p-6 sm:pb-6 animate-scale-up pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

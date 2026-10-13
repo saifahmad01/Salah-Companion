@@ -116,13 +116,6 @@ export const updateProfileSchema = z.object({
 });
 
 /**
- * Resend Verification Email Schema
- */
-export const resendVerificationSchema = z.object({
-  email: emailValidation,
-});
-
-/**
  * Google OAuth Authentication Schema
  */
 export const googleAuthSchema = z.object({
@@ -172,6 +165,7 @@ export const verifyOtpSchema = z.object({
  */
 export const sendOtpSchema = z.object({
   email: emailValidation,
+  name: z.string().trim().min(1).max(100).optional(),
   type: z.enum(['VERIFICATION', 'LOGIN']).optional(),
 });
 
