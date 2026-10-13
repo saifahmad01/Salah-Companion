@@ -47,7 +47,7 @@ export const AppExitModal: React.FC<AppExitModalProps> = ({
           </p>
 
           <h3 id="exit-modal-title" className="font-serif font-bold text-xl sm:text-2xl text-[#122A20]">
-            Are you sure you want to exit?
+            Are you sure you want to leave Salah Companion?
           </h3>
 
           <p className="text-xs text-[#5D6F66] leading-relaxed max-w-xs">
@@ -72,7 +72,7 @@ export const AppExitModal: React.FC<AppExitModalProps> = ({
         <div className="flex items-start gap-2.5 p-3 bg-emerald-50/80 rounded-xl border border-emerald-200/80 text-xs text-emerald-900 text-left">
           <ShieldCheck className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
           <p className="leading-relaxed">
-            <strong>Session &amp; records safe:</strong> Exiting will <strong>not</strong> log you out. Your prayer records remain saved and you will stay signed in when you return.
+            <strong>Session &amp; records safe:</strong> Leaving will <strong>not</strong> log you out. Your prayer records remain saved and you will stay signed in when you return.
           </p>
         </div>
 
@@ -83,8 +83,8 @@ export const AppExitModal: React.FC<AppExitModalProps> = ({
             onClick={onStay}
             className="py-3 px-4 rounded-xl text-xs sm:text-sm font-bold bg-[#0C4535] hover:bg-[#0A3B2D] text-amber-300 border border-amber-400/40 shadow-md hover:shadow-lg transition active:scale-[0.98] cursor-pointer flex items-center justify-center gap-1.5"
           >
-            <span>Stay in App</span>
-            <span className="text-[10px] text-amber-200/80 font-normal">استمرار</span>
+            <span>Stay</span>
+            <span className="text-[10px] text-amber-200/80 font-normal">البقاء</span>
           </button>
 
           <button
@@ -92,8 +92,8 @@ export const AppExitModal: React.FC<AppExitModalProps> = ({
             onClick={onExit}
             className="py-3 px-4 rounded-xl text-xs sm:text-sm font-semibold bg-[#EAE2D0] hover:bg-[#DFD5BE] text-[#122A20] border border-[#D5C9B5] transition active:scale-[0.98] cursor-pointer flex items-center justify-center gap-1.5"
           >
-            <span>Exit App</span>
-            <span className="text-[10px] text-[#5D6F66] font-normal">خروج</span>
+            <span>Leave</span>
+            <span className="text-[10px] text-[#5D6F66] font-normal">المغادرة</span>
           </button>
         </div>
       </div>
