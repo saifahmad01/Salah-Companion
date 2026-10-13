@@ -1,6 +1,5 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config/env.js';
-import { sendSupabaseOtp, isSupabaseOtpConfigured } from './supabaseAuthService.js';
 
 let transporter = null;
 
@@ -75,11 +74,57 @@ let lastHttpApiError = null;
 
 /**
  * Sends email via HTTPS REST API (port 443) to avoid cloud host SMTP port blocking (e.g. Render Free tier)
+ *
+ * Priority order:
+ *  1. Brevo  — FREE 300 emails/day, any recipient, no custom domain needed
+ *  2. Resend — FREE but requires verified domain for non-owner recipients
+ *  3. SendGrid — FREE tier 100/day
+ *  4. Mailgun — FREE tier 1000/month
  */
 async function sendViaHttpApi({ to, subject, html, text }) {
   lastHttpApiError = null;
 
-  // 1. Resend HTTPS REST API (Port 443 - primary for production)
+  // ── 1. Brevo (Sendinblue) ─────────────────────────────────────────────────
+  // 300 free emails/day, sends to ANY email, no custom domain required.
+  // Sign up free at brevo.com → Settings → SMTP & API → Create API Key
+  // Set env: BREVO_API_KEY + BREVO_FROM (optional, defaults to EMAIL_USER)
+  const brevoApiKey = process.env.BREVO_API_KEY;
+  if (brevoApiKey) {
+    try {
+      const senderEmail = process.env.BREVO_FROM || config.emailUser || 'salahcompanion786@gmail.com';
+      const senderName  = process.env.BREVO_SENDER_NAME || 'Salah Companion';
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': brevoApiKey,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          sender: { name: senderName, email: senderEmail },
+          to: [{ email: to }],
+          subject,
+          htmlContent: html,
+          textContent: text,
+        }),
+      });
+      if (response.ok) {
+        const data = await response.json().catch(() => ({}));
+        console.log(`[EmailService] ✅ Delivered via Brevo to ${to}: ${data.messageId || 'ok'}`);
+        return { success: true, messageId: data.messageId || `brevo-${Date.now()}`, provider: 'brevo' };
+      }
+      const errBody = await response.text();
+      console.warn(`[EmailService] Brevo rejected (${response.status}): ${errBody}`);
+      lastHttpApiError = `Brevo (${response.status}): ${errBody}`;
+    } catch (err) {
+      console.warn(`[EmailService] Brevo failed:`, err.message);
+      lastHttpApiError = `Brevo: ${err.message}`;
+    }
+  }
+
+  // ── 2. Resend ─────────────────────────────────────────────────────────────
+  // Free plan only sends to verified domain emails. To send to any user,
+  // verify a domain at resend.com/domains and set RESEND_FROM accordingly.
   const resendApiKey = process.env.RESEND_API_KEY;
   if (resendApiKey) {
     try {
@@ -90,67 +135,23 @@ async function sendViaHttpApi({ to, subject, html, text }) {
           Authorization: `Bearer ${resendApiKey}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          from: fromEmail,
-          to: [to],
-          subject,
-          html,
-          text,
-        }),
+        body: JSON.stringify({ from: fromEmail, to: [to], subject, html, text }),
       });
       if (response.ok) {
         const data = await response.json();
-        console.log(`[EmailService] Delivered via Resend API to ${to}: ${data.id}`);
+        console.log(`[EmailService] ✅ Delivered via Resend to ${to}: ${data.id}`);
         return { success: true, messageId: data.id, provider: 'resend' };
       }
       const errBody = await response.text();
-      console.warn(`[EmailService] Resend API rejected (${response.status}): ${errBody}`);
-      if (errBody.includes('You can only send testing emails to your own email address')) {
-        lastHttpApiError = 'Resend test domain (onboarding@resend.dev) can only send verification emails to the registered account owner (mdsaifahmad78@gmail.com). To send to other addresses, verify a custom domain at resend.com/domains or configure BREVO_API_KEY.';
-      } else {
-        lastHttpApiError = `Resend API rejected (${response.status}): ${errBody}`;
-      }
+      console.warn(`[EmailService] Resend rejected (${response.status}): ${errBody}`);
+      lastHttpApiError = `Resend (${response.status}): ${errBody}`;
     } catch (err) {
-      console.warn(`[EmailService] Resend API attempt failed:`, err.message);
-      lastHttpApiError = `Resend connection failed: ${err.message}`;
+      console.warn(`[EmailService] Resend failed:`, err.message);
+      lastHttpApiError = `Resend: ${err.message}`;
     }
   }
 
-  // 2. Brevo (Sendinblue) HTTPS REST API (Port 443 - 300 free emails/day to any recipient)
-  const brevoApiKey = process.env.BREVO_API_KEY;
-  if (brevoApiKey) {
-    try {
-      const senderEmail = process.env.BREVO_FROM || config.emailUser || 'salahcompanion786@gmail.com';
-      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-        method: 'POST',
-        headers: {
-          'api-key': brevoApiKey,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify({
-          sender: { name: 'Salah Companion', email: senderEmail },
-          to: [{ email: to }],
-          subject,
-          htmlContent: html,
-          textContent: text,
-        }),
-      });
-      if (response.ok) {
-        const data = await response.json().catch(() => ({}));
-        console.log(`[EmailService] Delivered via Brevo API to ${to}: ${data.messageId || 'ok'}`);
-        return { success: true, messageId: data.messageId || `brevo-${Date.now()}`, provider: 'brevo' };
-      }
-      const errBody = await response.text();
-      console.warn(`[EmailService] Brevo API rejected (${response.status}): ${errBody}`);
-      lastHttpApiError = `Brevo API rejected (${response.status}): ${errBody}`;
-    } catch (err) {
-      console.warn(`[EmailService] Brevo API attempt failed:`, err.message);
-      lastHttpApiError = `Brevo connection failed: ${err.message}`;
-    }
-  }
-
-  // 3. SendGrid HTTPS REST API (Port 443)
+  // ── 3. SendGrid ───────────────────────────────────────────────────────────
   const sendgridApiKey = process.env.SENDGRID_API_KEY;
   if (sendgridApiKey) {
     try {
@@ -172,19 +173,19 @@ async function sendViaHttpApi({ to, subject, html, text }) {
         }),
       });
       if (response.ok || response.status === 202) {
-        console.log(`[EmailService] Delivered via SendGrid API to ${to}`);
+        console.log(`[EmailService] ✅ Delivered via SendGrid to ${to}`);
         return { success: true, messageId: `sendgrid-${Date.now()}`, provider: 'sendgrid' };
       }
       const errBody = await response.text();
-      console.warn(`[EmailService] SendGrid API rejected (${response.status}): ${errBody}`);
-      lastHttpApiError = `SendGrid API rejected (${response.status}): ${errBody}`;
+      console.warn(`[EmailService] SendGrid rejected (${response.status}): ${errBody}`);
+      lastHttpApiError = `SendGrid (${response.status}): ${errBody}`;
     } catch (err) {
-      console.warn(`[EmailService] SendGrid API attempt failed:`, err.message);
-      lastHttpApiError = `SendGrid connection failed: ${err.message}`;
+      console.warn(`[EmailService] SendGrid failed:`, err.message);
+      lastHttpApiError = `SendGrid: ${err.message}`;
     }
   }
 
-  // 4. Mailgun HTTPS REST API (Port 443)
+  // ── 4. Mailgun ────────────────────────────────────────────────────────────
   const mailgunApiKey = process.env.MAILGUN_API_KEY;
   const mailgunDomain = process.env.MAILGUN_DOMAIN;
   if (mailgunApiKey && mailgunDomain) {
@@ -207,7 +208,7 @@ async function sendViaHttpApi({ to, subject, html, text }) {
       });
       if (response.ok) {
         const data = await response.json();
-        console.log(`[EmailService] Delivered via Mailgun API to ${to}: ${data.id}`);
+        console.log(`[EmailService] ✅ Delivered via Mailgun to ${to}: ${data.id}`);
         return { success: true, messageId: data.id, provider: 'mailgun' };
       }
       const errBody = await response.text();
@@ -394,20 +395,7 @@ export async function sendOtpEmail(to, name, otp) {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 2. SECONDARY / FALLBACK: Supabase Auth OTP (uses Supabase HTTPS email service)
-  // ─────────────────────────────────────────────────────────────────────────
-  if (isSupabaseOtpConfigured()) {
-    console.log(`[EmailService] HTTP REST APIs unconfigured or failed. Attempting Supabase Auth OTP fallback for ${to}...`);
-    const sbResult = await sendSupabaseOtp(to);
-    if (sbResult.success) {
-      console.log(`[EmailService] OTP dispatched via Supabase Auth to ${to}`);
-      return { success: true, messageId: `supabase-${Date.now()}`, provider: 'supabase', otp };
-    }
-    console.warn(`[EmailService] Supabase OTP fallback failed (${sbResult.error})`);
-  }
-
-  // ─────────────────────────────────────────────────────────────────────────
-  // 3. TERTIARY / LOCAL FALLBACK: Nodemailer SMTP (Works in local development or unblocked hosting)
+  // 2. FALLBACK: Nodemailer SMTP (works in local dev / unblocked hosting)
   // ─────────────────────────────────────────────────────────────────────────
   try {
     const mailer = await getTransporter();
@@ -707,17 +695,10 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
 }
 
 /**
- * Verifies SMTP transport configuration connection
+ * Verifies email transport configuration
  */
 export async function verifyEmailTransport() {
-  if (isSupabaseOtpConfigured()) {
-    return {
-      connected: true,
-      provider: 'supabase_auth_otp',
-    };
-  }
-
-  if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY || process.env.MAILGUN_API_KEY) {
+  if (process.env.BREVO_API_KEY || process.env.RESEND_API_KEY || process.env.SENDGRID_API_KEY || process.env.MAILGUN_API_KEY) {
     let provider = 'http_api';
     if (process.env.BREVO_API_KEY) provider = 'brevo_http_api';
     else if (process.env.RESEND_API_KEY) provider = 'resend_http_api';
