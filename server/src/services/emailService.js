@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config/env.js';
+import { emailServiceInstance } from './email/EmailService.js';
 
 let transporter = null;
 
@@ -376,8 +377,26 @@ export async function sendOtpEmail(to, name, otp) {
   };
 
   // ─────────────────────────────────────────────────────────────────────────
-  // 1. PRIMARY IN PRODUCTION: Deliver via HTTPS REST API (Port 443 — Resend, Brevo, SendGrid, Mailgun)
-  //    Bypasses cloud host SMTP blocking (Render Free tier blocks 465/587) and delivers our custom Islamic template
+  // 1. PRIMARY: Deliver via Modular EmailService (HTTPS REST API: Brevo or Resend)
+  //    Controlled via EMAIL_PROVIDER (brevo | resend), immune to Render SMTP blocking
+  // ─────────────────────────────────────────────────────────────────────────
+  if (process.env.EMAIL_PROVIDER || process.env.BREVO_API_KEY || process.env.RESEND_API_KEY) {
+    try {
+      const modularResult = await emailServiceInstance.sendOtpEmail(to, name, otp);
+      if (modularResult?.success) {
+        return modularResult;
+      }
+    } catch (modularErr) {
+      console.warn(`[EmailService] Modular provider attempt error:`, modularErr.message);
+      if (process.env.EMAIL_PROVIDER) {
+        // Strict provider enforcement: never silently fall back if provider was explicitly demanded
+        return { success: false, error: modularErr.message, otp };
+      }
+    }
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 2. HTTP REST API Direct Fallback (Port 443 — Brevo, Resend, SendGrid, Mailgun)
   // ─────────────────────────────────────────────────────────────────────────
   try {
     const httpApiResult = await sendViaHttpApi({

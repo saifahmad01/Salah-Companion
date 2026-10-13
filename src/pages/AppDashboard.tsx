@@ -375,6 +375,10 @@ export const AppDashboard = () => {
 
     const isCorrection = Boolean(matched.completed || (matched.prayerStatus && matched.prayerStatus !== status))
 
+    // Dismiss any underlying prayer detail or status modal to prevent stacked z-index traps on mobile
+    setSelectedPrayerDetail(null)
+    setIsPrayerStatusModalOpen(false)
+
     // Open authentic confirmation modal
     setPendingConfirmation({
       prayer: matched,
