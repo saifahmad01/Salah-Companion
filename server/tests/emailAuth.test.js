@@ -21,7 +21,10 @@ async function runTests() {
   console.log('1. Testing User Registration (POST /api/auth/register)...');
   const regRes = await fetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-test-secret': config.jwtSecret,
+    },
     body: JSON.stringify({
       name: testName,
       email: testEmail,
@@ -230,7 +233,10 @@ async function runTests() {
   const resendTestEmail = `resend_${timestamp}@example.com`;
   const reg2Res = await fetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-test-secret': config.jwtSecret,
+    },
     body: JSON.stringify({
       name: 'Resend Tester',
       email: resendTestEmail,
@@ -300,7 +306,10 @@ async function runTests() {
   const autoEmail = `autologin_${timestamp}@example.com`;
   const autoRegRes = await fetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-test-secret': config.jwtSecret,
+    },
     body: JSON.stringify({
       name: 'Auto Login User',
       email: autoEmail,

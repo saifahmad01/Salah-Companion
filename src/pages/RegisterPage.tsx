@@ -20,7 +20,6 @@ export const RegisterPage: React.FC = () => {
   // Post-registration verification state
   const [verificationPending, setVerificationPending] = useState(false)
   const [registeredEmail, setRegisteredEmail] = useState('')
-  const [verificationToken, setVerificationToken] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,9 +50,6 @@ export const RegisterPage: React.FC = () => {
       if (res?.requiresEmailVerification || res?.requiresOtp || res?.success) {
         setVerificationPending(true)
         setRegisteredEmail(res.email || email.trim().toLowerCase())
-        if (res.token) {
-          setVerificationToken(res.token)
-        }
       } else if (res?.user) {
         navigate('/app', { replace: true })
       } else {
@@ -65,9 +61,6 @@ export const RegisterPage: React.FC = () => {
       if (err.code === 'EMAIL_DELIVERY_FAILED') {
         setVerificationPending(true)
         setRegisteredEmail(err.email || email.trim().toLowerCase())
-        if (err.token) {
-          setVerificationToken(err.token)
-        }
       } else {
         setError(err.message || 'Registration failed. Please check your network connection and try again.')
       }
@@ -141,7 +134,6 @@ export const RegisterPage: React.FC = () => {
           {verificationPending ? (
             <OtpVerificationCard
               email={registeredEmail}
-              devOtp={verificationToken || undefined}
               onSuccess={async () => {
                 await refreshUser()
                 navigate('/app', { replace: true })

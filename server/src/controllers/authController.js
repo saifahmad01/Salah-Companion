@@ -9,6 +9,10 @@ import {
   verifyEmailTransport,
 } from '../services/emailService.js';
 import {
+  verifySupabaseOtp,
+  isSupabaseOtpConfigured,
+} from '../services/supabaseAuthService.js';
+import {
   verifyGoogleToken,
   getGoogleAuthUrl,
   getGoogleProfileFromCode,
@@ -294,25 +298,23 @@ export async function register(req, res, next) {
     // Clear any previous failed attempts
     clearOtpFailedAttempts(normalizedEmail);
 
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret);
     const directApiUrl = `${config.appUrl}/api/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&token=${otp}&otp=${otp}`;
-    const isDev = process.env.NODE_ENV !== 'production';
 
     // 7. If email delivery failed, return 502 with honest diagnostic rather than swallowing the failure
     if (!emailResult.success) {
       console.warn(`[AuthController] Email delivery failure for ${normalizedEmail}: ${emailResult.error}`);
       return res.status(502).json({
         success: false,
-        error: `Account created, but verification code could not be delivered (${emailResult.error || 'SMTP delivery rejected'}). Please verify email configuration or click Resend Code.`,
+        error: `Account created, but verification code could not be delivered (${emailResult.error || 'Email service connection error'}). Please verify email configuration or click Resend Code.`,
         code: 'EMAIL_DELIVERY_FAILED',
         requiresEmailVerification: true,
         requiresOtp: true,
         email: normalizedEmail,
         canResend: true,
         expiresIn: 300,
-        token: otp,
-        previewUrl: directApiUrl,
-        verificationUrl: directApiUrl,
-        ...(isDev ? { devOtp: otp } : {}),
+        ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
       });
     }
 
@@ -323,10 +325,7 @@ export async function register(req, res, next) {
       requiresOtp: true,
       email: normalizedEmail,
       expiresIn: 300,
-      token: otp,
-      previewUrl: directApiUrl,
-      verificationUrl: directApiUrl,
-      ...(isDev ? { devOtp: otp } : {}),
+      ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
     });
   } catch (err) {
     next(err);
@@ -371,15 +370,41 @@ export async function verifyEmail(req, res, next) {
     // Atomically execute verification check and user activation inside a single transaction
     const result = await prisma.$transaction(async (tx) => {
       // 1. Look up in PendingRegistration inside transaction
-      const pendingTx = await tx.pendingRegistration.findUnique({
+      let pendingTx = await tx.pendingRegistration.findUnique({
         where: { tokenHash },
       });
 
+      if (!pendingTx && (req.query.email || req.body.email)) {
+        const queryEmail = (req.query.email || req.body.email).trim().toLowerCase();
+        const candidatePending = await tx.pendingRegistration.findUnique({
+          where: { email: queryEmail },
+        });
+        if (candidatePending && isSupabaseOtpConfigured()) {
+          const sbRes = await verifySupabaseOtp(queryEmail, rawToken);
+          if (sbRes.success) {
+            pendingTx = candidatePending;
+          }
+        }
+      }
+
       if (!pendingTx) {
         // Check legacy User record
-        const legacyUser = await tx.user.findFirst({
+        let legacyUser = await tx.user.findFirst({
           where: { verificationTokenHash: tokenHash },
         });
+
+        if (!legacyUser && (req.query.email || req.body.email)) {
+          const queryEmail = (req.query.email || req.body.email).trim().toLowerCase();
+          const candidateUser = await tx.user.findUnique({
+            where: { email: queryEmail },
+          });
+          if (candidateUser && !candidateUser.isEmailVerified && isSupabaseOtpConfigured()) {
+            const sbRes = await verifySupabaseOtp(queryEmail, rawToken);
+            if (sbRes.success) {
+              legacyUser = candidateUser;
+            }
+          }
+        }
 
         if (legacyUser) {
           if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
@@ -1422,8 +1447,16 @@ export async function verifyOtp(req, res, next) {
           return { code: 'OTP_EXPIRED', email: normalizedEmail };
         }
 
-        // Timing-safe hash check
-        if (!safeCompareHash(pendingTx.tokenHash, inputHash)) {
+        // Timing-safe hash check with Supabase Auth OTP verification fallback
+        let isMatch = safeCompareHash(pendingTx.tokenHash, inputHash);
+        if (!isMatch && isSupabaseOtpConfigured()) {
+          const sbResult = await verifySupabaseOtp(normalizedEmail, cleanOtp);
+          if (sbResult.success) {
+            isMatch = true;
+          }
+        }
+
+        if (!isMatch) {
           return { code: 'OTP_MISMATCH', recordId: pendingTx.id, type: 'pending' };
         }
 
@@ -1488,8 +1521,16 @@ export async function verifyOtp(req, res, next) {
           return { code: 'OTP_EXPIRED', email: normalizedEmail };
         }
 
-        // Timing-safe hash check
-        if (!safeCompareHash(userTx.verificationTokenHash, inputHash)) {
+        // Timing-safe hash check with Supabase Auth OTP verification fallback
+        let isMatch = safeCompareHash(userTx.verificationTokenHash, inputHash);
+        if (!isMatch && isSupabaseOtpConfigured()) {
+          const sbResult = await verifySupabaseOtp(normalizedEmail, cleanOtp);
+          if (sbResult.success) {
+            isMatch = true;
+          }
+        }
+
+        if (!isMatch) {
           return { code: 'OTP_MISMATCH', recordId: userTx.id, type: 'user' };
         }
 
@@ -1718,7 +1759,8 @@ export async function sendOtp(req, res, next) {
     // Clear failed attempts counter for fresh OTP
     clearOtpFailedAttempts(normalizedEmail);
 
-    const isDev = process.env.NODE_ENV !== 'production';
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret);
 
     if (!emailResult.success) {
       console.warn(`[AuthController] OTP dispatch failed for ${normalizedEmail}: ${emailResult.error}`);
@@ -1727,7 +1769,7 @@ export async function sendOtp(req, res, next) {
         error: emailResult.error || 'Failed to dispatch verification email. Please check email service configuration.',
         code: 'EMAIL_DELIVERY_FAILED',
         email: normalizedEmail,
-        ...(isDev ? { devOtp: otp } : {}),
+        ...(isAuthorizedTest ? { devOtp: otp } : {}),
       });
     }
 
@@ -1737,7 +1779,7 @@ export async function sendOtp(req, res, next) {
       code: 'OTP_SENT',
       email: normalizedEmail,
       expiresIn: 300,
-      ...(isDev ? { devOtp: otp } : {}),
+      ...(isAuthorizedTest ? { devOtp: otp } : {}),
     });
   } catch (err) {
     next(err);

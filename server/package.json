@@ -15,12 +15,13 @@
     "db:studio": "prisma studio",
     "db:clean": "node scripts/dbManager.js clear-test",
     "db:manage": "node scripts/dbManager.js",
-    "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/emailAuth.test.js && node tests/otpAuth.test.js && node tests/exitConfirmation.test.js && node tests/passwordReset.test.js && node tests/notificationService.test.js && node tests/weeklyPrayer.test.js && node tests/timingEnforcement.test.js && node tests/qiblaAndJumuah.test.js",
+    "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/emailAuth.test.js && node tests/otpAuth.test.js && node tests/supabaseOtp.test.js && node tests/exitConfirmation.test.js && node tests/passwordReset.test.js && node tests/notificationService.test.js && node tests/weeklyPrayer.test.js && node tests/timingEnforcement.test.js && node tests/qiblaAndJumuah.test.js",
     "test:timing": "node tests/timingEnforcement.test.js",
     "test:qibla": "node tests/qiblaAndJumuah.test.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "@supabase/supabase-js": "^2.117.3",
     "adhan": "^4.4.6",
     "axios": "^1.20.0",
     "bcryptjs": "^3.0.3",
@@ -36,6 +37,5 @@
     "prisma": "^6.19.3",
     "web-push": "^3.6.7",
     "zod": "^4.6.5"
-  },
-  "devDependencies": {}
+  }
 }

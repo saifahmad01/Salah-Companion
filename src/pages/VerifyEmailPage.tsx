@@ -10,7 +10,6 @@ export const VerifyEmailPage: React.FC = () => {
   const navigate = useNavigate()
   const { refreshUser } = useAuth()
 
-  const rawToken = searchParams.get('token')
   const verifiedParam = searchParams.get('verified')
   const emailParam = searchParams.get('email')
 
@@ -91,7 +90,6 @@ export const VerifyEmailPage: React.FC = () => {
           ) : activeEmail ? (
             <OtpVerificationCard
               email={activeEmail}
-              devOtp={rawToken && /^\d{6}$/.test(rawToken) ? rawToken : undefined}
               onSuccess={async () => {
                 await refreshUser()
                 navigate('/app', { replace: true })

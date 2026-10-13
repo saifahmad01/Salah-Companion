@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { config } from '../config/env.js';
+import { sendSupabaseOtp, isSupabaseOtpConfigured } from './supabaseAuthService.js';
 
 let transporter = null;
 
@@ -387,6 +388,31 @@ function getOtpEmailHtml(name, otp) {
  * @param {string} otp 6-digit numeric OTP code
  */
 export async function sendOtpEmail(to, name, otp) {
+  // ─────────────────────────────────────────────────────────────────────────
+  // 0. Supabase Auth OTP (PRIMARY — uses Supabase's HTTPS email infrastructure,
+  //    works on Render because it uses port 443, not blocked SMTP ports 465/587)
+  //
+  //    When Supabase is configured, we delegate OTP delivery entirely to Supabase.
+  //    Supabase generates & emails a 6-digit code; the user enters it on the site.
+  //    We then verify the token with supabase.auth.verifyOtp() in the controller.
+  //
+  //    NOTE: In this mode the `otp` param we generated ourselves is NOT what
+  //    Supabase sends — Supabase generates its own code. The caller (register /
+  //    resendVerification) must also call verifySupabaseOtp() instead of checking
+  //    the SHA-256 hash in PendingRegistration when Supabase mode is active.
+  // ─────────────────────────────────────────────────────────────────────────
+  if (isSupabaseOtpConfigured()) {
+    const result = await sendSupabaseOtp(to);
+    if (result.success) {
+      console.log(`[EmailService] OTP dispatched via Supabase Auth to ${to}`);
+      return { success: true, messageId: `supabase-${Date.now()}`, provider: 'supabase', otp };
+    }
+    console.warn(`[EmailService] Supabase OTP failed (${result.error}), falling back to REST APIs`);
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // 1–4. Fallback: Existing HTTPS REST API providers (Resend, Brevo, SendGrid, Mailgun)
+  // ─────────────────────────────────────────────────────────────────────────
   const htmlContent = getOtpEmailHtml(name, otp);
   const textContent = `Assalamu Alaikum ${name || 'Brother/Sister'},\n\nYour Salah Companion verification code is:\n\n${otp}\n\nThis code is valid for 5 minutes only. Do not share this code with anyone.\n\nSalah Companion Team`;
 
@@ -403,7 +429,6 @@ export async function sendOtpEmail(to, name, otp) {
   };
 
   try {
-    // 1. First attempt HTTPS REST API if configured (bypasses Render SMTP port blocking)
     const httpApiResult = await sendViaHttpApi({
       to,
       subject: `${otp} is your Salah Companion verification code`,
@@ -411,28 +436,18 @@ export async function sendOtpEmail(to, name, otp) {
       text: textContent,
     });
     if (httpApiResult?.success) {
-      return {
-        success: true,
-        messageId: httpApiResult.messageId,
-        otp,
-      };
+      return { success: true, messageId: httpApiResult.messageId, otp };
     }
 
     const mailer = await getTransporter();
     const info = await mailer.sendMail(mailOptions);
     console.log(`[EmailService] OTP email successfully sent to ${to}: ${info.messageId}`);
-
-    return {
-      success: true,
-      messageId: info.messageId,
-      otp,
-    };
+    return { success: true, messageId: info.messageId, otp };
   } catch (err) {
     console.error(`[EmailService] Primary SMTP delivery failed for OTP to ${to}:`, err.message);
 
     const isRender = Boolean(process.env.RENDER || process.env.RENDER_SERVICE_ID || process.env.IS_RENDER);
 
-    // Fallback port retry if Gmail and not on Render
     if (!isRender && (config.emailHost?.includes('gmail.com') || config.emailService === 'gmail' || !config.emailHost)) {
       try {
         const primaryPort = Number(config.emailPort) || 465;
@@ -446,38 +461,29 @@ export async function sendOtpEmail(to, name, otp) {
           connectionTimeout: 5000,
           greetingTimeout: 5000,
           socketTimeout: 8000,
-          auth: {
-            user: config.emailUser,
-            pass: config.emailPass,
-          },
-          tls: {
-            rejectUnauthorized: false,
-          },
+          auth: { user: config.emailUser, pass: config.emailPass },
+          tls: { rejectUnauthorized: false },
         });
         const info = await fallbackTransporter.sendMail(mailOptions);
-        console.log(`[EmailService] OTP successfully sent via fallback port ${fallbackPort} to ${to}: ${info.messageId}`);
-        return {
-          success: true,
-          messageId: info.messageId,
-          otp,
-        };
+        console.log(`[EmailService] OTP sent via fallback port ${fallbackPort} to ${to}: ${info.messageId}`);
+        return { success: true, messageId: info.messageId, otp };
       } catch (fallbackErr) {
         console.error(`[EmailService] Fallback OTP delivery failed:`, fallbackErr.message);
       }
     }
 
-    let friendlyError = err.message;
-    if (isRender && (err.message?.includes('timeout') || err.message?.includes('ETIMEDOUT') || err.message?.includes('ESOCKETTIMEDOUT'))) {
-      friendlyError = 'Mail server connection timeout. Cloud host (Render) restricts outbound SMTP ports (465/587). Please configure BREVO_API_KEY or RESEND_API_KEY in Render Environment Variables.';
-    } else if (err.message?.includes('535') || err.message?.includes('BadCredentials')) {
-      friendlyError = 'Gmail SMTP authentication rejected. Gmail requires a 16-character App Password (not your personal account password). Please generate an App Password at Google Account > Security > 2-Step Verification > App passwords.';
-    }
+    const isRenderTimeout = isRender && (
+      err.message?.includes('timeout') ||
+      err.message?.includes('ETIMEDOUT') ||
+      err.message?.includes('ESOCKETTIMEDOUT')
+    );
+    const friendlyError = isRenderTimeout
+      ? 'Mail server connection timeout. Cloud host (Render) restricts outbound SMTP ports (465/587). SUPABASE_SERVICE_ROLE_KEY is configured but email sending failed — check Supabase Auth Email settings in your Supabase dashboard.'
+      : err.message?.includes('535') || err.message?.includes('BadCredentials')
+        ? 'Gmail SMTP authentication rejected. Please generate a 16-character App Password at Google Account > Security > App passwords.'
+        : err.message;
 
-    return {
-      success: false,
-      error: friendlyError,
-      otp,
-    };
+    return { success: false, error: friendlyError, otp };
   }
 }
 
@@ -794,6 +800,13 @@ export async function sendVerificationEmail(to, name, token, clientOrigin = null
  * Verifies SMTP transport configuration connection
  */
 export async function verifyEmailTransport() {
+  if (isSupabaseOtpConfigured()) {
+    return {
+      connected: true,
+      provider: 'supabase_auth_otp',
+    };
+  }
+
   if (process.env.RESEND_API_KEY || process.env.BREVO_API_KEY || process.env.SENDGRID_API_KEY || process.env.MAILGUN_API_KEY) {
     let provider = 'http_api';
     if (process.env.BREVO_API_KEY) provider = 'brevo_http_api';

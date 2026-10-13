@@ -21,7 +21,10 @@ async function runOtpTests() {
   console.log('1. Testing User Registration (POST /api/auth/register)...');
   const regRes = await fetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      'x-test-secret': config.jwtSecret,
+    },
     body: JSON.stringify({
       name: testName,
       email: testEmail,
@@ -35,11 +38,27 @@ async function runOtpTests() {
   assert.equal(regData.success, true, 'Registration must succeed');
   assert.equal(regData.requiresOtp, true, 'Response must indicate requiresOtp: true');
   assert.equal(regData.requiresEmailVerification, true, 'Must indicate email verification required');
-  assert(regData.token, 'Must return OTP in response in dev mode');
+  assert(regData.token, 'Must return OTP in response in authorized test mode');
   assert.equal(typeof regData.token, 'string', 'OTP token must be string');
   assert.match(regData.token, /^\d{6}$/, 'OTP token must be exactly 6 digits');
   const validOtp = regData.token;
   console.log(`✓ Test 1 Passed: User registered with 6-digit OTP: ${validOtp}`);
+
+  // Verify standard public request (no test secret) NEVER leaks OTP to client
+  const publicRegRes = await fetch(`${BASE_URL}/api/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'Public User',
+      email: `public_${timestamp}@example.com`,
+      password: testPassword,
+    }),
+  });
+  const publicData = await publicRegRes.json();
+  assert.equal(publicData.token, undefined, 'Public user response must NEVER leak OTP token to frontend');
+  assert.equal(publicData.devOtp, undefined, 'Public user response must NEVER leak devOtp');
+  assert.equal(publicData.previewUrl, undefined, 'Public user response must NEVER leak previewUrl');
+  console.log('✓ Public Privacy Verified: OTP is never leaked to the client/frontend in normal responses.');
 
   // --------------------------------------------------------------------------
   // Test 2: Database Storage Security & Pending State

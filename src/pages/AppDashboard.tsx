@@ -53,6 +53,7 @@ import { useSalahNotifications } from '../hooks/useSalahNotifications'
 import { QiblaCompassModal } from '../components/QiblaCompassModal'
 import { PrayerConfirmationModal } from '../components/PrayerConfirmationModal'
 import { AppExitModal } from '../components/AppExitModal'
+import { useExitConfirmation } from '../hooks/useExitConfirmation'
 
 export const AppDashboard = () => {
   const navigate = useNavigate()
@@ -101,9 +102,6 @@ export const AppDashboard = () => {
       return '12-hour (AM/PM)'
     }
   })
-
-  // Islamic App-Exit confirmation modal state
-  const [showExitModal, setShowExitModal] = useState(false)
 
   // Real-world Salah prayer notification system
   const {
@@ -692,114 +690,52 @@ export const AppDashboard = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [isQiblaOpen, setIsQiblaOpen] = useState(false)
 
-  // Mobile & desktop back navigation:
-  // If an in-app modal is open, pressing back closes that modal.
-  // When no modal is open, browser & phone back button naturally navigates back without being trapped!
-  useEffect(() => {
-    const isAnyModalOpen =
-      showExitModal ||
-      isQiblaOpen ||
-      isLocationOpen ||
-      isAuthModalOpen ||
-      isCalendarOpen ||
-      isHadithOpen ||
-      isLessonOpen ||
-      isNotificationsOpen ||
-      Boolean(pendingConfirmation)
+  // Inner modals state evaluation
+  const isAnyInnerModalOpen =
+    isQiblaOpen ||
+    isLocationOpen ||
+    isAuthModalOpen ||
+    isCalendarOpen ||
+    isHadithOpen ||
+    isLessonOpen ||
+    isNotificationsOpen ||
+    Boolean(pendingConfirmation)
 
-    if (isAnyModalOpen) {
-      window.history.pushState({ modalOpen: true }, '', window.location.href)
-    }
-
-    const handlePopState = () => {
-      if (showExitModal) {
-        setShowExitModal(false)
-      } else if (isQiblaOpen) {
-        setIsQiblaOpen(false)
-      } else if (isLocationOpen) {
-        setIsLocationOpen(false)
-      } else if (isAuthModalOpen) {
-        setIsAuthModalOpen(false)
-      } else if (isCalendarOpen) {
-        setIsCalendarOpen(false)
-      } else if (isHadithOpen) {
-        setIsHadithOpen(false)
-      } else if (isLessonOpen) {
-        setIsLessonOpen(false)
-      } else if (isNotificationsOpen) {
-        setIsNotificationsOpen(false)
-      } else if (pendingConfirmation) {
-        setPendingConfirmation(null)
-      }
-    }
-
-    window.addEventListener('popstate', handlePopState)
-    return () => {
-      window.removeEventListener('popstate', handlePopState)
-    }
-  }, [
-    showExitModal,
-    isQiblaOpen,
-    isLocationOpen,
-    isAuthModalOpen,
-    isCalendarOpen,
-    isHadithOpen,
-    isLessonOpen,
-    isNotificationsOpen,
-    pendingConfirmation,
-  ])
-
-  // Explicit in-app Back button handler (desktop & phone)
-  const handleGoBack = () => {
-    if (showExitModal) {
-      setShowExitModal(false)
-      return
-    }
-    if (isQiblaOpen) {
-      setIsQiblaOpen(false)
-      return
-    }
-    if (isLocationOpen) {
-      setIsLocationOpen(false)
-      return
-    }
-    if (isAuthModalOpen) {
-      setIsAuthModalOpen(false)
-      return
-    }
-    if (isCalendarOpen) {
-      setIsCalendarOpen(false)
-      return
-    }
-    if (isHadithOpen) {
-      setIsHadithOpen(false)
-      return
-    }
-    if (isLessonOpen) {
-      setIsLessonOpen(false)
-      return
-    }
-    if (isNotificationsOpen) {
-      setIsNotificationsOpen(false)
-      return
-    }
-    if (pendingConfirmation) {
-      setPendingConfirmation(null)
-      return
-    }
-
-    // Smoothly go back in history, or to landing page if opened directly
-    if (window.history.length > 1) {
-      navigate(-1)
-    } else {
-      navigate('/')
-    }
+  const handleCloseAnyInnerModal = () => {
+    if (isQiblaOpen) setIsQiblaOpen(false)
+    else if (isLocationOpen) setIsLocationOpen(false)
+    else if (isAuthModalOpen) setIsAuthModalOpen(false)
+    else if (isCalendarOpen) setIsCalendarOpen(false)
+    else if (isHadithOpen) setIsHadithOpen(false)
+    else if (isLessonOpen) setIsLessonOpen(false)
+    else if (isNotificationsOpen) setIsNotificationsOpen(false)
+    else if (pendingConfirmation) setPendingConfirmation(null)
   }
 
-  const handleConfirmExit = () => {
-    setShowExitModal(false)
-    // Never logout or wipe session! Preserves login state and all prayer records.
-    navigate('/', { replace: true })
+  // Production-ready exit confirmation hook (desktop & mobile)
+  const {
+    showExitModal,
+    handleStay,
+    handleLeave,
+    triggerExitPrompt,
+  } = useExitConfirmation({
+    enabled: true,
+    hasInnerModalOpen: isAnyInnerModalOpen,
+    onCloseInnerModal: handleCloseAnyInnerModal,
+  })
+
+  // Explicit in-app Back button handler (desktop & mobile)
+  const handleGoBack = () => {
+    if (showExitModal) {
+      handleStay()
+      return
+    }
+    if (isAnyInnerModalOpen) {
+      handleCloseAnyInnerModal()
+      return
+    }
+    // No inner modal open: trigger exit confirmation dialog
+    triggerExitPrompt()
   }
 
   const handleToggleDeed = (id: string) => {
@@ -987,12 +923,12 @@ export const AppDashboard = () => {
           )}
           <button
             type="button"
-            onClick={() => setShowExitModal(true)}
+            onClick={triggerExitPrompt}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#FAF7EE] hover:bg-[#F0E9D8] text-[#0C4535] text-xs font-semibold shadow-2xs border border-[#D5C9B5] transition cursor-pointer"
-            title="Exit App (Preserves your login session and prayer logs)"
+            title="Leave Salah Companion (Preserves your login session and prayer logs)"
           >
             <HeartHandshake className="w-3.5 h-3.5 text-[#B58728]" />
-            <span className="hidden sm:inline">Exit App</span>
+            <span className="hidden sm:inline">Leave</span>
             <span className="hidden md:inline text-[10px] text-[#0C4535]/70 font-medium">خروج</span>
           </button>
           <button
@@ -1393,8 +1329,8 @@ export const AppDashboard = () => {
         />
         <AppExitModal
           isOpen={showExitModal}
-          onStay={() => setShowExitModal(false)}
-          onExit={handleConfirmExit}
+          onStay={handleStay}
+          onExit={handleLeave}
         />
       </main>
     </div>
