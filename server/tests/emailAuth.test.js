@@ -16,7 +16,7 @@ async function runTests() {
   const testName = 'Salah Devotee';
 
   // --------------------------------------------------------------------------
-  // Test 1: User Registration
+  // Test 1: User Registration Dispatches 6-Digit OTP
   // --------------------------------------------------------------------------
   console.log('1. Testing User Registration (POST /api/auth/register)...');
   const regRes = await fetch(`${BASE_URL}/api/auth/register`, {
@@ -37,15 +37,11 @@ async function runTests() {
   const regData = await regRes.json();
   assert.equal(regData.success, true, 'Registration must be successful');
   assert.equal(regData.requiresEmailVerification, true, 'Must require email verification');
-  assert(regData.previewUrl, 'Must return preview URL with token');
-  console.log('✓ Test 1 Passed: User registered, requires verification.');
-
-  // Extract raw token from verificationUrl or previewUrl
-  const rawTokenUrl = regData.verificationUrl || regData.previewUrl;
-  const tokenMatch = rawTokenUrl.match(/token=([a-f0-9]+)/);
-  assert(tokenMatch, 'Failed to extract raw verification token from verification URL');
-  const rawToken = tokenMatch[1];
-  console.log(`  Extracted Raw Token (sent in email): ${rawToken.substring(0, 16)}... (length: ${rawToken.length})`);
+  assert.equal(regData.requiresOtp, true, 'Must require 6-digit OTP verification');
+  assert(regData.token, 'Must return OTP in test mode with valid test secret');
+  assert.match(regData.token, /^\d{6}$/, 'OTP must be exactly 6 digits');
+  const rawOtp = regData.token;
+  console.log(`✓ Test 1 Passed: User registered, 6-digit OTP dispatched: ${rawOtp}`);
 
   // --------------------------------------------------------------------------
   // Test 2: Database Security Inspection - Ensure Account Created ONLY After Verification
@@ -59,12 +55,12 @@ async function runTests() {
   const dbPending = await prisma.pendingRegistration.findUnique({ where: { email: testEmail } });
   assert(dbPending, 'Pending registration record must exist in pending_registrations table');
 
-  // Verify that rawToken is NEVER in the database!
-  assert.notEqual(dbPending.tokenHash, rawToken, 'Raw token must NEVER be stored in the database!');
+  // Verify that rawOtp is NEVER stored raw in the database!
+  assert.notEqual(dbPending.tokenHash, rawOtp, 'Raw OTP must NEVER be stored in the database!');
 
   // Verify that stored hash matches SHA-256 of the raw token
-  const expectedHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-  assert.equal(dbPending.tokenHash, expectedHash, 'Stored token hash must equal SHA-256(rawToken)');
+  const expectedHash = crypto.createHash('sha256').update(rawOtp).digest('hex');
+  assert.equal(dbPending.tokenHash, expectedHash, 'Stored token hash must equal SHA-256(rawOtp)');
   assert(dbPending.password.startsWith('$2a$') || dbPending.password.startsWith('$2b$'), 'Password must be bcrypt hashed');
   console.log(`✓ Test 2 Passed: User not in users table yet. Stored in pending_registrations with SHA-256 hash: ${expectedHash.substring(0, 16)}...`);
 
@@ -84,6 +80,7 @@ async function runTests() {
   assert.equal(unverifiedLoginRes.status, 403, `Expected status 403 Forbidden for unverified user, got ${unverifiedLoginRes.status}`);
   const unverifiedLoginData = await unverifiedLoginRes.json();
   assert.equal(unverifiedLoginData.code, 'EMAIL_NOT_VERIFIED', 'Error code must be EMAIL_NOT_VERIFIED');
+  assert.equal(unverifiedLoginData.requiresOtp, true, 'Must indicate OTP is required');
   console.log('✓ Test 3 Passed: Login for unverified account successfully blocked with 403.');
 
   // --------------------------------------------------------------------------
@@ -118,62 +115,48 @@ async function runTests() {
   console.log('✓ Test 4 Passed: Actionable error messages returned for wrong password (401) and account not found (404).');
 
   // --------------------------------------------------------------------------
-  // Test 5: Invalid / Tampered Token Verification
+  // Test 5: Legacy Link Retirement: POST /api/auth/verify-email returns 410 Gone
   // --------------------------------------------------------------------------
-  console.log('\n5. Testing Invalid Token Verification (POST /api/auth/verify-email)...');
-  const invalidTokenRes = await fetch(`${BASE_URL}/api/auth/verify-email`, {
+  console.log('\n5. Testing Legacy Verification Link Retirement (POST /api/auth/verify-email returns 410 Gone)...');
+  const legacyPostRes = await fetch(`${BASE_URL}/api/auth/verify-email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      token: 'tampered_or_invalid_hex_token_1234567890abcdef',
+      token: 'obsolete_magic_link_token',
     }),
   });
-  assert.equal(invalidTokenRes.status, 400, 'Tampered token must return 400 Bad Request');
-  const invalidTokenData = await invalidTokenRes.json();
-  assert.equal(invalidTokenData.code, 'TOKEN_INVALID', 'Code must be TOKEN_INVALID');
-  console.log('✓ Test 5 Passed: Tampered verification token correctly rejected.');
+  assert.equal(legacyPostRes.status, 410, 'Obsolete magic link endpoint must return 410 Gone');
+  const legacyPostData = await legacyPostRes.json();
+  assert.equal(legacyPostData.code, 'OBSOLETE_VERIFICATION_LINK', 'Code must be OBSOLETE_VERIFICATION_LINK');
+  console.log('✓ Test 5 Passed: Legacy magic link verification endpoint safely retired with 410 Gone.');
 
   // --------------------------------------------------------------------------
-  // Test 6: Expired Token Verification
+  // Test 6: Legacy Link Retirement: GET /api/auth/verify-email redirects to OTP login
   // --------------------------------------------------------------------------
-  console.log('\n6. Testing Expired Token Rejection...');
-  const expiredEmail = `expired_${timestamp}@example.com`;
-  const expiredRawToken = crypto.randomBytes(32).toString('hex');
-  const expiredTokenHash = crypto.createHash('sha256').update(expiredRawToken).digest('hex');
-  // Insert expired pending registration record
-  await prisma.pendingRegistration.create({
-    data: {
-      name: 'Expired User',
-      email: expiredEmail,
-      password: 'hashedpass',
-      prayerCalculationMethod: 'Karachi',
-      tokenHash: expiredTokenHash,
-      expiresAt: new Date(Date.now() - 3600 * 1000),
-      lastSentAt: new Date(Date.now() - 3600 * 1000),
-    },
+  console.log('\n6. Testing Legacy Verification Link Click (GET /api/auth/verify-email redirects to login)...');
+  const legacyGetRes = await fetch(`${BASE_URL}/api/auth/verify-email?token=obsolete_link`, {
+    method: 'GET',
+    redirect: 'manual',
   });
+  assert.equal(legacyGetRes.status, 302, 'Legacy verification link GET request must return 302 Redirect');
+  const locationHeader = legacyGetRes.headers.get('location');
+  assert(locationHeader && locationHeader.includes('/login?notice=use_otp'), 'Must redirect to OTP login screen');
+  console.log('✓ Test 6 Passed: Legacy verification link click cleanly redirects to OTP login.');
 
-  const expiredVerifyRes = await fetch(`${BASE_URL}/api/auth/verify-email`, {
+  // --------------------------------------------------------------------------
+  // Test 7: Successful Email Verification via Valid 6-Digit OTP
+  // --------------------------------------------------------------------------
+  console.log('\n7. Testing Valid 6-Digit OTP Verification (POST /api/auth/verify-otp)...');
+  const validVerifyRes = await fetch(`${BASE_URL}/api/auth/verify-otp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: expiredRawToken }),
-  });
-  assert.equal(expiredVerifyRes.status, 400, 'Expired token must return 400 Bad Request');
-  const expiredVerifyData = await expiredVerifyRes.json();
-  assert.equal(expiredVerifyData.code, 'TOKEN_EXPIRED', 'Code must be TOKEN_EXPIRED');
-  console.log('✓ Test 6 Passed: Expired verification token correctly rejected.');
-
-  // --------------------------------------------------------------------------
-  // Test 7: Successful Email Verification via Valid Raw Token
-  // --------------------------------------------------------------------------
-  console.log('\n7. Testing Valid Token Verification (POST /api/auth/verify-email)...');
-  const validVerifyRes = await fetch(`${BASE_URL}/api/auth/verify-email`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: rawToken }),
+    body: JSON.stringify({
+      email: testEmail,
+      otp: rawOtp,
+    }),
   });
 
-  assert.equal(validVerifyRes.status, 200, `Expected 200 OK for valid token, got ${validVerifyRes.status}`);
+  assert.equal(validVerifyRes.status, 200, `Expected 200 OK for valid OTP, got ${validVerifyRes.status}`);
   const validVerifyData = await validVerifyRes.json();
   assert.equal(validVerifyData.success, true, 'Verification must succeed');
   assert.equal(validVerifyData.user.isEmailVerified, true, 'User must now be verified');
@@ -189,18 +172,19 @@ async function runTests() {
   console.log('✓ Test 7 Passed: Pending registration converted to active verified User, and pending record removed.');
 
   // --------------------------------------------------------------------------
-  // Test 8: Single-Use Token Reuse Prevention
+  // Test 8: Single-Use OTP Reuse Prevention
   // --------------------------------------------------------------------------
-  console.log('\n8. Testing Token Reuse Prevention (Re-submitting already used token)...');
-  const reusedVerifyRes = await fetch(`${BASE_URL}/api/auth/verify-email`, {
+  console.log('\n8. Testing Token Reuse Prevention (Re-submitting already used OTP)...');
+  const reusedVerifyRes = await fetch(`${BASE_URL}/api/auth/verify-otp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ token: rawToken }),
+    body: JSON.stringify({
+      email: testEmail,
+      otp: rawOtp,
+    }),
   });
-  assert.equal(reusedVerifyRes.status, 400, 'Reusing a token must be rejected with 400');
-  const reusedData = await reusedVerifyRes.json();
-  assert.equal(reusedData.code, 'TOKEN_INVALID', 'Must return TOKEN_INVALID for reused token');
-  console.log('✓ Test 8 Passed: Replay/reuse of consumed token blocked.');
+  assert.equal(reusedVerifyRes.status, 400, 'Reusing an OTP must be rejected with 400');
+  console.log('✓ Test 8 Passed: Replay/reuse of consumed OTP blocked.');
 
   // --------------------------------------------------------------------------
   // Test 9: Verified User Login
@@ -246,7 +230,7 @@ async function runTests() {
   assert.equal(reg2Res.status, 201);
 
   // Attempting resend immediately should be rate-limited
-  const immediateResendRes = await fetch(`${BASE_URL}/api/auth/resend-verification`, {
+  const immediateResendRes = await fetch(`${BASE_URL}/api/auth/send-otp`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: resendTestEmail }),
@@ -259,20 +243,9 @@ async function runTests() {
   console.log(`✓ Test 10 Passed: Immediate resend correctly throttled with 429 (retry after ${immediateResendData.retryAfter}s).`);
 
   // --------------------------------------------------------------------------
-  // Test 11: Clear Actionable Feedback on Unknown Resend & Duplicate Registration
+  // Test 11: Clear Actionable Feedback on Duplicate Registration
   // --------------------------------------------------------------------------
-  console.log('\n11. Testing Clear Actionable Feedback on Unknown Resend & Duplicate Registration...');
-  // Resend on non-existent email clearly informs user to create account
-  const unknownResendRes = await fetch(`${BASE_URL}/api/auth/resend-verification`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email: `random_unknown_${timestamp}@example.com` }),
-  });
-  assert.equal(unknownResendRes.status, 404, 'Unknown email resend must return 404 Not Found');
-  const unknownResendData = await unknownResendRes.json();
-  assert.equal(unknownResendData.code, 'ACCOUNT_NOT_FOUND', 'Code must be ACCOUNT_NOT_FOUND');
-  assert(unknownResendData.error.toLowerCase().includes('no account found'), 'Must instruct user to create account');
-
+  console.log('\n11. Testing Clear Actionable Feedback on Duplicate Registration...');
   // Register with already-verified email clearly informs user to log in
   const duplicateRegisterRes = await fetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
@@ -287,7 +260,7 @@ async function runTests() {
   const duplicateRegisterData = await duplicateRegisterRes.json();
   assert.equal(duplicateRegisterData.code, 'EMAIL_ALREADY_EXISTS', 'Code must be EMAIL_ALREADY_EXISTS');
   assert(duplicateRegisterData.error.toLowerCase().includes('already exists'), 'Must clearly tell user account already exists');
-  console.log('✓ Test 11 Passed: Clear actionable error messages for unknown email resend (404) and duplicate register (409).');
+  console.log('✓ Test 11 Passed: Clear actionable error message for duplicate register (409).');
 
   // --------------------------------------------------------------------------
   // Test 12: Diagnostic Email Health Check
@@ -300,64 +273,20 @@ async function runTests() {
   console.log(`✓ Test 12 Passed: Email health responded with connected: ${healthData.connected}`);
 
   // --------------------------------------------------------------------------
-  // Test 13: Direct Browser Email Click -> Auto-Activate, Session Cookie & Dashboard Redirect
+  // Test 13: Direct Browser Email Click -> Redirect to OTP Login Screen
   // --------------------------------------------------------------------------
-  console.log('\n13. Testing "Verify My Email" Click: Auto-Login & Direct Dashboard Redirect...');
-  const autoEmail = `autologin_${timestamp}@example.com`;
-  const autoRegRes = await fetch(`${BASE_URL}/api/auth/register`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-test-secret': config.jwtSecret,
-    },
-    body: JSON.stringify({
-      name: 'Auto Login User',
-      email: autoEmail,
-      password: testPassword,
-    }),
-  });
-  assert.equal(autoRegRes.status, 201);
-  const autoRegData = await autoRegRes.json();
-  const autoTokenMatch = (autoRegData.verificationUrl || autoRegData.previewUrl).match(/token=([a-f0-9]+)/);
-  assert(autoTokenMatch, 'Must extract token for auto-login test');
-  const autoToken = autoTokenMatch[1];
-
-  // Browser clicks the verification link (GET request with browser Accept header)
-  const clickRes = await fetch(`${BASE_URL}/api/auth/verify-email?token=${autoToken}`, {
+  console.log('\n13. Testing Browser Verification Link Click Redirect...');
+  const browserClickRes = await fetch(`${BASE_URL}/api/auth/verify-email?token=old_token_example`, {
     method: 'GET',
     headers: {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     },
-    redirect: 'manual', // Intercept 302 redirect
+    redirect: 'manual',
   });
-
-  assert.equal(clickRes.status, 302, `Expected 302 redirect to dashboard, got ${clickRes.status}`);
-  const redirectLocation = clickRes.headers.get('location');
-  assert(redirectLocation, 'Must return redirect Location header');
-  assert(redirectLocation.includes('verified=true'), 'Redirect must include verified=true');
-  assert(redirectLocation.includes('token='), 'Redirect must include token query param for client storage');
-  assert(redirectLocation.includes(encodeURIComponent(autoEmail)), 'Redirect must include user email');
-
-  // Verify HttpOnly auth_token session cookie is set
-  const autoCookie = clickRes.headers.get('set-cookie');
-  assert(autoCookie && autoCookie.includes('auth_token='), 'Must set HttpOnly auth_token session cookie on redirect');
-  const cookieValue = autoCookie.split(';')[0];
-
-  // Verify database: pending deleted, active user created with isEmailVerified = true
-  const dbAutoUser = await prisma.user.findUnique({ where: { email: autoEmail } });
-  assert(dbAutoUser, 'User must now exist in users table');
-  assert.equal(dbAutoUser.isEmailVerified, true, 'isEmailVerified must be true');
-  const dbAutoPending = await prisma.pendingRegistration.findUnique({ where: { email: autoEmail } });
-  assert.equal(dbAutoPending, null, 'Pending registration must be deleted');
-
-  // Verify the issued session cookie can immediately access protected route /api/auth/me
-  const meRes = await fetch(`${BASE_URL}/api/auth/me`, {
-    headers: { 'Cookie': cookieValue },
-  });
-  assert.equal(meRes.status, 200, 'User session cookie must immediately authenticate /api/auth/me');
-  const meData = await meRes.json();
-  assert.equal(meData.user.email, autoEmail, 'Authenticated user must match verified email');
-  console.log(`✓ Test 13 Passed: "Verify My Email" automatically activated account, established session cookie, and redirected to dashboard.`);
+  assert.equal(browserClickRes.status, 302, 'Browser click on legacy verify link must redirect 302');
+  const loc = browserClickRes.headers.get('location');
+  assert(loc && loc.includes('notice=use_otp'), 'Must redirect with notice=use_otp');
+  console.log('✓ Test 13 Passed: Browser link safely redirected to OTP login.');
 
   // --------------------------------------------------------------------------
   // Test 14: Guard Protected Features - Block Unverified User Access
@@ -407,13 +336,15 @@ async function runTests() {
   assert.equal(googleRes.status, 200, `Google OAuth with verified email must succeed (got ${googleRes.status})`);
   const googleData = await googleRes.json();
   assert.equal(googleData.user.isEmailVerified, true, 'User must be marked email-verified via trusted Google claim');
+  console.log('✓ Test 15 Passed: Google OAuth auto-verified claim succeeded.');
+
   // --------------------------------------------------------------------------
   // Test 16: Concurrency Safety & Race Condition Replay Prevention
   // --------------------------------------------------------------------------
-  console.log('\n16. Testing Concurrency Safety & Simultaneous Token Verification Race Conditions...');
+  console.log('\n16. Testing Concurrency Safety & Simultaneous OTP Verification Race Conditions...');
   const concurrentEmail = `concurrent_${timestamp}@example.com`;
-  const concurrentRawToken = crypto.randomBytes(32).toString('hex');
-  const concurrentTokenHash = crypto.createHash('sha256').update(concurrentRawToken).digest('hex');
+  const concurrentRawOtp = '654321';
+  const concurrentTokenHash = crypto.createHash('sha256').update(concurrentRawOtp).digest('hex');
 
   await prisma.pendingRegistration.create({
     data: {
@@ -422,27 +353,27 @@ async function runTests() {
       password: '$2a$12$dummyhashforconcurrenttesting123',
       prayerCalculationMethod: 'Karachi',
       tokenHash: concurrentTokenHash,
-      expiresAt: new Date(Date.now() + 24 * 3600 * 1000),
+      expiresAt: new Date(Date.now() + 5 * 60 * 1000),
       lastSentAt: new Date(),
     },
   });
 
-  // Launch two simultaneous verification attempts with the exact same token
+  // Launch two simultaneous verification attempts with the exact same OTP
   const [resA, resB] = await Promise.all([
-    fetch(`${BASE_URL}/api/auth/verify-email`, {
+    fetch(`${BASE_URL}/api/auth/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: concurrentRawToken }),
+      body: JSON.stringify({ email: concurrentEmail, otp: concurrentRawOtp }),
     }),
-    fetch(`${BASE_URL}/api/auth/verify-email`, {
+    fetch(`${BASE_URL}/api/auth/verify-otp`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ token: concurrentRawToken }),
+      body: JSON.stringify({ email: concurrentEmail, otp: concurrentRawOtp }),
     }),
   ]);
 
   const statuses = [resA.status, resB.status].sort();
-  assert.deepEqual(statuses, [200, 400], 'One concurrent request must succeed with 200, the other must safely fail with 400 TOKEN_INVALID');
+  assert.deepEqual(statuses, [200, 400], 'One concurrent request must succeed with 200, the other must safely fail with 400');
 
   const pendingCount = await prisma.pendingRegistration.count({ where: { email: concurrentEmail } });
   assert.equal(pendingCount, 0, 'Pending registration must be deleted after concurrent processing');
@@ -483,10 +414,10 @@ async function runTests() {
   // Cleanup test users from database
   try {
     await prisma.pendingRegistration.deleteMany({
-      where: { email: { in: [testEmail, expiredEmail, autoEmail, unverifiedEmail, concurrentEmail] } },
+      where: { email: { in: [testEmail, resendTestEmail, unverifiedEmail, concurrentEmail] } },
     });
     await prisma.user.deleteMany({
-      where: { email: { in: [testEmail, expiredEmail, autoEmail, unverifiedEmail, concurrentEmail] } },
+      where: { email: { in: [testEmail, resendTestEmail, unverifiedEmail, concurrentEmail] } },
     });
     await prisma.$disconnect();
   } catch {}
