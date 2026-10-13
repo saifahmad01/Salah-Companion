@@ -115,7 +115,7 @@ export const FeaturePreviewModal: React.FC<FeaturePreviewModalProps> = ({ type, 
               type="button"
               onClick={() => {
                 onClose()
-                navigate('/register')
+                navigate('/login')
               }}
               className="flex-1 py-3 px-4 rounded-xl font-bold text-[#14291F] text-sm bg-gradient-to-r from-[#F0D69A] via-[#E5C67F] to-[#D5AF5E] hover:brightness-105 shadow-sm inline-flex items-center justify-center gap-2 cursor-pointer"
             >

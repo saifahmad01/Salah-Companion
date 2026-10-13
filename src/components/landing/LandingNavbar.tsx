@@ -131,7 +131,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onOpenModal }) => 
             </button>
             <button
               type="button"
-              onClick={() => navigate('/register')}
+              onClick={() => navigate('/login')}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-[#0C3E30] hover:bg-[#093226] shadow-sm transition-all cursor-pointer"
             >
               <span>Get Started</span>
@@ -215,7 +215,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ onOpenModal }) => 
                 type="button"
                 onClick={() => {
                   setMobileMenuOpen(false)
-                  navigate('/register')
+                  navigate('/login')
                 }}
                 className="w-full py-2.5 rounded-xl text-center text-sm font-semibold text-white bg-[#0C3E30] hover:bg-[#093226] flex items-center justify-center gap-2"
               >

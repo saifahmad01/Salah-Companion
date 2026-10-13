@@ -119,9 +119,6 @@ async function fetchWithAuth(endpoint: string, options: RequestInit = {}): Promi
     error.email = data.email;
     error.availableAt = data.availableAt;
     error.token = data.token;
-    error.previewUrl = data.previewUrl;
-    error.verificationUrl = data.verificationUrl;
-    error.requiresEmailVerification = data.requiresEmailVerification;
     throw error;
   }
 
@@ -149,13 +146,6 @@ export interface AuthResponse {
   message: string;
   token?: string;
   user?: UserProfile;
-  requiresEmailVerification?: boolean;
-  requiresOtp?: boolean;
-  email?: string;
-  expiresIn?: number;
-  previewUrl?: string;
-  verificationUrl?: string;
-  devOtp?: string;
 }
 
 export interface BackendPrayerTimes {
