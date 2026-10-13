@@ -9,6 +9,10 @@ import {
   verifyEmailTransport,
 } from '../services/emailService.js';
 import {
+  verifySupabaseOtp,
+  isSupabaseOtpConfigured,
+} from '../services/supabaseAuthService.js';
+import {
   verifyGoogleToken,
   getGoogleAuthUrl,
   getGoogleProfileFromCode,
@@ -371,15 +375,41 @@ export async function verifyEmail(req, res, next) {
     // Atomically execute verification check and user activation inside a single transaction
     const result = await prisma.$transaction(async (tx) => {
       // 1. Look up in PendingRegistration inside transaction
-      const pendingTx = await tx.pendingRegistration.findUnique({
+      let pendingTx = await tx.pendingRegistration.findUnique({
         where: { tokenHash },
       });
 
+      if (!pendingTx && (req.query.email || req.body.email)) {
+        const queryEmail = (req.query.email || req.body.email).trim().toLowerCase();
+        const candidatePending = await tx.pendingRegistration.findUnique({
+          where: { email: queryEmail },
+        });
+        if (candidatePending && isSupabaseOtpConfigured()) {
+          const sbRes = await verifySupabaseOtp(queryEmail, rawToken);
+          if (sbRes.success) {
+            pendingTx = candidatePending;
+          }
+        }
+      }
+
       if (!pendingTx) {
         // Check legacy User record
-        const legacyUser = await tx.user.findFirst({
+        let legacyUser = await tx.user.findFirst({
           where: { verificationTokenHash: tokenHash },
         });
+
+        if (!legacyUser && (req.query.email || req.body.email)) {
+          const queryEmail = (req.query.email || req.body.email).trim().toLowerCase();
+          const candidateUser = await tx.user.findUnique({
+            where: { email: queryEmail },
+          });
+          if (candidateUser && !candidateUser.isEmailVerified && isSupabaseOtpConfigured()) {
+            const sbRes = await verifySupabaseOtp(queryEmail, rawToken);
+            if (sbRes.success) {
+              legacyUser = candidateUser;
+            }
+          }
+        }
 
         if (legacyUser) {
           if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
@@ -1422,8 +1452,16 @@ export async function verifyOtp(req, res, next) {
           return { code: 'OTP_EXPIRED', email: normalizedEmail };
         }
 
-        // Timing-safe hash check
-        if (!safeCompareHash(pendingTx.tokenHash, inputHash)) {
+        // Timing-safe hash check with Supabase Auth OTP verification fallback
+        let isMatch = safeCompareHash(pendingTx.tokenHash, inputHash);
+        if (!isMatch && isSupabaseOtpConfigured()) {
+          const sbResult = await verifySupabaseOtp(normalizedEmail, cleanOtp);
+          if (sbResult.success) {
+            isMatch = true;
+          }
+        }
+
+        if (!isMatch) {
           return { code: 'OTP_MISMATCH', recordId: pendingTx.id, type: 'pending' };
         }
 
@@ -1488,8 +1526,16 @@ export async function verifyOtp(req, res, next) {
           return { code: 'OTP_EXPIRED', email: normalizedEmail };
         }
 
-        // Timing-safe hash check
-        if (!safeCompareHash(userTx.verificationTokenHash, inputHash)) {
+        // Timing-safe hash check with Supabase Auth OTP verification fallback
+        let isMatch = safeCompareHash(userTx.verificationTokenHash, inputHash);
+        if (!isMatch && isSupabaseOtpConfigured()) {
+          const sbResult = await verifySupabaseOtp(normalizedEmail, cleanOtp);
+          if (sbResult.success) {
+            isMatch = true;
+          }
+        }
+
+        if (!isMatch) {
           return { code: 'OTP_MISMATCH', recordId: userTx.id, type: 'user' };
         }
 
