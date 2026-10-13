@@ -4,6 +4,8 @@ interface UseExitConfirmationOptions {
   enabled?: boolean
   hasInnerModalOpen?: boolean
   onCloseInnerModal?: () => void
+  hasInnerNavigation?: boolean
+  onNavigateBack?: () => void
 }
 
 /**
@@ -11,20 +13,40 @@ interface UseExitConfirmationOptions {
  *
  * Provides:
  * 1. Native `beforeunload` warning on browser tab close, reload, or external navigation.
- * 2. Custom confirmation modal on browser back button / mobile back gesture (`popstate`)
- *    asking: "Are you sure you want to leave Salah Companion?" with "Stay" and "Leave".
+ * 2. Mobile back gesture / browser back button (`popstate`) handling:
+ *    - Closes open modals first
+ *    - Returns to Home screen if on another tab/screen
+ *    - Shows "Are you sure you want to leave Salah Companion?" confirmation when on Home screen
  * 3. Session preservation: Leaving never logs the user out or clears saved Salah records.
- * 4. Guards against infinite loops and repeated warnings.
+ * 4. Guards against infinite history state push loops and double-firing.
  */
 export function useExitConfirmation(options: UseExitConfirmationOptions = {}) {
   const {
     enabled = true,
     hasInnerModalOpen = false,
     onCloseInnerModal,
+    hasInnerNavigation = false,
+    onNavigateBack,
   } = options
 
   const [showExitModal, setShowExitModal] = useState(false)
   const isExitingRef = useRef(false)
+
+  // Stable references to latest callbacks and flags
+  const hasInnerModalOpenRef = useRef(hasInnerModalOpen)
+  hasInnerModalOpenRef.current = hasInnerModalOpen
+
+  const onCloseInnerModalRef = useRef(onCloseInnerModal)
+  onCloseInnerModalRef.current = onCloseInnerModal
+
+  const hasInnerNavigationRef = useRef(hasInnerNavigation)
+  hasInnerNavigationRef.current = hasInnerNavigation
+
+  const onNavigateBackRef = useRef(onNavigateBack)
+  onNavigateBackRef.current = onNavigateBack
+
+  const showExitModalRef = useRef(showExitModal)
+  showExitModalRef.current = showExitModal
 
   // 1. Native browser exit warning on tab close, window close, reload, or external navigation
   useEffect(() => {
@@ -32,7 +54,6 @@ export function useExitConfirmation(options: UseExitConfirmationOptions = {}) {
 
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (isExitingRef.current) return
-      // Standard W3C / modern browser specification
       e.preventDefault()
       e.returnValue = ''
       return ''
@@ -44,30 +65,38 @@ export function useExitConfirmation(options: UseExitConfirmationOptions = {}) {
     }
   }, [enabled])
 
-  // 2. Intercept browser back button & mobile back navigation (popstate)
+  // 2. Intercept browser back button & mobile back gesture (popstate)
   useEffect(() => {
     if (!enabled) return
 
-    // Push initial history state to intercept the back action
+    // Push initial history state once so the back button is intercepted
     window.history.pushState({ salahApp: true }, '', window.location.href)
 
     const handlePopState = () => {
       if (isExitingRef.current) return
 
-      // If an in-app inner modal is open (e.g. Qibla, Notifications, Calendar), close that first
-      if (hasInnerModalOpen && onCloseInnerModal) {
-        onCloseInnerModal()
+      // Step 1: If an in-app modal is open (Qibla, Calendar, Prayer Status, etc.), close it first
+      if (hasInnerModalOpenRef.current && onCloseInnerModalRef.current) {
+        onCloseInnerModalRef.current()
         window.history.pushState({ salahApp: true }, '', window.location.href)
         return
       }
 
-      // If the exit modal is already open, keep it open
-      if (showExitModal) {
+      // Step 2: If on an inner tab (My Salah, Hadith, Progress, Settings), go back to Home
+      if (hasInnerNavigationRef.current && onNavigateBackRef.current) {
+        onNavigateBackRef.current()
         window.history.pushState({ salahApp: true }, '', window.location.href)
         return
       }
 
-      // Re-push history state so the user remains on current URL and show exit confirmation dialog
+      // Step 3: If the exit modal is already open, dismiss it
+      if (showExitModalRef.current) {
+        setShowExitModal(false)
+        window.history.pushState({ salahApp: true }, '', window.location.href)
+        return
+      }
+
+      // Step 4: User is on Home with no modals open: show exit confirmation dialog
       window.history.pushState({ salahApp: true }, '', window.location.href)
       setShowExitModal(true)
     }
@@ -76,7 +105,7 @@ export function useExitConfirmation(options: UseExitConfirmationOptions = {}) {
     return () => {
       window.removeEventListener('popstate', handlePopState)
     }
-  }, [enabled, hasInnerModalOpen, onCloseInnerModal, showExitModal])
+  }, [enabled])
 
   // User chooses "Stay": close modal and remain in app
   const handleStay = useCallback(() => {

@@ -9,10 +9,6 @@ import {
   verifyEmailTransport,
 } from '../services/emailService.js';
 import {
-  verifySupabaseOtp,
-  isSupabaseOtpConfigured,
-} from '../services/supabaseAuthService.js';
-import {
   verifyGoogleToken,
   getGoogleAuthUrl,
   getGoogleProfileFromCode,
@@ -374,37 +370,11 @@ export async function verifyEmail(req, res, next) {
         where: { tokenHash },
       });
 
-      if (!pendingTx && (req.query.email || req.body.email)) {
-        const queryEmail = (req.query.email || req.body.email).trim().toLowerCase();
-        const candidatePending = await tx.pendingRegistration.findUnique({
-          where: { email: queryEmail },
-        });
-        if (candidatePending && isSupabaseOtpConfigured()) {
-          const sbRes = await verifySupabaseOtp(queryEmail, rawToken);
-          if (sbRes.success) {
-            pendingTx = candidatePending;
-          }
-        }
-      }
-
       if (!pendingTx) {
         // Check legacy User record
-        let legacyUser = await tx.user.findFirst({
+        const legacyUser = await tx.user.findFirst({
           where: { verificationTokenHash: tokenHash },
         });
-
-        if (!legacyUser && (req.query.email || req.body.email)) {
-          const queryEmail = (req.query.email || req.body.email).trim().toLowerCase();
-          const candidateUser = await tx.user.findUnique({
-            where: { email: queryEmail },
-          });
-          if (candidateUser && !candidateUser.isEmailVerified && isSupabaseOtpConfigured()) {
-            const sbRes = await verifySupabaseOtp(queryEmail, rawToken);
-            if (sbRes.success) {
-              legacyUser = candidateUser;
-            }
-          }
-        }
 
         if (legacyUser) {
           if (legacyUser.tokenExpiresAt && new Date() > new Date(legacyUser.tokenExpiresAt)) {
@@ -628,7 +598,8 @@ export async function resendVerification(req, res, next) {
 
     clearOtpFailedAttempts(normalizedEmail);
     const directApiUrl = `${config.appUrl}/api/auth/verify-email?email=${encodeURIComponent(normalizedEmail)}&token=${otp}&otp=${otp}`;
-    const isDev = process.env.NODE_ENV !== 'production';
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret);
 
     if (!emailResult.success) {
       return res.status(502).json({
@@ -636,21 +607,20 @@ export async function resendVerification(req, res, next) {
         error: emailResult.error || 'Failed to deliver verification email. Please verify your email configuration.',
         code: 'EMAIL_DELIVERY_FAILED',
         email: normalizedEmail,
-        token: otp,
-        previewUrl: directApiUrl,
-        verificationUrl: directApiUrl,
-        ...(isDev ? { devOtp: otp } : {}),
+        canResend: true,
+        expiresIn: 300,
+        ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
       });
     }
 
     return res.status(200).json({
       success: true,
       message: `A fresh 6-digit verification code has been dispatched to ${normalizedEmail}. Please check your inbox.`,
-      token: otp,
+      email: normalizedEmail,
       expiresIn: 300,
-      previewUrl: directApiUrl,
-      verificationUrl: directApiUrl,
-      ...(isDev ? { devOtp: otp } : {}),
+      canResend: false,
+      cooldown: 60,
+      ...(isAuthorizedTest ? { token: otp, devOtp: otp, previewUrl: directApiUrl, verificationUrl: directApiUrl } : {}),
     });
   } catch (err) {
     next(err);
@@ -1447,14 +1417,8 @@ export async function verifyOtp(req, res, next) {
           return { code: 'OTP_EXPIRED', email: normalizedEmail };
         }
 
-        // Timing-safe hash check with Supabase Auth OTP verification fallback
-        let isMatch = safeCompareHash(pendingTx.tokenHash, inputHash);
-        if (!isMatch && isSupabaseOtpConfigured()) {
-          const sbResult = await verifySupabaseOtp(normalizedEmail, cleanOtp);
-          if (sbResult.success) {
-            isMatch = true;
-          }
-        }
+        // Timing-safe SHA-256 hash check
+        const isMatch = safeCompareHash(pendingTx.tokenHash, inputHash);
 
         if (!isMatch) {
           return { code: 'OTP_MISMATCH', recordId: pendingTx.id, type: 'pending' };
@@ -1521,14 +1485,8 @@ export async function verifyOtp(req, res, next) {
           return { code: 'OTP_EXPIRED', email: normalizedEmail };
         }
 
-        // Timing-safe hash check with Supabase Auth OTP verification fallback
-        let isMatch = safeCompareHash(userTx.verificationTokenHash, inputHash);
-        if (!isMatch && isSupabaseOtpConfigured()) {
-          const sbResult = await verifySupabaseOtp(normalizedEmail, cleanOtp);
-          if (sbResult.success) {
-            isMatch = true;
-          }
-        }
+        // Timing-safe SHA-256 hash check
+        const isMatch = safeCompareHash(userTx.verificationTokenHash, inputHash);
 
         if (!isMatch) {
           return { code: 'OTP_MISMATCH', recordId: userTx.id, type: 'user' };
