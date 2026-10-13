@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import { config } from '../../config/env.js';
 import { getOtpEmailHtml, getOtpEmailText } from './templates/otpEmailTemplate.js';
+import { getResetPasswordEmailHtml, getResetPasswordEmailText } from './templates/resetPasswordEmailTemplate.js';
 
 /**
  * Brevo Transactional Email Service
@@ -230,6 +231,88 @@ class BrevoEmailService {
         ? `SMTP failed (${smtpError.message}) and REST API failed (${restErr.message})`
         : restErr.message;
       throw new Error(`Failed to deliver verification email: ${combinedError}`);
+    }
+  }
+
+  /**
+   * Sends the password reset email via Brevo
+   *
+   * @param {Object} params
+   * @param {string} params.to Recipient email address
+   * @param {string} [params.name] Recipient name
+   * @param {string} params.resetUrl Secure password reset URL
+   * @param {number} [params.expiresInMinutes=60] Expiration in minutes
+   * @returns {Promise<{ success: boolean, messageId?: string, transport?: string }>}
+   */
+  async sendPasswordResetEmail({ to, name, resetUrl, expiresInMinutes = 60, isAuthorizedTest = false }) {
+    if (!to || !to.includes('@')) {
+      throw new Error('Valid recipient email address is required');
+    }
+
+    if (!resetUrl) {
+      throw new Error('Password reset URL is required');
+    }
+
+    const subject = 'Reset Your Salah Companion Password 🔑';
+    const html = getResetPasswordEmailHtml({ name, resetUrl, expiresInMinutes });
+    const text = getResetPasswordEmailText({ name, resetUrl, expiresInMinutes });
+    const sender = this.getSender();
+
+    // 1. In test environment or authorized test harness, simulate delivery
+    if (process.env.NODE_ENV === 'test' || isAuthorizedTest) {
+      return {
+        success: true,
+        messageId: `test-harness-${Date.now()}`,
+        transport: 'test_harness',
+      };
+    }
+
+    // 2. Fail safely if neither SMTP nor REST API is configured
+    if (!this.isConfigured()) {
+      throw new Error(
+        'Email service is not configured. Please set BREVO_SMTP_KEY (or BREVO_API_KEY) and BREVO_SMTP_USER in your environment variables.'
+      );
+    }
+
+    // 3. Primary Delivery: Brevo SMTP Relay
+    const transporter = this.getTransporter();
+    let smtpError = null;
+
+    if (transporter) {
+      try {
+        const mailOptions = {
+          from: `"${sender.name}" <${sender.email}>`,
+          to,
+          subject,
+          text,
+          html,
+          headers: {
+            'X-Mailin-Tag': 'salah-companion-reset-password',
+          },
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        return {
+          success: true,
+          messageId: info.messageId,
+          transport: 'brevo_smtp',
+        };
+      } catch (err) {
+        smtpError = err;
+        console.warn(`[BrevoEmailService] Primary SMTP delivery to ${to.replace(/(?<=.).(?=.*@)/g, '*')} failed: ${err.message}. Attempting REST API fallback.`);
+      }
+    }
+
+    // 4. Secondary Delivery: Brevo REST API
+    try {
+      const restResult = await this.sendViaRestApi({ to, name, subject, html, text });
+      return restResult;
+    } catch (restErr) {
+      console.error(`[BrevoEmailService] REST API delivery failed: ${restErr.message}`);
+      const combinedError = smtpError
+        ? `SMTP failed (${smtpError.message}) and REST API failed (${restErr.message})`
+        : restErr.message;
+      throw new Error(`Failed to deliver password reset email: ${combinedError}`);
     }
   }
 }

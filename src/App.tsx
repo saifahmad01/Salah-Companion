@@ -6,6 +6,7 @@ import { AdminRoute } from './components/AdminRoute'
 import { ServerWarmupNotice } from './components/ServerWarmupNotice'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
+import ResetPasswordPage from './pages/ResetPasswordPage'
 import AppDashboard from './pages/AppDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 
@@ -25,7 +26,7 @@ export default function App() {
             }
           />
 
-          {/* Authentication Route (Google Sign-In) */}
+          {/* Authentication Route (Email + Password, Google Sign-In, Brevo OTP) */}
           <Route
             path="/login"
             element={
@@ -35,10 +36,19 @@ export default function App() {
             }
           />
 
-          {/* Legacy & Alternative Auth Routes Cleanly Redirected to Google Sign-In */}
-          <Route path="/register" element={<Navigate to="/login" replace />} />
-          <Route path="/forgot-password" element={<Navigate to="/login" replace />} />
-          <Route path="/reset-password" element={<Navigate to="/login" replace />} />
+          {/* Dedicated Password Reset Route */}
+          <Route
+            path="/reset-password"
+            element={
+              <PublicOnlyRoute>
+                <ResetPasswordPage />
+              </PublicOnlyRoute>
+            }
+          />
+
+          {/* Helpful Auth Shortcut Redirects */}
+          <Route path="/register" element={<Navigate to="/login?tab=register" replace />} />
+          <Route path="/forgot-password" element={<Navigate to="/login?tab=forgot" replace />} />
           <Route path="/verify-email" element={<Navigate to="/login" replace />} />
 
           {/* Protected Routes (Requires authenticated user session) */}

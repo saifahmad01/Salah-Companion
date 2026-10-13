@@ -5,16 +5,13 @@ import { z } from 'zod';
  * - At least 8 characters
  * - Must contain at least one letter and one number
  */
-const passwordValidation = z
+export const passwordValidation = z
   .string({ required_error: 'Password is required' })
   .min(8, 'Password must be at least 8 characters long')
   .max(100, 'Password cannot exceed 100 characters')
   .regex(/[A-Za-z]/, 'Password must contain at least one letter')
   .regex(/\d/, 'Password must contain at least one number');
 
-/**
- * Allowed prayer calculation methods
- */
 export const calculationMethodEnum = z.enum([
   'Karachi',
   'MWL',
@@ -32,6 +29,59 @@ export const calculationMethodEnum = z.enum([
   'Singapore',
   'MoonsightingCommittee'
 ]);
+
+/**
+ * User Registration Validation Schema
+ */
+export const registerSchema = z.object({
+  name: z
+    .string({ required_error: 'Full name is required' })
+    .trim()
+    .min(2, 'Name must be at least 2 characters')
+    .max(100, 'Name cannot exceed 100 characters'),
+  email: z
+    .string({ required_error: 'Email address is required' })
+    .trim()
+    .email('Please enter a valid email address'),
+  password: passwordValidation,
+  prayerCalculationMethod: calculationMethodEnum.optional(),
+  latitude: z.number().min(-90).max(90).nullable().optional(),
+  longitude: z.number().min(-180).max(180).nullable().optional(),
+});
+
+/**
+ * User Login Validation Schema
+ */
+export const loginSchema = z.object({
+  email: z
+    .string({ required_error: 'Email address is required' })
+    .trim()
+    .email('Please enter a valid email address'),
+  password: z
+    .string({ required_error: 'Password is required' })
+    .min(1, 'Password is required'),
+});
+
+/**
+ * Forgot Password Validation Schema
+ */
+export const forgotPasswordSchema = z.object({
+  email: z
+    .string({ required_error: 'Email address is required' })
+    .trim()
+    .email('Please enter a valid email address'),
+});
+
+/**
+ * Reset Password Validation Schema
+ */
+export const resetPasswordSchema = z.object({
+  token: z
+    .string({ required_error: 'Password reset token is required' })
+    .trim()
+    .min(1, 'Password reset token is required'),
+  password: passwordValidation,
+});
 
 /**
  * Profile Update Validation Schema

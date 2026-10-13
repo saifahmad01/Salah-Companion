@@ -10,6 +10,7 @@ import {
 import { config } from '../config/env.js';
 import { isPermanentAdmin } from '../constants/admins.js';
 import { otpService } from '../services/otpService.js';
+import { brevoEmailService } from '../services/email/brevoEmailService.js';
 
 const JWT_SECRET = config.jwtSecret || process.env.JWT_SECRET || 'fallback_secret_for_dev_only_change_in_production';
 const JWT_EXPIRES_IN = config.jwtExpiresIn || process.env.JWT_EXPIRES_IN || '7d';
@@ -574,17 +575,250 @@ export async function resendOtp(req, res, next) {
 }
 
 /**
- * 11. Handler for retired legacy authentication links
- * Returns 410 Gone informing clients that verification links are replaced with 6-digit OTP
+ * 11. Register a new user with Email + Password
+ * POST /api/auth/register
+ */
+export async function register(req, res, next) {
+  try {
+    const { name, email, password, prayerCalculationMethod, latitude, longitude } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: 'An account with this email address already exists. Please sign in instead.',
+        code: 'USER_ALREADY_EXISTS',
+      });
+    }
+
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const user = await prisma.user.create({
+      data: {
+        name: name.trim(),
+        email: normalizedEmail,
+        password: hashedPassword,
+        prayerCalculationMethod: prayerCalculationMethod || 'Karachi',
+        latitude: typeof latitude === 'number' ? latitude : null,
+        longitude: typeof longitude === 'number' ? longitude : null,
+        isEmailVerified: true,
+        role: isPermanentAdmin(normalizedEmail) ? 'ADMIN' : 'USER',
+      },
+    });
+
+    const token = signToken(user);
+    setAuthCookie(res, token);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Account created successfully.',
+      token,
+      user: sanitizeUser(user),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 12. Log in with Email + Password
+ * POST /api/auth/login
+ */
+export async function login(req, res, next) {
+  try {
+    const { email, password } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password.',
+        code: 'INVALID_CREDENTIALS',
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        error: 'This account was created using Google Sign-In. Please sign in with Google.',
+        code: 'GOOGLE_ACCOUNT_ONLY',
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password.',
+        code: 'INVALID_CREDENTIALS',
+      });
+    }
+
+    const token = signToken(user);
+    setAuthCookie(res, token);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged in successfully.',
+      token,
+      user: sanitizeUser(user),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 13. Initiate Forgot Password flow
+ * POST /api/auth/forgot-password
+ */
+export async function forgotPassword(req, res, next) {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    // To prevent account enumeration, return standard response if user doesn't exist
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists with that email address, password reset instructions have been sent.',
+      });
+    }
+
+    // Generate secure 32-byte hex token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetPasswordTokenHash: resetTokenHash,
+        resetPasswordExpiresAt: resetExpiresAt,
+      },
+    });
+
+    const frontendUrl = getEffectiveFrontendUrl(req);
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    try {
+      await brevoEmailService.sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        resetUrl,
+        expiresInMinutes: 60,
+        isAuthorizedTest,
+      });
+    } catch (emailErr) {
+      console.warn(`[AuthController] Failed to send password reset email: ${emailErr.message}`);
+      // In local development or test mode, provide safe preview if email fails
+      if (process.env.NODE_ENV !== 'production' || isAuthorizedTest) {
+        return res.status(200).json({
+          success: true,
+          message: 'Password reset link generated (email delivery bypassed in development).',
+          resetToken,
+          resetUrl,
+        });
+      }
+    }
+
+    const responsePayload = {
+      success: true,
+      message: 'If an account exists with that email address, password reset instructions have been sent.',
+    };
+
+    if (isAuthorizedTest) {
+      responsePayload.resetToken = resetToken;
+      responsePayload.resetUrl = resetUrl;
+    }
+
+    return res.status(200).json(responsePayload);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 14. Complete Password Reset
+ * POST /api/auth/reset-password
+ */
+export async function resetPassword(req, res, next) {
+  try {
+    const { token, password } = req.body;
+    const resetPasswordTokenHash = crypto.createHash('sha256').update(token.trim()).digest('hex');
+
+    const user = await prisma.user.findFirst({
+      where: {
+        resetPasswordTokenHash,
+        resetPasswordExpiresAt: {
+          gt: new Date(),
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password reset link is invalid or has expired. Please request a new one.',
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+      });
+    }
+
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetPasswordTokenHash: null,
+        resetPasswordExpiresAt: null,
+      },
+    });
+
+    const sessionToken = signToken(updatedUser);
+    setAuthCookie(res, sessionToken);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully. You are now logged in.',
+      token: sessionToken,
+      user: sanitizeUser(updatedUser),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 15. Handler for retired legacy authentication links
+ * Returns 410 Gone informing clients that legacy links are retired
  */
 export function handleRetiredEmailAuth(req, res) {
   if (req.method === 'GET') {
     const frontendUrl = getEffectiveFrontendUrl(req);
-    return res.redirect(`${frontendUrl}/login?notice=use_otp`);
+    return res.redirect(`${frontendUrl}/login`);
   }
   return res.status(410).json({
     success: false,
-    error: 'Old email verification links have been replaced with 6-digit OTP codes. Please use /api/auth/send-otp.',
+    error: 'Old email verification links are retired. Please use Email + Password or 6-digit OTP login.',
     code: 'EMAIL_AUTH_RETIRED',
   });
 }

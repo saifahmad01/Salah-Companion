@@ -274,8 +274,71 @@ export interface WeeklyPrayersResponse {
 
 export const salahApi = {
   // ==========================================================================
-  // Authentication & Profile Endpoints (Brevo Email OTP & Google OAuth)
+  // Authentication & Profile Endpoints (Email + Password, Brevo OTP & Google OAuth)
   // ==========================================================================
+
+  /**
+   * Log in with Email + Password
+   * POST /api/auth/login
+   */
+  async login(payload: { email: string; password: string }): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Register with Email + Password
+   * POST /api/auth/register
+   */
+  async register(payload: {
+    name: string;
+    email: string;
+    password: string;
+    prayerCalculationMethod?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+  }): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Request password reset instructions
+   * POST /api/auth/forgot-password
+   */
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string; resetToken?: string; resetUrl?: string }> {
+    return await fetchWithAuth('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  /**
+   * Complete password reset with token and new password
+   * POST /api/auth/reset-password
+   */
+  async resetPassword(payload: { token: string; password: string }): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
 
   /**
    * Request a 6-digit OTP code to be sent to user's email via Brevo
