@@ -56,8 +56,14 @@ export class BrevoEmailProvider extends EmailProvider {
 
       if (!response.ok) {
         const errorText = await response.text().catch(() => '');
+        let parsedMessage = '';
+        try {
+          const parsed = JSON.parse(errorText);
+          parsedMessage = parsed.message || '';
+        } catch (_) {}
         console.warn(`[BrevoEmailProvider] HTTP ${response.status} Error: ${errorText}`);
-        throw new Error(`Brevo API rejected delivery (${response.status})`);
+        const errMsg = parsedMessage || `Brevo API rejected delivery (${response.status})`;
+        throw new Error(errMsg);
       }
 
       const data = await response.json().catch(() => ({}));

@@ -39,11 +39,15 @@ export const ModalWrapper: React.FC<ModalWrapperProps> = ({
 
   return (
     <div
-      className={`fixed inset-0 ${zIndexClass} flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs transition-opacity animate-fade-in`}
-      onClick={onClose}
+      className={`fixed inset-0 ${zIndexClass} flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs transition-opacity animate-fade-in touch-manipulation`}
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose()
+        }
+      }}
     >
       <div
-        className="relative w-full max-w-[430px] sm:max-w-[500px] md:max-w-[540px] bg-[#FAF8F3] rounded-t-[28px] sm:rounded-[28px] max-h-[85vh] overflow-y-auto shadow-2xl border border-stone-200 p-6 animate-slide-up"
+        className="relative w-full max-w-[430px] sm:max-w-[500px] md:max-w-[540px] bg-[#FAF8F3] rounded-t-[28px] sm:rounded-[28px] max-h-[85vh] overflow-y-auto shadow-2xl border border-stone-200 p-6 animate-slide-up pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between pb-4 border-b border-[#E9E4D8]">
@@ -994,7 +998,6 @@ export const PrayerStatusModal: React.FC<{
                 onClick={() => {
                   if (isDisabled) return
                   onSelectStatus(prayer.id, opt.status)
-                  onClose()
                 }}
                 className={`w-full p-3 rounded-2xl border text-left transition-all flex items-start gap-3 touch-manipulation ${
                   isDisabled

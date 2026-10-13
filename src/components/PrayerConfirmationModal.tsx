@@ -86,14 +86,19 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs transition-opacity animate-fade-in select-none"
+      className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs transition-opacity animate-fade-in select-none touch-manipulation"
       onKeyDown={handleKeyDown}
+      onClick={(e) => {
+        if (e.target === e.currentTarget && !isSubmitting) {
+          onClose()
+        }
+      }}
       role="dialog"
       aria-modal="true"
       aria-labelledby="confirm-prayer-title"
     >
       <div
-        className="relative w-full max-w-[440px] bg-[#FAF8F3] rounded-[24px] sm:rounded-[28px] overflow-hidden shadow-2xl border border-stone-200/90 p-5 sm:p-6 animate-scale-up"
+        className="relative w-full max-w-[440px] max-h-[90vh] overflow-y-auto bg-[#FAF8F3] rounded-[24px] sm:rounded-[28px] shadow-2xl border border-stone-200/90 p-5 sm:p-6 animate-scale-up pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

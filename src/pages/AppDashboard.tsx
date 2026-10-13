@@ -322,6 +322,7 @@ export const AppDashboard = () => {
   } | null>(null)
   const [isConfirmSubmitting, setIsConfirmSubmitting] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [updatingPrayerId, setUpdatingPrayerId] = useState<string | null>(null)
 
   const handleOpenPrayerStatusModal = (prayer: PrayerItem) => {
     setSelectedPrayerDetail(null)
@@ -397,12 +398,14 @@ export const AppDashboard = () => {
     const { prayer, status, dateKey } = pendingConfirmation
     setIsConfirmSubmitting(true)
     setConfirmError(null)
+    setUpdatingPrayerId(prayer.id)
 
     // Revalidate eligibility immediately before API call
     const currentMatched = prayers.find((p) => p.id === prayer.id)
     if (currentMatched) {
       if (currentMatched.isUpcoming || currentMatched.statusBadge === 'upcoming') {
         setIsConfirmSubmitting(false)
+        setUpdatingPrayerId(null)
         setConfirmError(`${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`)
         return
       }
@@ -418,7 +421,7 @@ export const AppDashboard = () => {
         : 'missed'
 
     try {
-      // 1. If user is authenticated, sync with backend Express API
+      // 1. If user is authenticated, sync with backend Express API first
       if (currentUser) {
         try {
           await salahApi.upsertPrayerLog({
@@ -433,16 +436,15 @@ export const AppDashboard = () => {
             jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
           })
         } catch (apiErr: any) {
-          console.warn('[handleConfirmPrayer] API sync notice:', apiErr?.message)
-          if (apiErr?.code === 'PRAYER_TIME_NOT_STARTED') {
-            setIsConfirmSubmitting(false)
-            setConfirmError(apiErr.message)
-            return
-          }
+          console.error('[handleConfirmPrayer] API sync failed:', apiErr)
+          setIsConfirmSubmitting(false)
+          setUpdatingPrayerId(null)
+          setConfirmError(apiErr?.message || 'Failed to update prayer on server. Please check your network and try again.')
+          return
         }
       }
 
-      // 2. Update local UI state and localStorage
+      // 2. Update local UI state only after successful server confirmation
       const updated = updatePrayerStatus(dateKey, prayer.id, status)
       setAllPrayerRecords(updated)
 
@@ -480,6 +482,7 @@ export const AppDashboard = () => {
       setPendingConfirmation(null)
       setIsPrayerStatusModalOpen(false)
       setPrayerForStatusModal(null)
+      setUpdatingPrayerId(null)
 
       const isCorrectionAction = Boolean(prayer.completed || (prayer.prayerStatus && prayer.prayerStatus !== status))
       setBanner({
@@ -492,6 +495,7 @@ export const AppDashboard = () => {
       setConfirmError(err?.message || 'Failed to record prayer completion. Please try again.')
     } finally {
       setIsConfirmSubmitting(false)
+      setUpdatingPrayerId(null)
     }
   }
 
@@ -540,6 +544,8 @@ export const AppDashboard = () => {
         }
         queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
         queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+        setIsPrayerStatusModalOpen(false)
+        setPrayerForStatusModal(null)
         setBanner({
           type: 'success',
           message: `${matched?.name || prayerId} completion has been undone.`,
@@ -547,13 +553,21 @@ export const AppDashboard = () => {
       }
 
       if (currentUser) {
+        setUpdatingPrayerId(prayerId)
         salahApi
           .deletePrayerLog(prayerId, dateKeyToUse)
           .then(() => {
             finalizeUndo()
           })
-          .catch(() => {
-            finalizeUndo()
+          .catch((err: any) => {
+            console.error('[handleSelectPrayerStatus] Undo error:', err)
+            setBanner({
+              type: 'error',
+              message: err?.message || 'Failed to undo prayer completion on server. Please try again.',
+            })
+          })
+          .finally(() => {
+            setUpdatingPrayerId(null)
           })
       } else {
         finalizeUndo()
@@ -577,6 +591,8 @@ export const AppDashboard = () => {
         }
         queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
         queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
+        setIsPrayerStatusModalOpen(false)
+        setPrayerForStatusModal(null)
         setBanner({
           type: 'success',
           message: `${matched?.name || prayerId} prayer marked as missed. Make it up as Qada when possible.`,
@@ -584,6 +600,7 @@ export const AppDashboard = () => {
       }
 
       if (currentUser) {
+        setUpdatingPrayerId(prayerId)
         salahApi
           .upsertPrayerLog({
             prayerName: prayerId,
@@ -597,7 +614,16 @@ export const AppDashboard = () => {
             jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
           })
           .then(() => finalizeMissed())
-          .catch(() => finalizeMissed())
+          .catch((err: any) => {
+            console.error('[handleSelectPrayerStatus] Missed update error:', err)
+            setBanner({
+              type: 'error',
+              message: err?.message || 'Failed to mark prayer as missed on server. Please try again.',
+            })
+          })
+          .finally(() => {
+            setUpdatingPrayerId(null)
+          })
       } else {
         finalizeMissed()
       }
@@ -652,6 +678,7 @@ export const AppDashboard = () => {
   })
 
   const handleTogglePrayer = (id: string) => {
+    if (updatingPrayerId) return
     const matched = prayers.find((p) => p.id === id)
     if (matched) {
       if (matched.completed) {
@@ -1119,6 +1146,7 @@ export const AppDashboard = () => {
                     onTogglePrayer={handleTogglePrayer}
                     madhab={madhab}
                     onToggleMadhab={handleToggleMadhab}
+                    updatingPrayerId={updatingPrayerId}
                   />
 
                   <HadithCard

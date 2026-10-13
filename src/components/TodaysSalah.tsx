@@ -1,5 +1,5 @@
 import React from 'react'
-import { Moon, Sun, CloudSun, Check, Clock, RotateCcw, X } from 'lucide-react'
+import { Moon, Sun, CloudSun, Check, Clock, RotateCcw, X, Loader2 } from 'lucide-react'
 import { BookBrownIcon, IslamicSunsetIcon } from './CustomIcons'
 import type { PrayerItem } from '../types'
 
@@ -8,6 +8,7 @@ interface TodaysSalahProps {
   onTogglePrayer: (id: string) => void
   madhab?: string
   onToggleMadhab?: () => void
+  updatingPrayerId?: string | null
 }
 
 export const TodaysSalah: React.FC<TodaysSalahProps> = ({
@@ -15,6 +16,7 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
   onTogglePrayer,
   madhab,
   onToggleMadhab,
+  updatingPrayerId,
 }) => {
   const completedCount = prayers.filter((p) => p.completed).length
   const totalCount = prayers.length
@@ -80,11 +82,14 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
           const isDone = prayer.completed
           const status = prayer.prayerStatus
           const isUpcoming = !isDone && (prayer.statusBadge === 'upcoming' || prayer.isUpcoming)
+          const isUpdating = updatingPrayerId === prayer.id
           // Active-day Salah: Users can mark, undo, or correct at any time during current day, even after individual prayer time has passed
-          const isDisabled = isUpcoming
+          const isDisabled = isUpcoming || Boolean(updatingPrayerId)
 
           const cardBgClass =
-            status === 'ON_TIME'
+            isUpdating
+              ? 'bg-[#EBF5EF] border border-emerald-400 ring-2 ring-emerald-500/20 shadow-xs'
+              : status === 'ON_TIME'
               ? 'bg-[#EBF5EF] border border-[#CEE5D8] shadow-[0_1px_3px_rgba(14,82,63,0.06)]'
               : status === 'LATE'
               ? 'bg-[#FFFBEB] border border-[#FDE68A] shadow-[0_1px_3px_rgba(217,119,6,0.06)]'
@@ -102,7 +107,9 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
               ? 'bg-[#FAF8F3] border border-[#EAE6DC] opacity-90'
               : 'bg-white border border-[#EBE7DD] shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:border-emerald-300'
 
-          const buttonTitle = isUpcoming
+          const buttonTitle = isUpdating
+            ? `Updating ${prayer.name} status...`
+            : isUpcoming
             ? `${prayer.name} prayer time has not started yet. Available at ${prayer.time}.`
             : isDone
             ? `${prayer.name} is completed. Click to manage or undo at any time today.`
@@ -112,10 +119,11 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
             <button
               key={prayer.id}
               type="button"
+              disabled={isDisabled}
               onClick={() => onTogglePrayer(prayer.id)}
-              className={`flex flex-col items-center justify-between py-2.5 sm:py-3.5 px-1 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-all duration-200 select-none text-center touch-manipulation ${
+              className={`flex flex-col items-center justify-between py-2.5 sm:py-3.5 px-1 sm:px-2 rounded-[16px] sm:rounded-[20px] transition-all duration-200 select-none text-center touch-manipulation pointer-events-auto ${
                 isDisabled
-                  ? 'cursor-not-allowed opacity-90'
+                  ? isUpdating ? 'cursor-wait opacity-90' : 'cursor-not-allowed opacity-90'
                   : 'cursor-pointer active:scale-95'
               } ${cardBgClass}`}
               title={buttonTitle}
@@ -158,7 +166,14 @@ export const TodaysSalah: React.FC<TodaysSalahProps> = ({
 
               {/* Status Badge */}
               <div className="flex items-center justify-center gap-1 w-full pt-0.5">
-                {status === 'ON_TIME' ? (
+                {isUpdating ? (
+                  <>
+                    <Loader2 className="w-3 h-3 text-[#0E543F] animate-spin flex-shrink-0" />
+                    <span className="text-[8px] sm:text-[9.5px] font-bold text-[#0E543F] leading-none">
+                      Saving...
+                    </span>
+                  </>
+                ) : status === 'ON_TIME' ? (
                   <>
                     <span className="w-3 h-3 rounded-full bg-[#0E5640] flex items-center justify-center text-white flex-shrink-0">
                       <Check className="w-2 h-2 stroke-[3]" />

@@ -24,6 +24,7 @@ const FRONTEND_URL = config.frontendUrl || 'http://localhost:5173';
  * Resolves the active frontend domain dynamically, prioritizing Cloudflare Workers production domain
  */
 export function getEffectiveFrontendUrl(req) {
+  const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER) || Boolean(process.env.RENDER_SERVICE_ID);
   const origin = req?.headers?.origin || req?.headers?.referer;
   if (origin) {
     if (origin.includes('salah-companion.mdsaif.workers.dev') || origin.includes('.workers.dev')) {
@@ -34,7 +35,7 @@ export function getEffectiveFrontendUrl(req) {
         return 'https://salah-companion.mdsaif.workers.dev';
       }
     }
-    if (origin.includes('localhost:5173') || origin.includes('localhost:3000')) {
+    if (!isProduction && (origin.includes('localhost:5173') || origin.includes('localhost:3000'))) {
       return origin.includes('localhost:3000') ? 'http://localhost:3000' : 'http://localhost:5173';
     }
     // Route any legacy Netlify traffic directly to Cloudflare Workers
@@ -44,6 +45,9 @@ export function getEffectiveFrontendUrl(req) {
   }
   const configured = (config.frontendUrl || FRONTEND_URL || '').replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
   if (configured && !configured.includes('netlify.app')) {
+    if (isProduction && (configured.includes('localhost') || configured.includes('127.0.0.1'))) {
+      return 'https://salah-companion.mdsaif.workers.dev';
+    }
     return configured;
   }
   return 'https://salah-companion.mdsaif.workers.dev';

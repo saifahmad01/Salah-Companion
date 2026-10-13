@@ -25,5 +25,6 @@ export const logPrayerInputSchema = z.object({
   calculationMethod: z.string().optional().nullable(),
   madhab: z.string().optional().nullable(),
   jumuahTime: z.string().optional().nullable(),
+  timezone: z.string().optional().nullable(),
   isCorrection: z.boolean().optional(),
 });
