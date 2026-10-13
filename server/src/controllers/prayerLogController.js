@@ -92,6 +92,8 @@ export async function logPrayer(req, res, next) {
     const todayStr = getLocalDateKey(reqNow, userTimezone);
     const targetDate = date || todayStr;
 
+    console.log(`[PrayerLog] Incoming log request: userId=${userId}, prayer=${normalizedPrayer}, date=${targetDate}, status=${status}, isCorrection=${Boolean(isCorrection)}, tz=${userTimezone}, todayStr=${todayStr}`);
+
     // 1. Strictly forbid logging completion for past or future dates
     if (targetDate < todayStr) {
       return res.status(409).json({
@@ -239,6 +241,8 @@ export async function logPrayer(req, res, next) {
 
     // Retrieve tailored authentic Hadith for the logged status
     const hadithInfo = getHadithByStatus(status || 'on_time');
+
+    console.log(`[PrayerLog] Successfully saved prayer log #${log.id}: user=${userId}, prayer=${log.prayerName}, status=${log.status}, date=${log.date}`);
 
     return res.status(200).json({
       success: true,

@@ -33,11 +33,15 @@ export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
   corsOrigin: process.env.CORS_ORIGIN || '*',
   frontendUrl: (() => {
+    const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER) || Boolean(process.env.RENDER_SERVICE_ID);
     const raw = process.env.FRONTEND_URL?.replace('salahcopmanion', 'salahcompanion')?.replace(/\/+$/, '');
     if (raw && !raw.includes('netlify.app')) {
+      if (isProduction && (raw.includes('localhost') || raw.includes('127.0.0.1'))) {
+        return 'https://salah-companion.mdsaif.workers.dev';
+      }
       return raw;
     }
-    return (process.env.NODE_ENV === 'production' || process.env.RENDER)
+    return isProduction
       ? 'https://salah-companion.mdsaif.workers.dev'
       : 'http://localhost:5173';
   })(),

@@ -608,10 +608,12 @@ export const salahApi = {
     madhab?: string;
     notes?: string;
     jumuahTime?: string;
+    timezone?: string;
   }) {
+    const tz = payload.timezone || (typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : 'Asia/Kolkata');
     return await fetchWithAuth('/prayers/log', {
       method: 'POST',
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, timezone: tz }),
     });
   },
 

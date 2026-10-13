@@ -596,14 +596,20 @@ function getVerificationEmailHtml(name, verificationUrl, directApiUrl) {
  * @param {string} token Verification hex token
  */
 export async function sendVerificationEmail(to, name, token, clientOrigin = null) {
+  const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER) || Boolean(process.env.RENDER_SERVICE_ID);
   let frontendBase = 'https://salah-companion.mdsaif.workers.dev';
   if (clientOrigin) {
     const sanitized = clientOrigin.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
-    if (sanitized.includes('workers.dev') || sanitized.includes('localhost')) {
+    if (sanitized.includes('workers.dev')) {
+      frontendBase = sanitized;
+    } else if (!isProduction && (sanitized.includes('localhost') || sanitized.includes('127.0.0.1'))) {
       frontendBase = sanitized;
     }
   } else if (config.frontendUrl && !config.frontendUrl.includes('netlify.app')) {
-    frontendBase = config.frontendUrl.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+    const candidate = config.frontendUrl.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+    if (!isProduction || (!candidate.includes('localhost') && !candidate.includes('127.0.0.1'))) {
+      frontendBase = candidate;
+    }
   }
 
   if (frontendBase.includes('netlify.app')) {
@@ -938,14 +944,20 @@ function getPasswordResetEmailHtml(name, resetUrl) {
  * @param {string|null} clientOrigin Client origin domain
  */
 export async function sendPasswordResetEmail(to, name, token, clientOrigin = null) {
+  const isProduction = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER) || Boolean(process.env.RENDER_SERVICE_ID);
   let frontendBase = 'https://salah-companion.mdsaif.workers.dev';
   if (clientOrigin) {
     const sanitized = clientOrigin.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
-    if (sanitized.includes('workers.dev') || sanitized.includes('localhost')) {
+    if (sanitized.includes('workers.dev')) {
+      frontendBase = sanitized;
+    } else if (!isProduction && (sanitized.includes('localhost') || sanitized.includes('127.0.0.1'))) {
       frontendBase = sanitized;
     }
   } else if (config.frontendUrl && !config.frontendUrl.includes('netlify.app')) {
-    frontendBase = config.frontendUrl.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+    const candidate = config.frontendUrl.replace('salahcopmanion', 'salahcompanion').replace(/\/+$/, '');
+    if (!isProduction || (!candidate.includes('localhost') && !candidate.includes('127.0.0.1'))) {
+      frontendBase = candidate;
+    }
   }
 
   if (frontendBase.includes('netlify.app')) {
