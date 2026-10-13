@@ -343,7 +343,7 @@ export const salahApi = {
    * Send / Resend 6-digit numeric email OTP
    * POST /api/auth/send-otp
    */
-  async sendOtp(payload: { email: string; type?: 'VERIFICATION' | 'LOGIN' }): Promise<{
+  async sendOtp(payload: { email: string; name?: string; type?: 'VERIFICATION' | 'LOGIN' }): Promise<{
     success: boolean;
     message: string;
     expiresIn?: number;
@@ -376,28 +376,10 @@ export const salahApi = {
   },
 
   /**
-   * Verify email token
-   * GET /api/auth/verify-email?token=...
+   * Resend verification OTP (backward compatibility alias)
    */
-  async verifyEmail(token: string): Promise<AuthResponse> {
-    const data: AuthResponse = await fetchWithAuth(`/auth/verify-email?token=${encodeURIComponent(token)}`, {
-      method: 'GET',
-    });
-    if (data.token) {
-      authStorage.setToken(data.token);
-    }
-    return data;
-  },
-
-  /**
-   * Resend email verification link
-   * POST /api/auth/resend-verification
-   */
-  async resendVerification(email: string): Promise<{ success: boolean; message: string; previewUrl?: string; verificationUrl?: string; token?: string }> {
-    return await fetchWithAuth('/auth/resend-verification', {
-      method: 'POST',
-      body: JSON.stringify({ email }),
-    });
+  async resendVerification(email: string): Promise<{ success: boolean; message: string; previewUrl?: string; verificationUrl?: string; token?: string; devOtp?: string }> {
+    return await this.sendOtp({ email, type: 'VERIFICATION' }) as any;
   },
 
   /**

@@ -2,8 +2,6 @@ import { Router } from 'express';
 import {
   register,
   login,
-  verifyEmail,
-  resendVerification,
   googleAuth,
   initiateGoogleOAuth,
   handleGoogleOAuthCallback,
@@ -30,7 +28,6 @@ import {
 import {
   registerSchema,
   loginSchema,
-  resendVerificationSchema,
   googleAuthSchema,
   updateProfileSchema,
   forgotPasswordSchema,
@@ -48,9 +45,20 @@ authRouter.post('/login', validateBody(loginSchema), login);
 authRouter.post('/verify-otp', validateBody(verifyOtpSchema), verifyOtp);
 authRouter.post('/send-otp', resendHourlyRateLimiter, validateBody(sendOtpSchema), sendOtp);
 authRouter.post('/resend-otp', resendHourlyRateLimiter, validateBody(sendOtpSchema), sendOtp);
-authRouter.get('/verify-email', verifyEmail);
-authRouter.post('/verify-email', verifyEmail);
-authRouter.post('/resend-verification', resendHourlyRateLimiter, validateBody(resendVerificationSchema), resendVerification);
+// Legacy Magic Link Retirement (Redirect to OTP Login)
+authRouter.get('/verify-email', (req, res) => {
+  const isProd = process.env.NODE_ENV === 'production' || Boolean(process.env.RENDER);
+  const target = isProd ? 'https://salah-companion.mdsaif.workers.dev/login?notice=use_otp' : 'http://localhost:5173/login?notice=use_otp';
+  return res.redirect(target);
+});
+authRouter.post('/verify-email', (req, res) => {
+  return res.status(410).json({
+    success: false,
+    error: 'Verification links have been retired. Please sign in using your 6-digit email OTP.',
+    code: 'OBSOLETE_VERIFICATION_LINK',
+  });
+});
+authRouter.post('/resend-verification', resendHourlyRateLimiter, validateBody(sendOtpSchema), sendOtp);
 authRouter.get('/status', checkEmailStatus);
 authRouter.get('/email-health', getEmailHealth);
 

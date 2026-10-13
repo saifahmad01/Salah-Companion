@@ -35,6 +35,14 @@ export const ModalWrapper: React.FC<ModalWrapperProps> = ({
   children,
   zIndexClass = 'z-50',
 }) => {
+  const [mountedAt, setMountedAt] = React.useState(() => Date.now())
+
+  React.useEffect(() => {
+    if (isOpen) {
+      setMountedAt(Date.now())
+    }
+  }, [isOpen])
+
   if (!isOpen) return null
 
   return (
@@ -42,12 +50,14 @@ export const ModalWrapper: React.FC<ModalWrapperProps> = ({
       className={`fixed inset-0 ${zIndexClass} flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs transition-opacity animate-fade-in touch-manipulation`}
       onClick={(e) => {
         if (e.target === e.currentTarget) {
+          // Prevent ghost clicks on mobile touchscreens from immediately dismissing the modal upon opening
+          if (Date.now() - mountedAt < 250) return
           onClose()
         }
       }}
     >
       <div
-        className="relative w-full max-w-[430px] sm:max-w-[500px] md:max-w-[540px] bg-[#FAF8F3] rounded-t-[28px] sm:rounded-[28px] max-h-[85vh] overflow-y-auto shadow-2xl border border-stone-200 p-6 animate-slide-up pointer-events-auto"
+        className="relative w-full max-w-[430px] sm:max-w-[500px] md:max-w-[540px] bg-[#FAF8F3] rounded-t-[28px] sm:rounded-[28px] max-h-[88vh] overflow-y-auto shadow-2xl border border-stone-200 p-5 pb-8 sm:p-6 sm:pb-6 animate-slide-up pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between pb-4 border-b border-[#E9E4D8]">
@@ -999,23 +1009,23 @@ export const PrayerStatusModal: React.FC<{
                   if (isDisabled) return
                   onSelectStatus(prayer.id, opt.status)
                 }}
-                className={`w-full p-3 rounded-2xl border text-left transition-all flex items-start gap-3 touch-manipulation ${
+                className={`w-full p-3 rounded-2xl border text-left transition-colors flex items-start gap-3 touch-manipulation pointer-events-auto ${
                   isDisabled
                     ? 'opacity-40 cursor-not-allowed bg-stone-100 border-stone-200'
                     : isSelected
                     ? opt.bgActive
-                    : 'bg-white border-[#EBE7DE] hover:border-stone-400 shadow-2xs cursor-pointer active:scale-[0.99]'
+                    : 'bg-white border-[#EBE7DE] hover:border-stone-400 shadow-2xs cursor-pointer active:brightness-95 active:bg-stone-50'
                 }`}
               >
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 pointer-events-none ${
                     isDisabled ? 'bg-stone-200' : isSelected ? 'bg-white shadow-2xs' : 'bg-stone-100'
                   }`}
                 >
                   <Icon className={`w-5 h-5 ${isDisabled ? 'text-stone-400' : opt.colorClass}`} />
                 </div>
 
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 pointer-events-none">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <span className={`text-[13px] font-bold ${isDisabled ? 'text-stone-400' : opt.colorClass}`}>

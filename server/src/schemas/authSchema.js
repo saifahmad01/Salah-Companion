@@ -172,6 +172,7 @@ export const verifyOtpSchema = z.object({
  */
 export const sendOtpSchema = z.object({
   email: emailValidation,
+  name: z.string().trim().min(1).max(100).optional(),
   type: z.enum(['VERIFICATION', 'LOGIN']).optional(),
 });
 

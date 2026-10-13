@@ -9,7 +9,6 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
-import VerifyEmailPage from './pages/VerifyEmailPage'
 import AppDashboard from './pages/AppDashboard'
 import AdminDashboard from './pages/AdminDashboard'
 
@@ -58,8 +57,8 @@ export default function App() {
           {/* Password Reset Callback Route */}
           <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-          {/* Email Verification Callback Route */}
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          {/* Email Verification Route Redirects directly to OTP Login */}
+          <Route path="/verify-email" element={<Navigate to="/login" replace />} />
 
           {/* Protected Routes (Requires authenticated user session) */}
           <Route

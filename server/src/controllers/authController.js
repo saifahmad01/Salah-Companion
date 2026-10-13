@@ -3,7 +3,6 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../db/prisma.js';
 import {
-  sendVerificationEmail,
   sendOtpEmail,
   sendPasswordResetEmail,
   verifyEmailTransport,
@@ -1455,7 +1454,7 @@ export async function verifyOtp(req, res, next) {
             data: {
               name: pendingTx.name,
               email: pendingTx.email,
-              password: pendingTx.password,
+              password: pendingTx.password && pendingTx.password.trim() ? pendingTx.password : null,
               role: isPermanentAdmin(pendingTx.email) ? 'ADMIN' : 'USER',
               prayerCalculationMethod: pendingTx.prayerCalculationMethod || 'Karachi',
               latitude: pendingTx.latitude,
@@ -1659,22 +1658,17 @@ export async function sendOtp(req, res, next) {
       where: { email: normalizedEmail },
     });
 
-    const targetRecord = pending || user;
-
-    if (!targetRecord) {
-      // Mitigate account enumeration timing attack
-      await bcrypt.compare('dummy_timing_protection', DUMMY_HASH);
-      return res.status(200).json({
-        success: true,
-        message: 'If an account exists with this email address, a 6-digit verification code has been dispatched.',
-        code: 'OTP_DISPATCHED',
-        email: normalizedEmail,
-        expiresIn: 300,
-      });
+    let targetName = 'Brother/Sister';
+    if (user) {
+      targetName = user.name || targetName;
+    } else if (pending) {
+      targetName = req.body?.name || pending.name || targetName;
+    } else {
+      targetName = req.body?.name || targetName;
     }
 
     // Check resend cooldown (60 seconds)
-    const lastSentAt = pending ? pending.lastSentAt : user.lastVerificationSentAt;
+    const lastSentAt = pending ? pending.lastSentAt : (user ? user.lastVerificationSentAt : null);
     if (lastSentAt) {
       const elapsedMs = Date.now() - new Date(lastSentAt).getTime();
       const cooldownMs = config.verificationResendCooldownSec * 1000;
@@ -1692,17 +1686,17 @@ export async function sendOtp(req, res, next) {
     // Generate fresh 6-digit OTP
     const { otp, tokenHash } = generateOtp();
     const tokenExpiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5-minute strict TTL
-    const recipientName = targetRecord.name || 'Brother/Sister';
 
     // Send email first
-    const emailResult = await sendOtpEmail(normalizedEmail, recipientName, otp);
+    const emailResult = await sendOtpEmail(normalizedEmail, targetName, otp);
 
-    // Update DB record
+    // Update DB record or create pending registration for new OTP users
     if (pending) {
       await prisma.pendingRegistration.update({
         where: { id: pending.id },
         data: {
           tokenHash,
+          name: req.body?.name || pending.name,
           expiresAt: tokenExpiresAt,
           lastSentAt: new Date(),
         },
@@ -1714,6 +1708,17 @@ export async function sendOtp(req, res, next) {
           verificationTokenHash: tokenHash,
           tokenExpiresAt,
           lastVerificationSentAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.pendingRegistration.create({
+        data: {
+          name: targetName,
+          email: normalizedEmail,
+          password: '',
+          tokenHash,
+          expiresAt: tokenExpiresAt,
+          lastSentAt: new Date(),
         },
       });
     }
