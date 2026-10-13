@@ -18,10 +18,12 @@ import {
 } from 'lucide-react';
 import { adminApi, type AdminOverviewData, type AdminUserData } from '../services/backendApi';
 import { useAuth } from '../context/AuthContext';
+import { SignOutConfirmationModal } from '../components/SignOutConfirmationModal';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser, logout, banner, setBanner } = useAuth();
+  const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
 
   const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'broadcast'>('overview');
   const [overview, setOverview] = useState<AdminOverviewData | null>(null);
@@ -202,7 +204,7 @@ export const AdminDashboard: React.FC = () => {
             <p className="text-[10px] text-emerald-300/70">{currentUser?.email}</p>
           </div>
           <button
-            onClick={logout}
+            onClick={() => setIsSignOutModalOpen(true)}
             className="text-xs font-medium px-3 py-1.5 rounded-lg bg-rose-950/40 border border-rose-800/40 hover:bg-rose-900/60 text-rose-200 transition cursor-pointer"
           >
             Sign Out
@@ -577,6 +579,16 @@ export const AdminDashboard: React.FC = () => {
             </form>
           </div>
         )}
+        <SignOutConfirmationModal
+          isOpen={isSignOutModalOpen}
+          onClose={() => setIsSignOutModalOpen(false)}
+          onConfirmSignOut={async () => {
+            await logout();
+            setIsSignOutModalOpen(false);
+            navigate('/', { replace: true });
+          }}
+          userName={currentUser?.name}
+        />
       </main>
     </div>
   );

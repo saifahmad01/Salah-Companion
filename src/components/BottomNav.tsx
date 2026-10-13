@@ -16,7 +16,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
         <button
           type="button"
           onClick={() => onTabChange('home')}
-          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer"
+          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer touch-manipulation min-w-[48px] min-h-[44px]"
         >
           <div className="h-6 flex items-center justify-center">
             <Home
@@ -42,7 +42,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
         <button
           type="button"
           onClick={() => onTabChange('salah')}
-          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer"
+          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer touch-manipulation min-w-[48px] min-h-[44px]"
         >
           <div className="h-6 flex items-center justify-center">
             <Moon
@@ -68,7 +68,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
         <button
           type="button"
           onClick={() => onTabChange('quran')}
-          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer"
+          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer touch-manipulation min-w-[48px] min-h-[44px]"
         >
           <div className="h-6 flex items-center justify-center">
             <BookOpen
@@ -94,7 +94,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
         <button
           type="button"
           onClick={() => onTabChange('progress')}
-          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer"
+          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer touch-manipulation min-w-[48px] min-h-[44px]"
         >
           <div className="h-6 flex items-center justify-center">
             <BarChart2
@@ -120,7 +120,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) 
         <button
           type="button"
           onClick={() => onTabChange('settings')}
-          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer"
+          className="flex flex-col items-center justify-center py-1 px-2.5 transition-colors group cursor-pointer touch-manipulation min-w-[48px] min-h-[44px]"
         >
           <div className="h-6 flex items-center justify-center">
             <Settings

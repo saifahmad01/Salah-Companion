@@ -193,9 +193,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           {/* Left Column (6 cols): Profile, Prayer Settings, Preferences */}
           <div className="lg:col-span-6 space-y-4">
             {/* Card 1: User Profile */}
-            <div
+            <button
+              type="button"
               onClick={onOpenAuthModal}
-              className="w-full rounded-[22px] bg-white border border-[#EDE8DC] p-3.5 flex items-center justify-between shadow-xs hover:border-emerald-300 transition cursor-pointer"
+              className="w-full text-left rounded-[22px] bg-white border border-[#EDE8DC] p-3.5 flex items-center justify-between shadow-xs hover:border-emerald-300 transition cursor-pointer touch-manipulation"
             >
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-full bg-[#EAF5EF] border border-[#CEE5D8] flex items-center justify-center text-[#0E543F]">
@@ -223,14 +224,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   </p>
                 </div>
               </div>
-              <ChevronRight className="w-4 h-4 text-stone-400" />
-            </div>
+              <ChevronRight className="w-4 h-4 text-stone-400 shrink-0" />
+            </button>
 
             {/* Admin Portal Shortcut Card (Rendered for ADMIN role) */}
             {user?.role === 'ADMIN' && (
-              <div
+              <button
+                type="button"
                 onClick={() => navigate('/admin')}
-                className="w-full rounded-[22px] bg-gradient-to-r from-[#07241A] via-[#0C382B] to-[#114E3C] border border-amber-400/40 p-4 shadow-md flex items-center justify-between cursor-pointer hover:border-amber-300 transition group select-none"
+                className="w-full text-left rounded-[22px] bg-gradient-to-r from-[#07241A] via-[#0C382B] to-[#114E3C] border border-amber-400/40 p-4 shadow-md flex items-center justify-between cursor-pointer hover:border-amber-300 transition group select-none touch-manipulation"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-11 h-11 rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-300 shadow-inner">
@@ -252,7 +254,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   <span className="hidden sm:inline">Open</span>
                   <ChevronRight className="w-4 h-4" />
                 </div>
-              </div>
+              </button>
             )}
 
             {/* Section 1: Prayer Settings */}
@@ -273,9 +275,10 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
               <div className="divide-y divide-[#F0EDE5] text-xs">
                 {/* Location */}
-                <div
+                <button
+                  type="button"
                   onClick={onOpenLocation}
-                  className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                  className="w-full text-left py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition touch-manipulation min-h-[44px]"
                 >
                   <div className="flex items-center gap-2.5 text-[#24352D]">
                     <MapPin className="w-4 h-4 text-stone-500" />
@@ -287,13 +290,14 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </span>
                     <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" />
                   </div>
-                </div>
+                </button>
 
                 {/* Qibla Direction */}
                 {onOpenQibla && (
-                  <div
+                  <button
+                    type="button"
                     onClick={onOpenQibla}
-                    className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                    className="w-full text-left py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition touch-manipulation min-h-[44px]"
                   >
                     <div className="flex items-center gap-2.5 text-[#24352D]">
                       <Compass className="w-4 h-4 text-[#0E543F]" />
@@ -303,11 +307,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       <span className="font-semibold text-[#0E543F]">Open Compass</span>
                       <ChevronRight className="w-3.5 h-3.5" />
                     </div>
-                  </div>
+                  </button>
                 )}
 
                 {/* Calculation Method */}
-                <div
+                <button
+                  type="button"
                   onClick={() => {
                     const methods = [
                       'Muslim World League',
@@ -319,7 +324,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     const nextMethod = methods[(currIdx + 1) % methods.length]
                     onChangeCalculationMethod(nextMethod)
                   }}
-                  className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                  className="w-full text-left py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition touch-manipulation min-h-[44px]"
                 >
                   <div className="flex items-center gap-2.5 text-[#24352D]">
                     <Calendar className="w-4 h-4 text-stone-500" />
@@ -331,14 +336,15 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </div>
-                </div>
+                </button>
 
                 {/* Madhab */}
-                <div
+                <button
+                  type="button"
                   onClick={() => {
                     onChangeMadhab(madhab === "Shafi'i" ? 'Hanafi' : "Shafi'i")
                   }}
-                  className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                  className="w-full text-left py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition touch-manipulation min-h-[44px]"
                 >
                   <div className="flex items-center gap-2.5 text-[#24352D]">
                     <BookOpen className="w-4 h-4 text-stone-500" />
@@ -350,12 +356,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </div>
-                </div>
+                </button>
 
                 {/* Friday Juma Prayer Time */}
-                <div
+                <button
+                  type="button"
                   onClick={handleCycleJumuahTime}
-                  className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                  className="w-full text-left py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition touch-manipulation min-h-[44px]"
                   title="Click to cycle Friday Juma prayer start time"
                 >
                   <div className="flex items-center gap-2.5 text-[#24352D]">
@@ -368,12 +375,13 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </div>
-                </div>
+                </button>
 
                 {/* Prayer Notifications */}
-                <div
+                <button
+                  type="button"
                   onClick={() => handleUpdatePref('prayerStartEnabled', !currentPrefs.prayerStartEnabled)}
-                  className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                  className="w-full text-left py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition touch-manipulation min-h-[44px]"
                 >
                   <div className="flex items-center gap-2.5 text-[#24352D]">
                     <Bell className="w-4 h-4 text-stone-500" />
@@ -389,7 +397,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     </span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </div>
-                </div>
+                </button>
               </div>
             </div>
 
@@ -411,25 +419,25 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
               <div className="divide-y divide-[#F0EDE5] text-xs">
                 {/* Language */}
-                <div className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition">
+                <div className="py-2.5 flex items-center justify-between cursor-default rounded-lg px-1">
                   <div className="flex items-center gap-2.5 text-[#24352D]">
                     <Globe className="w-4 h-4 text-stone-500" />
                     <span className="font-medium">Language</span>
                   </div>
                   <div className="flex items-center gap-1.5 text-stone-500">
                     <span className="font-medium text-[#1E2E25]">English</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
                   </div>
                 </div>
 
                 {/* Time Format */}
-                <div
+                <button
+                  type="button"
                   onClick={() => {
                     onChangeTimeFormat(
                       timeFormat.includes('12') ? '24-hour' : '12-hour (AM/PM)'
                     )
                   }}
-                  className="py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition"
+                  className="w-full text-left py-2.5 flex items-center justify-between cursor-pointer hover:bg-stone-50/60 rounded-lg px-1 transition touch-manipulation min-h-[44px]"
                 >
                   <div className="flex items-center gap-2.5 text-[#24352D]">
                     <Clock className="w-4 h-4 text-stone-500" />
@@ -439,7 +447,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     <span className="font-medium text-[#1E2E25]">{timeFormat}</span>
                     <ChevronRight className="w-3.5 h-3.5" />
                   </div>
-                </div>
+                </button>
               </div>
             </div>
           </div>

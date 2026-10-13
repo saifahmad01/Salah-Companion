@@ -38,7 +38,10 @@ export const ModalWrapper: React.FC<ModalWrapperProps> = ({
   if (!isOpen) return null
 
   return (
-    <div className={`fixed inset-0 ${zIndexClass} flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs transition-opacity animate-fade-in`}>
+    <div
+      className={`fixed inset-0 ${zIndexClass} flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-xs transition-opacity animate-fade-in`}
+      onClick={onClose}
+    >
       <div
         className="relative w-full max-w-[430px] sm:max-w-[500px] md:max-w-[540px] bg-[#FAF8F3] rounded-t-[28px] sm:rounded-[28px] max-h-[85vh] overflow-y-auto shadow-2xl border border-stone-200 p-6 animate-slide-up"
         onClick={(e) => e.stopPropagation()}
