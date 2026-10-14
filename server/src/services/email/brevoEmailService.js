@@ -16,6 +16,7 @@ import { getResetPasswordEmailHtml, getResetPasswordEmailText } from './template
 class BrevoEmailService {
   constructor() {
     this.transporter = null;
+    this.fallbackTransporter = null;
     this.smtpInitialized = false;
   }
 
@@ -39,6 +40,19 @@ class BrevoEmailService {
   }
 
   /**
+   * Resolves secondary fallback SMTP configuration (e.g. Gmail)
+   */
+  getFallbackConfig() {
+    const host = process.env.EMAIL_HOST || config.fallbackSmtpHost || 'smtp.gmail.com';
+    const port = Number(process.env.EMAIL_PORT || config.fallbackSmtpPort || 465);
+    const user = process.env.EMAIL_USER || config.fallbackSmtpUser || '';
+    const pass = process.env.EMAIL_PASS || config.fallbackSmtpPass || '';
+    const secure = process.env.EMAIL_SECURE === 'true' || port === 465;
+
+    return { host, port, user, pass, secure };
+  }
+
+  /**
    * Resolves verified sender details
    */
   getSender() {
@@ -48,16 +62,17 @@ class BrevoEmailService {
   }
 
   /**
-   * Checks whether Brevo is configured (either via SMTP or REST API)
+   * Checks whether email service is configured (either via Brevo SMTP/API or Fallback SMTP)
    */
   isConfigured() {
     const smtp = this.getSmtpConfig();
     const apiKey = this.getApiKey();
-    return Boolean((smtp.user && smtp.pass) || apiKey);
+    const fallback = this.getFallbackConfig();
+    return Boolean((smtp.user && smtp.pass) || apiKey || (fallback.user && fallback.pass));
   }
 
   /**
-   * Initializes or returns the cached Nodemailer SMTP transporter
+   * Initializes or returns the cached Nodemailer SMTP transporter for Brevo
    */
   getTransporter() {
     const smtp = this.getSmtpConfig();
@@ -84,6 +99,36 @@ class BrevoEmailService {
     }
 
     return this.transporter;
+  }
+
+  /**
+   * Initializes or returns the cached secondary fallback SMTP transporter (e.g. Gmail)
+   */
+  getFallbackTransporter() {
+    const fallback = this.getFallbackConfig();
+    if (!fallback.user || !fallback.pass) {
+      return null;
+    }
+
+    if (!this.fallbackTransporter) {
+      this.fallbackTransporter = nodemailer.createTransport({
+        host: fallback.host,
+        port: fallback.port,
+        secure: fallback.secure,
+        auth: {
+          user: fallback.user,
+          pass: fallback.pass,
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+    }
+
+    return this.fallbackTransporter;
   }
 
   /**
@@ -222,16 +267,47 @@ class BrevoEmailService {
     }
 
     // 4. Secondary Delivery: Brevo REST API (bypasses Render/cloud SMTP port blocks)
+    let restError = null;
     try {
       const restResult = await this.sendViaRestApi({ to, name, subject, html, text });
       return restResult;
     } catch (restErr) {
-      console.error(`[BrevoEmailService] REST API delivery failed: ${restErr.message}`);
-      const combinedError = smtpError
-        ? `SMTP failed (${smtpError.message}) and REST API failed (${restErr.message})`
-        : restErr.message;
-      throw new Error(`Failed to deliver verification email: ${combinedError}`);
+      restError = restErr;
+      console.warn(`[BrevoEmailService] Brevo REST API delivery failed: ${restErr.message}. Attempting resilient fallback SMTP.`);
     }
+
+    // 5. Tertiary Delivery: Resilient Fallback SMTP (Gmail or custom secondary SMTP)
+    const fallbackTransporter = this.getFallbackTransporter();
+    if (fallbackTransporter) {
+      try {
+        console.warn(`[BrevoEmailService] Engaging resilient fallback SMTP delivery to ${to.replace(/(?<=.).(?=.*@)/g, '*')}...`);
+        const fallbackConfig = this.getFallbackConfig();
+        const fallbackOptions = {
+          from: `"${sender.name}" <${fallbackConfig.user || sender.email}>`,
+          to,
+          subject,
+          text,
+          html,
+        };
+
+        const fallbackInfo = await fallbackTransporter.sendMail(fallbackOptions);
+        console.log(`[BrevoEmailService] ✅ Verification email delivered via fallback SMTP (${fallbackInfo.messageId}).`);
+        return {
+          success: true,
+          messageId: fallbackInfo.messageId,
+          transport: 'fallback_smtp',
+        };
+      } catch (fallbackErr) {
+        console.error(`[BrevoEmailService] Fallback SMTP delivery failed: ${fallbackErr.message}`);
+      }
+    }
+
+    // If all configured transports fail, throw detailed diagnosis
+    const errorDetails = [];
+    if (smtpError) errorDetails.push(`SMTP failed (${smtpError.message})`);
+    if (restError) errorDetails.push(`REST API failed (${restError.message})`);
+    const combinedError = errorDetails.join(' and ') || 'No email transports succeeded';
+    throw new Error(`Failed to deliver verification email: ${combinedError}`);
   }
 
   /**
@@ -304,16 +380,46 @@ class BrevoEmailService {
     }
 
     // 4. Secondary Delivery: Brevo REST API
+    let restError = null;
     try {
       const restResult = await this.sendViaRestApi({ to, name, subject, html, text });
       return restResult;
     } catch (restErr) {
-      console.error(`[BrevoEmailService] REST API delivery failed: ${restErr.message}`);
-      const combinedError = smtpError
-        ? `SMTP failed (${smtpError.message}) and REST API failed (${restErr.message})`
-        : restErr.message;
-      throw new Error(`Failed to deliver password reset email: ${combinedError}`);
+      restError = restErr;
+      console.warn(`[BrevoEmailService] Brevo REST API delivery failed: ${restErr.message}. Attempting resilient fallback SMTP.`);
     }
+
+    // 5. Tertiary Delivery: Resilient Fallback SMTP
+    const fallbackTransporter = this.getFallbackTransporter();
+    if (fallbackTransporter) {
+      try {
+        console.warn(`[BrevoEmailService] Engaging resilient fallback SMTP delivery for password reset to ${to.replace(/(?<=.).(?=.*@)/g, '*')}...`);
+        const fallbackConfig = this.getFallbackConfig();
+        const fallbackOptions = {
+          from: `"${sender.name}" <${fallbackConfig.user || sender.email}>`,
+          to,
+          subject,
+          text,
+          html,
+        };
+
+        const fallbackInfo = await fallbackTransporter.sendMail(fallbackOptions);
+        console.log(`[BrevoEmailService] ✅ Password reset email delivered via fallback SMTP (${fallbackInfo.messageId}).`);
+        return {
+          success: true,
+          messageId: fallbackInfo.messageId,
+          transport: 'fallback_smtp',
+        };
+      } catch (fallbackErr) {
+        console.error(`[BrevoEmailService] Fallback SMTP delivery failed: ${fallbackErr.message}`);
+      }
+    }
+
+    const errorDetails = [];
+    if (smtpError) errorDetails.push(`SMTP failed (${smtpError.message})`);
+    if (restError) errorDetails.push(`REST API failed (${restError.message})`);
+    const combinedError = errorDetails.join(' and ') || 'No email transports succeeded';
+    throw new Error(`Failed to deliver password reset email: ${combinedError}`);
   }
 }
 
