@@ -7,6 +7,22 @@ interface AuthContextType {
   isAuthenticated: boolean
   logout: () => Promise<void>
   refreshUser: () => Promise<UserProfile | null>
+  login: (payload: { email: string; password: string }) => Promise<UserProfile>
+  register: (payload: {
+    name: string
+    email: string
+    password: string
+    prayerCalculationMethod?: string
+    latitude?: number | null
+    longitude?: number | null
+  }) => Promise<{ success: boolean; requiresVerification: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }>
+  registerVerify: (email: string, otp: string) => Promise<UserProfile>
+  registerResend: (email: string) => Promise<{ success: boolean; message: string; cooldownSeconds?: number; expiresInSeconds?: number }>
+  forgotPassword: (email: string) => Promise<{ success: boolean; message: string; resetToken?: string; resetUrl?: string }>
+  resetPassword: (payload: { token: string; password: string }) => Promise<UserProfile>
+  sendOtp: (email: string, name?: string) => Promise<{ success: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }>
+  verifyOtp: (email: string, otp: string) => Promise<UserProfile>
+  resendOtp: (email: string) => Promise<{ success: boolean; message: string; cooldownSeconds?: number }>
   banner: { type: 'success' | 'error'; message: string } | null
   setBanner: React.Dispatch<React.SetStateAction<{ type: 'success' | 'error'; message: string } | null>>
 }
@@ -42,6 +58,69 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       setUser(null)
       return null
     }
+  }
+
+  const login = async (payload: { email: string; password: string }): Promise<UserProfile> => {
+    const res = await salahApi.login(payload)
+    if (!res.user) {
+      throw new Error('User profile missing in login response')
+    }
+    setUser(res.user)
+    return res.user
+  }
+
+  const register = async (payload: {
+    name: string
+    email: string
+    password: string
+    prayerCalculationMethod?: string
+    latitude?: number | null
+    longitude?: number | null
+  }) => {
+    return await salahApi.register(payload)
+  }
+
+  const registerVerify = async (email: string, otp: string): Promise<UserProfile> => {
+    const res = await salahApi.registerVerify(email, otp)
+    if (!res.user) {
+      throw new Error('User profile missing in registration verification response')
+    }
+    setUser(res.user)
+    return res.user
+  }
+
+  const registerResend = async (email: string) => {
+    return await salahApi.registerResend(email)
+  }
+
+  const forgotPassword = async (email: string) => {
+    return await salahApi.forgotPassword(email)
+  }
+
+  const resetPassword = async (payload: { token: string; password: string }): Promise<UserProfile> => {
+    const res = await salahApi.resetPassword(payload)
+    if (!res.user) {
+      throw new Error('User profile missing in reset password response')
+    }
+    setUser(res.user)
+    return res.user
+  }
+
+  const sendOtp = async (email: string, name?: string) => {
+    return await salahApi.sendOtp(email, name)
+  }
+
+  const verifyOtp = async (email: string, otp: string): Promise<UserProfile> => {
+    const res = await salahApi.verifyOtp(email, otp)
+    if (!res.user) {
+      throw new Error('User profile missing in verification response')
+    }
+    setUser(res.user)
+    return res.user
+  }
+
+  const resendOtp = async (email: string) => {
+    return await salahApi.resendOtp(email)
   }
 
   useEffect(() => {
@@ -96,10 +175,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
       // Notice toast (e.g. redirected from legacy route)
       const noticeParam = params.get('notice')
-      if (noticeParam === 'use_google') {
+      if (noticeParam === 'use_otp') {
         setBanner({
           type: 'success',
-          message: 'Please sign in with Google to access your Salah Companion account.',
+          message: 'Please enter your email to receive a secure 6-digit verification code.',
+        })
+      } else if (noticeParam === 'use_google') {
+        setBanner({
+          type: 'success',
+          message: 'Please sign in with Google or Email OTP to access your account.',
         })
       }
 
@@ -131,6 +215,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         isAuthenticated: !!user,
         logout,
         refreshUser,
+        login,
+        register,
+        registerVerify,
+        registerResend,
+        forgotPassword,
+        resetPassword,
+        sendOtp,
+        verifyOtp,
+        resendOtp,
         banner,
         setBanner,
       }}

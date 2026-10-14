@@ -274,8 +274,131 @@ export interface WeeklyPrayersResponse {
 
 export const salahApi = {
   // ==========================================================================
-  // Authentication & Profile Endpoints (Google OAuth & Session Management)
+  // Authentication & Profile Endpoints (Email + Password, Brevo OTP & Google OAuth)
   // ==========================================================================
+
+  /**
+   * Log in with Email + Password
+   * POST /api/auth/login
+   */
+  async login(payload: { email: string; password: string }): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Register with Email + Password (Triggers 6-digit OTP verification via Brevo)
+   * POST /api/auth/register
+   */
+  async register(payload: {
+    name: string;
+    email: string;
+    password: string;
+    prayerCalculationMethod?: string;
+    latitude?: number | null;
+    longitude?: number | null;
+  }): Promise<{ success: boolean; requiresVerification: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }> {
+    return await fetchWithAuth('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /**
+   * Verify registration 6-digit OTP code to complete account activation
+   * POST /api/auth/register-verify
+   */
+  async registerVerify(email: string, otp: string): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/register-verify', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Resend registration 6-digit OTP code via Brevo
+   * POST /api/auth/register-resend
+   */
+  async registerResend(email: string): Promise<{ success: boolean; message: string; cooldownSeconds?: number; expiresInSeconds?: number }> {
+    return await fetchWithAuth('/auth/register-resend', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  /**
+   * Request password reset instructions
+   * POST /api/auth/forgot-password
+   */
+  async forgotPassword(email: string): Promise<{ success: boolean; message: string; resetToken?: string; resetUrl?: string }> {
+    return await fetchWithAuth('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
+  /**
+   * Complete password reset with token and new password
+   * POST /api/auth/reset-password
+   */
+  async resetPassword(payload: { token: string; password: string }): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Request a 6-digit OTP code to be sent to user's email via Brevo
+   * POST /api/auth/send-otp
+   */
+  async sendOtp(email: string, name?: string): Promise<{ success: boolean; message: string; email: string; cooldownSeconds?: number; expiresInSeconds?: number }> {
+    return await fetchWithAuth('/auth/send-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, name }),
+    });
+  },
+
+  /**
+   * Verify the 6-digit OTP code and authenticate
+   * POST /api/auth/verify-otp
+   */
+  async verifyOtp(email: string, otp: string): Promise<AuthResponse> {
+    const data: AuthResponse = await fetchWithAuth('/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email, otp }),
+    });
+    if (data.token) {
+      authStorage.setToken(data.token);
+    }
+    return data;
+  },
+
+  /**
+   * Resend a 6-digit OTP code via Brevo
+   * POST /api/auth/resend-otp
+   */
+  async resendOtp(email: string): Promise<{ success: boolean; message: string; cooldownSeconds?: number }> {
+    return await fetchWithAuth('/auth/resend-otp', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  },
+
 
   /**
    * Sign in / sign up with Google OAuth 2.0

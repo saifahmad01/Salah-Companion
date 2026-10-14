@@ -86,4 +86,22 @@ export const config = {
   vapidPublicKey: process.env.VAPID_PUBLIC_KEY || 'BK0MvxYd3ZDZoa05l-2e7qSdFFyUl1OVAtvwVIRf96sWxNAwbS7yifAb9gxTG5YDfHWUlXu_rGn5guso0O6pvvc',
   vapidPrivateKey: process.env.VAPID_PRIVATE_KEY || 'whUyPf51wecRJIeSIK9ul0-IW13FvsGzma7d_LxjO30',
   vapidSubject: process.env.VAPID_SUBJECT || 'mailto:salahcompanion786@gmail.com',
+
+  // Brevo SMTP & Transactional Email Configuration (Free tier: 300 emails/day)
+  brevoSmtpHost: process.env.BREVO_SMTP_HOST || process.env.SMTP_HOST || 'smtp-relay.brevo.com',
+  brevoSmtpPort: parseInt(process.env.BREVO_SMTP_PORT || process.env.SMTP_PORT || '587', 10),
+  brevoSmtpUser: process.env.BREVO_SMTP_USER || process.env.SMTP_USER || '',
+  brevoSmtpKey: process.env.BREVO_SMTP_KEY || process.env.BREVO_SMTP_PASSWORD || process.env.SMTP_PASS || '',
+  brevoApiKey: process.env.BREVO_API_KEY || '',
+  brevoSenderEmail: process.env.BREVO_SENDER_EMAIL || process.env.BREVO_FROM || process.env.EMAIL_FROM_ADDRESS || 'salahcompanion786@gmail.com',
+  brevoSenderName: process.env.BREVO_SENDER_NAME || 'Salah Companion',
+  otpTtlMinutes: parseInt(process.env.OTP_TTL_MINUTES || '5', 10),
+  otpResendCooldownSec: parseInt(process.env.OTP_RESEND_COOLDOWN_SEC || '60', 10),
+
+  // Resilient Secondary Fallback SMTP (Gmail or custom secondary provider)
+  fallbackSmtpHost: process.env.EMAIL_HOST || 'smtp.gmail.com',
+  fallbackSmtpPort: parseInt(process.env.EMAIL_PORT || '465', 10),
+  fallbackSmtpSecure: process.env.EMAIL_SECURE === 'true' || process.env.EMAIL_PORT === '465',
+  fallbackSmtpUser: process.env.EMAIL_USER || 'salahcompanion786@gmail.com',
+  fallbackSmtpPass: process.env.EMAIL_PASS || 'tcynoikdurlgcves',
 };

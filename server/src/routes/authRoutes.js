@@ -1,5 +1,11 @@
 import { Router } from 'express';
 import {
+  register,
+  registerVerify,
+  registerResend,
+  login,
+  forgotPassword,
+  resetPassword,
   googleAuth,
   initiateGoogleOAuth,
   handleGoogleOAuthCallback,
@@ -7,6 +13,9 @@ import {
   getMe,
   updateProfile,
   setPassword,
+  sendOtp,
+  verifyOtp,
+  resendOtp,
   handleRetiredEmailAuth,
 } from '../controllers/authController.js';
 import {
@@ -14,15 +23,46 @@ import {
   validateBody,
 } from '../middlewares/authMiddleware.js';
 import {
+  registerIpRateLimiter,
+  authIpRateLimiter,
+  otpSendRateLimiter,
+  otpVerifyRateLimiter,
+} from '../middlewares/rateLimiter.js';
+import {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
   googleAuthSchema,
   updateProfileSchema,
   setPasswordSchema,
+  sendOtpSchema,
+  verifyOtpSchema,
+  resendOtpSchema,
 } from '../schemas/authSchema.js';
 
 export const authRouter = Router();
 
 // ============================================================================
-// Google OAuth 2.0 / OpenID Connect Authentication
+// 1. Production-Ready Email + Password Authentication (Amazon / Flipkart UX)
+//    Requires mandatory Brevo 6-Digit Email OTP verification before account activation
+// ============================================================================
+authRouter.post('/register', registerIpRateLimiter, validateBody(registerSchema), register);
+authRouter.post('/register-verify', otpVerifyRateLimiter, validateBody(verifyOtpSchema), registerVerify);
+authRouter.post('/register-resend', otpSendRateLimiter, validateBody(resendOtpSchema), registerResend);
+authRouter.post('/login', authIpRateLimiter, validateBody(loginSchema), login);
+authRouter.post('/forgot-password', authIpRateLimiter, validateBody(forgotPasswordSchema), forgotPassword);
+authRouter.post('/reset-password', authIpRateLimiter, validateBody(resetPasswordSchema), resetPassword);
+
+// ============================================================================
+// 2. Email + 6-Digit OTP Authentication (Brevo SMTP & REST API)
+// ============================================================================
+authRouter.post('/send-otp', otpSendRateLimiter, validateBody(sendOtpSchema), sendOtp);
+authRouter.post('/verify-otp', otpVerifyRateLimiter, validateBody(verifyOtpSchema), verifyOtp);
+authRouter.post('/resend-otp', otpSendRateLimiter, validateBody(resendOtpSchema), resendOtp);
+
+// ============================================================================
+// 3. Google OAuth 2.0 / OpenID Connect Authentication
 // ============================================================================
 authRouter.get('/google', initiateGoogleOAuth);
 authRouter.get('/google/callback', handleGoogleOAuthCallback);
@@ -37,21 +77,14 @@ authRouter.patch('/profile', protectRoute, validateBody(updateProfileSchema), up
 authRouter.post('/set-password', protectRoute, validateBody(setPasswordSchema), setPassword);
 
 // ============================================================================
-// Retired Email-Based Authentication Endpoints
-// Returns HTTP 410 Gone ensuring no old email-login endpoint remains active
+// 4. Retired Link-Based Email Verification Endpoints
+// Returns HTTP 410 Gone informing clients that verification links are replaced
 // ============================================================================
 const retiredPaths = [
-  '/login',
-  '/register',
-  '/verify-otp',
-  '/send-otp',
-  '/resend-otp',
   '/verify-email',
   '/resend-verification',
   '/status',
   '/email-health',
-  '/forgot-password',
-  '/reset-password',
 ];
 
 retiredPaths.forEach((path) => {

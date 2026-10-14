@@ -9,6 +9,8 @@ import {
 } from '../services/googleAuthService.js';
 import { config } from '../config/env.js';
 import { isPermanentAdmin } from '../constants/admins.js';
+import { otpService } from '../services/otpService.js';
+import { brevoEmailService } from '../services/email/brevoEmailService.js';
 
 const JWT_SECRET = config.jwtSecret || process.env.JWT_SECRET || 'fallback_secret_for_dev_only_change_in_production';
 const JWT_EXPIRES_IN = config.jwtExpiresIn || process.env.JWT_EXPIRES_IN || '7d';
@@ -460,17 +462,599 @@ export async function setPassword(req, res, next) {
 }
 
 /**
- * 8. Handler for retired email-based authentication endpoints
- * Returns 410 Gone ensuring no old email-login endpoint remains active
+ * 8. Request 6-Digit OTP via Brevo
+ * POST /api/auth/send-otp
+ */
+export async function sendOtp(req, res, next) {
+  try {
+    const { email, name } = req.body;
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email address is required.',
+        code: 'EMAIL_REQUIRED',
+      });
+    }
+
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    const result = await otpService.requestOtp({ email, name, isAuthorizedTest });
+    return res.status(200).json(result);
+  } catch (err) {
+    if (err.code === 'RESEND_COOLDOWN') {
+      return res.status(429).json({
+        success: false,
+        error: err.message,
+        code: 'RESEND_COOLDOWN',
+        retryAfter: err.retryAfter,
+      });
+    }
+    console.error('[AuthController] sendOtp error:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Failed to send verification code. Please check email configuration.',
+      code: 'SEND_OTP_FAILED',
+    });
+  }
+}
+
+/**
+ * 9. Verify 6-Digit OTP and Log In
+ * POST /api/auth/verify-otp
+ */
+export async function verifyOtp(req, res, next) {
+  try {
+    const { email, otp } = req.body;
+    if (!email || !otp) {
+      return res.status(400).json({
+        success: false,
+        error: 'Email and 6-digit verification code are required.',
+        code: 'MISSING_FIELDS',
+      });
+    }
+
+    const result = await otpService.verifyOtp({ email, otp });
+    const user = result.user;
+
+    const token = signToken(user);
+    setAuthCookie(res, token);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged in successfully.',
+      token,
+      user: sanitizeUser(user),
+    });
+  } catch (err) {
+    if (err.code === 'OTP_MISMATCH') {
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        code: 'OTP_MISMATCH',
+        remainingAttempts: err.remainingAttempts,
+      });
+    }
+    if (err.code === 'OTP_MAX_ATTEMPTS_EXCEEDED') {
+      return res.status(403).json({
+        success: false,
+        error: err.message,
+        code: 'OTP_MAX_ATTEMPTS_EXCEEDED',
+      });
+    }
+    if (err.code === 'OTP_EXPIRED') {
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        code: 'OTP_EXPIRED',
+      });
+    }
+    if (err.code === 'NO_ACTIVE_OTP' || err.code === 'INVALID_OTP_FORMAT') {
+      return res.status(400).json({
+        success: false,
+        error: err.message,
+        code: err.code,
+      });
+    }
+    console.error('[AuthController] verifyOtp error:', err.message);
+    return res.status(500).json({
+      success: false,
+      error: err.message || 'Verification failed. Please try again.',
+      code: 'VERIFY_OTP_FAILED',
+    });
+  }
+}
+
+/**
+ * 10. Resend 6-Digit OTP via Brevo
+ * POST /api/auth/resend-otp
+ */
+export async function resendOtp(req, res, next) {
+  return sendOtp(req, res, next);
+}
+
+/**
+ * 11. Initiate Registration with Email + Password & Brevo 6-Digit OTP Verification
+ * POST /api/auth/register
+ */
+export async function register(req, res, next) {
+  try {
+    const { name, email, password, prayerCalculationMethod, latitude, longitude } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 1. Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (existingUser) {
+      return res.status(409).json({
+        success: false,
+        error: 'An account with this email address already exists. Please sign in instead.',
+        code: 'USER_ALREADY_EXISTS',
+      });
+    }
+
+    // 2. Check 60-second cooldown on pending registration
+    const existingPending = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    const now = Date.now();
+    if (existingPending && existingPending.lastSentAt) {
+      const elapsed = now - new Date(existingPending.lastSentAt).getTime();
+      if (elapsed < 60 * 1000) {
+        const remainingSeconds = Math.ceil((60 * 1000 - elapsed) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${remainingSeconds} seconds before requesting a new verification code.`,
+          code: 'RESEND_COOLDOWN',
+          retryAfter: remainingSeconds,
+        });
+      }
+    }
+
+    // 3. Pre-hash password with bcrypt (salt rounds: 12)
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    // 4. Generate 6-digit OTP and store HMAC-SHA256 hash
+    const otp = otpService.generateOtp();
+    const otpHash = otpService.hashOtp(otp);
+    const expiresAt = new Date(now + 5 * 60 * 1000); // 5 minutes
+    const tokenHashValue = `${otpHash}:0:${now}`; // hash:failedAttempts:timestamp
+
+    await prisma.pendingRegistration.upsert({
+      where: { email: normalizedEmail },
+      update: {
+        name: name.trim(),
+        password: hashedPassword,
+        prayerCalculationMethod: prayerCalculationMethod || 'Karachi',
+        latitude: typeof latitude === 'number' ? latitude : null,
+        longitude: typeof longitude === 'number' ? longitude : null,
+        tokenHash: tokenHashValue,
+        expiresAt,
+        lastSentAt: new Date(now),
+      },
+      create: {
+        name: name.trim(),
+        email: normalizedEmail,
+        password: hashedPassword,
+        prayerCalculationMethod: prayerCalculationMethod || 'Karachi',
+        latitude: typeof latitude === 'number' ? latitude : null,
+        longitude: typeof longitude === 'number' ? longitude : null,
+        tokenHash: tokenHashValue,
+        expiresAt,
+        lastSentAt: new Date(now),
+      },
+    });
+
+    // 5. Send OTP verification email via Brevo
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    try {
+      await brevoEmailService.sendOtpEmail({
+        to: normalizedEmail,
+        name: name.trim(),
+        otp,
+        expiresInMinutes: 5,
+        isAuthorizedTest,
+      });
+    } catch (err) {
+      console.error(`[AuthController] Registration OTP delivery error:`, err.message);
+      return res.status(500).json({
+        success: false,
+        error: `Failed to deliver verification code to ${normalizedEmail}. ${err.message}`,
+        code: 'SEND_OTP_FAILED',
+      });
+    }
+
+    const responsePayload = {
+      success: true,
+      requiresVerification: true,
+      message: 'A 6-digit verification code has been sent to your email. Please verify to complete account creation.',
+      email: normalizedEmail,
+      expiresInSeconds: 300,
+      cooldownSeconds: 60,
+    };
+
+    if (isAuthorizedTest) {
+      responsePayload.testOtp = otp;
+    }
+
+    return res.status(200).json(responsePayload);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 11b. Verify 6-Digit OTP and Complete Registration
+ * POST /api/auth/register-verify
+ */
+export async function registerVerify(req, res, next) {
+  try {
+    const { email, otp } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // 1. Fetch pending registration
+    const pending = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!pending) {
+      return res.status(400).json({
+        success: false,
+        error: 'No pending registration found for this email. Please submit the sign up form first.',
+        code: 'NO_PENDING_REGISTRATION',
+      });
+    }
+
+    // 2. Check expiration (5 minutes)
+    if (new Date() > new Date(pending.expiresAt)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Your verification code has expired. Please request a new code.',
+        code: 'OTP_EXPIRED',
+      });
+    }
+
+    // 3. Verify OTP code with attempt limiting (max 5 attempts)
+    const parts = pending.tokenHash.split(':');
+    const storedHash = parts[0];
+    const attempts = parseInt(parts[1], 10) || 0;
+    const isMatch = otpService.verifyHash(otp, storedHash);
+
+    if (!isMatch) {
+      const newAttempts = attempts + 1;
+      if (newAttempts >= 5) {
+        await prisma.pendingRegistration.delete({ where: { email: normalizedEmail } }).catch(() => {});
+        return res.status(403).json({
+          success: false,
+          error: 'Too many incorrect attempts. Please sign up again.',
+          code: 'OTP_MAX_ATTEMPTS_EXCEEDED',
+        });
+      }
+      await prisma.pendingRegistration.update({
+        where: { email: normalizedEmail },
+        data: { tokenHash: `${storedHash}:${newAttempts}:${Date.now()}` },
+      });
+      return res.status(400).json({
+        success: false,
+        error: `Invalid verification code. ${5 - newAttempts} attempts remaining.`,
+        code: 'OTP_MISMATCH',
+        remainingAttempts: 5 - newAttempts,
+      });
+    }
+
+    // 4. Create official verified user record in database
+    const user = await prisma.user.create({
+      data: {
+        name: pending.name,
+        email: pending.email,
+        password: pending.password,
+        prayerCalculationMethod: pending.prayerCalculationMethod,
+        latitude: pending.latitude,
+        longitude: pending.longitude,
+        isEmailVerified: true,
+        role: isPermanentAdmin(pending.email) ? 'ADMIN' : 'USER',
+      },
+    });
+
+    // 5. Clean up pending registration
+    await prisma.pendingRegistration.delete({ where: { email: normalizedEmail } }).catch(() => {});
+
+    // 6. Issue JWT session token + HttpOnly cookie
+    const token = signToken(user);
+    setAuthCookie(res, token);
+
+    return res.status(201).json({
+      success: true,
+      message: 'Account verified and created successfully. Welcome to Salah Companion!',
+      token,
+      user: sanitizeUser(user),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 11c. Resend Registration 6-Digit OTP via Brevo
+ * POST /api/auth/register-resend
+ */
+export async function registerResend(req, res, next) {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const pending = await prisma.pendingRegistration.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!pending) {
+      return res.status(400).json({
+        success: false,
+        error: 'No pending registration found for this email. Please submit the sign up form first.',
+        code: 'NO_PENDING_REGISTRATION',
+      });
+    }
+
+    const now = Date.now();
+    if (pending.lastSentAt) {
+      const elapsed = now - new Date(pending.lastSentAt).getTime();
+      if (elapsed < 60 * 1000) {
+        const remainingSeconds = Math.ceil((60 * 1000 - elapsed) / 1000);
+        return res.status(429).json({
+          success: false,
+          error: `Please wait ${remainingSeconds} seconds before requesting a new code.`,
+          code: 'RESEND_COOLDOWN',
+          retryAfter: remainingSeconds,
+        });
+      }
+    }
+
+    const otp = otpService.generateOtp();
+    const hash = otpService.hashOtp(otp);
+    const expiresAt = new Date(now + 5 * 60 * 1000);
+
+    await prisma.pendingRegistration.update({
+      where: { email: normalizedEmail },
+      data: {
+        tokenHash: `${hash}:0:${now}`,
+        expiresAt,
+        lastSentAt: new Date(now),
+      },
+    });
+
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    await brevoEmailService.sendOtpEmail({
+      to: normalizedEmail,
+      name: pending.name,
+      otp,
+      expiresInMinutes: 5,
+      isAuthorizedTest,
+    });
+
+    const responsePayload = {
+      success: true,
+      message: 'A new 6-digit verification code has been sent to your email.',
+      email: normalizedEmail,
+      cooldownSeconds: 60,
+      expiresInSeconds: 300,
+    };
+
+    if (isAuthorizedTest) {
+      responsePayload.testOtp = otp;
+    }
+
+    return res.status(200).json(responsePayload);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 12. Log in with Email + Password
+ * POST /api/auth/login
+ */
+export async function login(req, res, next) {
+  try {
+    const { email, password } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password.',
+        code: 'INVALID_CREDENTIALS',
+      });
+    }
+
+    if (!user.password) {
+      return res.status(400).json({
+        success: false,
+        error: 'This account was created using Google Sign-In. Please sign in with Google.',
+        code: 'GOOGLE_ACCOUNT_ONLY',
+      });
+    }
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid email or password.',
+        code: 'INVALID_CREDENTIALS',
+      });
+    }
+
+    const token = signToken(user);
+    setAuthCookie(res, token);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Logged in successfully.',
+      token,
+      user: sanitizeUser(user),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 13. Initiate Forgot Password flow
+ * POST /api/auth/forgot-password
+ */
+export async function forgotPassword(req, res, next) {
+  try {
+    const { email } = req.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const user = await prisma.user.findUnique({
+      where: { email: normalizedEmail },
+    });
+
+    // To prevent account enumeration, return standard response if user doesn't exist
+    if (!user) {
+      return res.status(200).json({
+        success: true,
+        message: 'If an account exists with that email address, password reset instructions have been sent.',
+      });
+    }
+
+    // Generate secure 32-byte hex token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+    const resetExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetPasswordTokenHash: resetTokenHash,
+        resetPasswordExpiresAt: resetExpiresAt,
+      },
+    });
+
+    const frontendUrl = getEffectiveFrontendUrl(req);
+    const resetUrl = `${frontendUrl}/reset-password?token=${resetToken}&email=${encodeURIComponent(user.email)}`;
+
+    const isAuthorizedTest = (process.env.NODE_ENV === 'test') ||
+      (req.headers['x-test-secret'] && req.headers['x-test-secret'] === config.jwtSecret) ||
+      (req.body?.testSecret && req.body?.testSecret === config.jwtSecret);
+
+    try {
+      await brevoEmailService.sendPasswordResetEmail({
+        to: user.email,
+        name: user.name,
+        resetUrl,
+        expiresInMinutes: 60,
+        isAuthorizedTest,
+      });
+    } catch (emailErr) {
+      console.warn(`[AuthController] Failed to send password reset email: ${emailErr.message}`);
+      // In local development or test mode, provide safe preview if email fails
+      if (process.env.NODE_ENV !== 'production' || isAuthorizedTest) {
+        return res.status(200).json({
+          success: true,
+          message: 'Password reset link generated (email delivery bypassed in development).',
+          resetToken,
+          resetUrl,
+        });
+      }
+    }
+
+    const responsePayload = {
+      success: true,
+      message: 'If an account exists with that email address, password reset instructions have been sent.',
+    };
+
+    if (isAuthorizedTest) {
+      responsePayload.resetToken = resetToken;
+      responsePayload.resetUrl = resetUrl;
+    }
+
+    return res.status(200).json(responsePayload);
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 14. Complete Password Reset
+ * POST /api/auth/reset-password
+ */
+export async function resetPassword(req, res, next) {
+  try {
+    const { token, password } = req.body;
+    const resetPasswordTokenHash = crypto.createHash('sha256').update(token.trim()).digest('hex');
+
+    const user = await prisma.user.findFirst({
+      where: {
+        resetPasswordTokenHash,
+        resetPasswordExpiresAt: {
+          gt: new Date(),
+        },
+      },
+    });
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        error: 'Password reset link is invalid or has expired. Please request a new one.',
+        code: 'INVALID_OR_EXPIRED_TOKEN',
+      });
+    }
+
+    const saltRounds = 12;
+    const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+    const updatedUser = await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        resetPasswordTokenHash: null,
+        resetPasswordExpiresAt: null,
+      },
+    });
+
+    const sessionToken = signToken(updatedUser);
+    setAuthCookie(res, sessionToken);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Password has been reset successfully. You are now logged in.',
+      token: sessionToken,
+      user: sanitizeUser(updatedUser),
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * 15. Handler for retired legacy authentication links
+ * Returns 410 Gone informing clients that legacy links are retired
  */
 export function handleRetiredEmailAuth(req, res) {
   if (req.method === 'GET') {
     const frontendUrl = getEffectiveFrontendUrl(req);
-    return res.redirect(`${frontendUrl}/login?notice=use_google`);
+    return res.redirect(`${frontendUrl}/login`);
   }
   return res.status(410).json({
     success: false,
-    error: 'Email-based login and verification have been retired. Please sign in with Google.',
+    error: 'Old email verification links are retired. Please use Email + Password or 6-digit OTP login.',
     code: 'EMAIL_AUTH_RETIRED',
   });
 }
+

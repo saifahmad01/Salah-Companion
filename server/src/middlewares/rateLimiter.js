@@ -112,3 +112,40 @@ export const authIpRateLimiter = new SlidingWindowRateLimiter({
   message: (retryAfterSec) => `Too many requests from your IP. Please try again in ${Math.ceil(retryAfterSec / 60)} minutes.`,
   code: 'AUTH_IP_RATE_LIMITED',
 }).middleware();
+
+/**
+ * 4. Dedicated Rate Limiter for OTP Generation / Resend: Max 5 requests per 10 minutes per IP/email
+ */
+export const otpSendRateLimiter = new SlidingWindowRateLimiter({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  maxRequests: 5,
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown_ip';
+    return email && typeof email === 'string'
+      ? `otp_send_${email.trim().toLowerCase()}_${ip}`
+      : `otp_send_${ip}`;
+  },
+  message: (retryAfterSec) =>
+    `Too many verification code requests. Please wait ${Math.ceil(retryAfterSec / 60)} minutes before requesting another code.`,
+  code: 'OTP_RATE_LIMITED',
+}).middleware();
+
+/**
+ * 5. Dedicated Rate Limiter for OTP Verification: Max 10 attempts per 10 minutes per IP/email
+ */
+export const otpVerifyRateLimiter = new SlidingWindowRateLimiter({
+  windowMs: 10 * 60 * 1000, // 10 minutes
+  maxRequests: 10,
+  keyGenerator: (req) => {
+    const email = req.body?.email;
+    const ip = req.ip || req.headers['x-forwarded-for'] || 'unknown_ip';
+    return email && typeof email === 'string'
+      ? `otp_verify_${email.trim().toLowerCase()}_${ip}`
+      : `otp_verify_${ip}`;
+  },
+  message: (retryAfterSec) =>
+    `Too many verification attempts. Please wait ${Math.ceil(retryAfterSec / 60)} minutes before trying again.`,
+  code: 'OTP_VERIFY_RATE_LIMITED',
+}).middleware();
+
