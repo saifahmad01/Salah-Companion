@@ -120,6 +120,8 @@ export const AppDashboard = () => {
     toggleBrowserPush: handleToggleBrowserPush,
     markAsRead: handleMarkNotifRead,
     markAllAsRead: handleMarkAllNotifsRead,
+    deleteNotification: handleDeleteNotif,
+    clearAllNotifications: handleClearAllNotifs,
     sendTestNotification: handleSendTestNotif,
   } = useSalahNotifications({
     userId: currentUser?.id,
@@ -1397,7 +1399,12 @@ export const AppDashboard = () => {
           unreadCount={notifUnreadCount}
           onMarkAsRead={handleMarkNotifRead}
           onMarkAllAsRead={handleMarkAllNotifsRead}
+          onDeleteNotification={handleDeleteNotif}
+          onClearAllNotifications={handleClearAllNotifs}
           onOpenTracker={() => setActiveTab('salah')}
+          onNavigateTo={(tab) => {
+            setActiveTab(tab as any)
+          }}
           onSendTestNotification={handleSendTestNotif}
         />
         <LocationModal

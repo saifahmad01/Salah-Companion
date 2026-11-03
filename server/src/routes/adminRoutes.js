@@ -11,6 +11,12 @@ import {
   upsertQuranResource,
   toggleResourceStatus,
 } from '../controllers/quranResourceController.js';
+import {
+  getAdminUserPrayers,
+  correctUserPrayer,
+  getAdminPrayerCorrections,
+  getAdminSalahAnalytics,
+} from '../controllers/adminSalahController.js';
 import { protectRoute, restrictTo } from '../middlewares/authMiddleware.js';
 
 export const adminRouter = Router();
@@ -32,6 +38,14 @@ adminRouter.delete('/users/:id', deleteUser);
 
 // POST /api/admin/broadcast
 adminRouter.post('/broadcast', broadcastNotification);
+
+// ============================================================================
+// Admin Salah Management & Corrections Endpoints
+// ============================================================================
+adminRouter.get('/prayers', getAdminUserPrayers);
+adminRouter.post('/prayers/correct', correctUserPrayer);
+adminRouter.get('/prayers/corrections', getAdminPrayerCorrections);
+adminRouter.get('/analytics/salah', getAdminSalahAnalytics);
 
 // ============================================================================
 // Quran PDF Resource Admin Endpoints

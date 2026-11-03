@@ -7,6 +7,8 @@ import {
   getNotificationHistory,
   markNotificationRead,
   markAllNotificationsRead,
+  deleteNotification,
+  deleteAllNotifications,
   sendPushToUser,
   recordNotificationLog,
 } from '../services/notificationService.js';
@@ -113,8 +115,9 @@ export async function unsubscribePush(req, res, next) {
 export async function getHistory(req, res, next) {
   try {
     const userId = req.user?.id || req.query.userId || 'guest_user';
-    const limit = parseInt(req.query.limit || '25', 10);
-    const history = await getNotificationHistory(userId, limit);
+    const limit = parseInt(req.query.limit || '50', 10);
+    const category = req.query.category || null;
+    const history = await getNotificationHistory(userId, limit, category);
 
     return res.status(200).json({
       success: true,
@@ -140,6 +143,44 @@ export async function markRead(req, res, next) {
 
     await markNotificationRead(notifId, userId);
     return res.status(200).json({ success: true, message: 'Notification marked as read.' });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/notifications/:id
+ */
+export async function deleteNotificationHandler(req, res, next) {
+  try {
+    const userId = req.user?.id || req.query.userId || 'guest_user';
+    const notifId = parseInt(req.params.id, 10);
+    if (isNaN(notifId)) {
+      return res.status(400).json({ success: false, message: 'Invalid notification id' });
+    }
+
+    const deleted = await deleteNotification(notifId, userId);
+    return res.status(200).json({
+      success: true,
+      message: deleted ? 'Notification deleted successfully.' : 'Notification not found.',
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * DELETE /api/notifications
+ */
+export async function clearAllNotificationsHandler(req, res, next) {
+  try {
+    const userId = req.user?.id || req.query.userId || 'guest_user';
+    const deletedCount = await deleteAllNotifications(userId);
+    return res.status(200).json({
+      success: true,
+      message: 'All notifications cleared.',
+      deletedCount,
+    });
   } catch (err) {
     next(err);
   }

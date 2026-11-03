@@ -1129,7 +1129,10 @@ export interface NotificationsModalProps {
   unreadCount?: number
   onMarkAsRead?: (id: number) => void
   onMarkAllAsRead?: () => void
+  onDeleteNotification?: (id: number) => void
+  onClearAllNotifications?: () => void
   onOpenTracker?: () => void
+  onNavigateTo?: (tab: string) => void
   onSendTestNotification?: () => void
 }
 
@@ -1140,40 +1143,158 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
   unreadCount = 0,
   onMarkAsRead,
   onMarkAllAsRead,
+  onDeleteNotification,
+  onClearAllNotifications,
   onOpenTracker,
+  onNavigateTo,
   onSendTestNotification,
 }) => {
+  const [activeCategory, setActiveCategory] = React.useState<'all' | 'prayer' | 'reminder' | 'system'>('all')
+
+  const categories = [
+    { key: 'all' as const, label: 'All' },
+    { key: 'prayer' as const, label: 'Prayers' },
+    { key: 'reminder' as const, label: 'Reminders' },
+    { key: 'system' as const, label: 'System' },
+  ]
+
+  const getItemCategory = (item: import('../services/backendApi').NotificationHistoryItem) => {
+    if (item.category) return item.category.toLowerCase()
+    if (item.reminderType === 'test') return 'system'
+    if (item.reminderType === 'reminder_30min') return 'reminder'
+    return 'prayer'
+  }
+
+  const filteredHistory = React.useMemo(() => {
+    if (activeCategory === 'all') return history
+    return history.filter((item) => getItemCategory(item) === activeCategory)
+  }, [history, activeCategory])
+
+  const categoryCounts = React.useMemo(() => {
+    const counts = { all: history.length, prayer: 0, reminder: 0, system: 0 }
+    history.forEach((item) => {
+      const cat = getItemCategory(item) as keyof typeof counts
+      if (counts[cat] !== undefined) {
+        counts[cat]++
+      }
+    })
+    return counts
+  }, [history])
+
+  const formatDeliveredTime = (dateStr: string) => {
+    try {
+      const date = new Date(dateStr)
+      const now = new Date()
+      const diffMs = now.getTime() - date.getTime()
+      const diffMins = Math.floor(diffMs / (1000 * 60))
+      const diffHours = Math.floor(diffMins / 60)
+
+      if (diffMins < 1) return 'Just now'
+      if (diffMins < 60) return `${diffMins}m ago`
+      if (diffHours < 24) return `${diffHours}h ago`
+      return date.toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    } catch {
+      return dateStr
+    }
+  }
+
+  const handleDeepLinkClick = (item: import('../services/backendApi').NotificationHistoryItem) => {
+    if (!item.isRead && onMarkAsRead) {
+      onMarkAsRead(item.id)
+    }
+    onClose()
+    if (item.deepLink) {
+      if (item.deepLink.includes('tab=salah') || item.deepLink.includes('tab=home')) {
+        if (onOpenTracker) onOpenTracker()
+        else if (onNavigateTo) onNavigateTo('salah')
+      } else if (item.deepLink.includes('tab=quran')) {
+        if (onNavigateTo) onNavigateTo('quran')
+      } else if (item.deepLink.includes('tab=progress')) {
+        if (onNavigateTo) onNavigateTo('progress')
+      } else if (onOpenTracker) {
+        onOpenTracker()
+      }
+    } else if (onOpenTracker) {
+      onOpenTracker()
+    }
+  }
+
   return (
-    <ModalWrapper isOpen={isOpen} onClose={onClose} title="Notifications">
+    <ModalWrapper isOpen={isOpen} onClose={onClose} title="Notification Center">
       <div className="space-y-3">
-        {/* Top Action Bar */}
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-[#14261E]">Recent Reminders</span>
-            {unreadCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-[#0E543F] text-[10px] font-bold">
-                {unreadCount} unread
-              </span>
+        {/* Category Pills & Action Controls */}
+        <div className="flex items-center justify-between gap-2 border-b border-stone-200/70 pb-2">
+          {/* Category Filter Pills */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+            {categories.map((cat) => {
+              const isSelected = activeCategory === cat.key
+              const count = categoryCounts[cat.key]
+              return (
+                <button
+                  key={cat.key}
+                  type="button"
+                  onClick={() => setActiveCategory(cat.key)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+                    isSelected
+                      ? 'bg-[#0C382B] text-[#FAF8F3] shadow-xs'
+                      : 'bg-stone-100 text-stone-600 hover:bg-stone-200/80'
+                  }`}
+                >
+                  <span>{cat.label}</span>
+                  {count > 0 && (
+                    <span
+                      className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                        isSelected ? 'bg-white/20 text-[#FAF8F3]' : 'bg-stone-200 text-stone-700'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {unreadCount > 0 && onMarkAllAsRead && (
+              <button
+                type="button"
+                onClick={onMarkAllAsRead}
+                className="text-[11px] text-[#0E543F] hover:underline font-semibold cursor-pointer"
+                title="Mark all as read"
+              >
+                Read All
+              </button>
+            )}
+            {history.length > 0 && onClearAllNotifications && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to clear all notifications?')) {
+                    onClearAllNotifications()
+                  }
+                }}
+                className="text-[11px] text-red-600 hover:text-red-700 hover:underline font-semibold cursor-pointer flex items-center gap-0.5"
+                title="Clear all notifications"
+              >
+                Clear All
+              </button>
             )}
           </div>
-          {unreadCount > 0 && onMarkAllAsRead && (
-            <button
-              type="button"
-              onClick={onMarkAllAsRead}
-              className="text-[11px] text-[#0E543F] hover:underline font-semibold cursor-pointer"
-            >
-              Mark all read
-            </button>
-          )}
         </div>
 
         {/* Notifications List */}
-        {history.length === 0 ? (
+        {filteredHistory.length === 0 ? (
           <div className="p-6 text-center bg-stone-50 rounded-2xl border border-stone-200/80">
             <div className="w-10 h-10 rounded-full bg-emerald-50 text-[#0E543F] mx-auto flex items-center justify-center mb-2">
               <Clock className="w-5 h-5" />
             </div>
-            <p className="text-xs font-bold text-stone-800">No prayer alerts yet</p>
+            <p className="text-xs font-bold text-stone-800">
+              {activeCategory === 'all'
+                ? 'No alerts recorded yet'
+                : `No ${activeCategory} notifications found`}
+            </p>
             <p className="text-[11px] text-stone-500 mt-1 max-w-xs mx-auto">
               You will automatically receive reminders when each prayer begins, and 30 minutes before pending prayer windows close.
             </p>
@@ -1188,17 +1309,18 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
             )}
           </div>
         ) : (
-          <div className="space-y-2.5 max-h-[360px] overflow-y-auto pr-1">
-            {history.map((item) => {
+          <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+            {filteredHistory.map((item) => {
               const isStart = item.reminderType === 'start'
               const is30Min = item.reminderType === 'reminder_30min'
+              const isTest = item.reminderType === 'test'
 
               return (
                 <div
                   key={item.id}
                   className={`p-3 rounded-2xl border transition-all ${
                     !item.isRead
-                      ? 'bg-emerald-50/50 border-emerald-200/90 shadow-2xs'
+                      ? 'bg-emerald-50/60 border-emerald-300/80 shadow-2xs'
                       : 'bg-white border-stone-200/80'
                   }`}
                 >
@@ -1224,17 +1346,29 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                         <p className="text-xs font-bold text-[#14261E] truncate">
                           {item.title}
                         </p>
-                        <span
-                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md flex-shrink-0 ${
-                            isStart
-                              ? 'bg-emerald-100 text-[#0E543F]'
-                              : is30Min
-                              ? 'bg-amber-100 text-amber-800'
-                              : 'bg-stone-100 text-stone-600'
-                          }`}
-                        >
-                          {isStart ? 'Prayer Began' : is30Min ? '30m Window' : 'Test'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <span
+                            className={`text-[9px] font-bold px-1.5 py-0.5 rounded-md ${
+                              isStart
+                                ? 'bg-emerald-100 text-[#0E543F]'
+                                : is30Min
+                                ? 'bg-amber-100 text-amber-800'
+                                : 'bg-stone-100 text-stone-600'
+                            }`}
+                          >
+                            {isStart ? 'Prayer Began' : is30Min ? '30m Window' : isTest ? 'System Test' : item.reminderType}
+                          </span>
+                          {onDeleteNotification && (
+                            <button
+                              type="button"
+                              onClick={() => onDeleteNotification(item.id)}
+                              className="text-stone-400 hover:text-red-500 transition p-0.5 rounded cursor-pointer"
+                              title="Delete notification"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       <p className="text-[11.5px] text-[#485950] mt-1 leading-snug">
@@ -1243,10 +1377,7 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
 
                       <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-stone-100">
                         <span className="text-[10px] text-stone-400">
-                          {new Date(item.deliveredAt).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                          {formatDeliveredTime(item.deliveredAt)}
                         </span>
 
                         <div className="flex items-center gap-2">
@@ -1254,24 +1385,19 @@ export const NotificationsModal: React.FC<NotificationsModalProps> = ({
                             <button
                               type="button"
                               onClick={() => onMarkAsRead(item.id)}
-                              className="text-[10px] text-stone-500 hover:text-stone-800 font-medium cursor-pointer"
+                              className="text-[10.5px] text-stone-500 hover:text-stone-800 font-medium cursor-pointer"
                             >
-                              Dismiss
+                              Mark Read
                             </button>
                           )}
-                          {onOpenTracker && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (!item.isRead && onMarkAsRead) onMarkAsRead(item.id)
-                                onClose()
-                                onOpenTracker()
-                              }}
-                              className="text-[10.5px] font-bold text-[#0E543F] hover:underline cursor-pointer"
-                            >
-                              Open Tracker →
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleDeepLinkClick(item)}
+                            className="text-[10.5px] font-bold text-[#0E543F] hover:underline cursor-pointer flex items-center gap-0.5"
+                          >
+                            <span>Open</span>
+                            <span>→</span>
+                          </button>
                         </div>
                       </div>
                     </div>

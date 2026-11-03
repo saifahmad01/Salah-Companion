@@ -285,11 +285,13 @@ export async function recordNotificationLog({
   body,
   prayerTime = null,
   pushSent = false,
+  category = 'prayer',
+  deepLink = '/app?tab=salah',
 }) {
   const stmt = db.prepare(`
     INSERT OR IGNORE INTO notification_logs (
-      user_id, prayer_name, date, reminder_type, title, body, prayer_time, is_read, push_sent, delivered_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, false, ?, datetime('now'))
+      user_id, prayer_name, date, reminder_type, title, body, prayer_time, is_read, push_sent, category, deep_link, delivered_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, false, ?, ?, ?, datetime('now'))
   `);
 
   const result = await stmt.run(
@@ -300,7 +302,9 @@ export async function recordNotificationLog({
     title,
     body,
     prayerTime,
-    Boolean(pushSent)
+    Boolean(pushSent),
+    category,
+    deepLink
   );
 
   return Boolean(result?.changes > 0 || result?.rowCount > 0);
@@ -309,10 +313,11 @@ export async function recordNotificationLog({
 /**
  * Retrieve recent notification history for a user
  * @param {string} userId
- * @param {number} [limit=25]
+ * @param {number} [limit=50]
+ * @param {string|null} [category=null]
  */
-export async function getNotificationHistory(userId, limit = 25) {
-  const stmt = db.prepare(`
+export async function getNotificationHistory(userId, limit = 50, category = null) {
+  let query = `
     SELECT
       id,
       user_id,
@@ -324,14 +329,24 @@ export async function getNotificationHistory(userId, limit = 25) {
       prayer_time,
       is_read,
       push_sent,
+      category,
+      deep_link,
       delivered_at
     FROM notification_logs
-    WHERE user_id = ? OR user_id = 'guest_user'
-    ORDER BY delivered_at DESC
-    LIMIT ?
-  `);
+    WHERE (user_id = ? OR user_id = 'guest_user')
+  `;
+  const params = [userId];
 
-  const rows = await stmt.all(userId, limit);
+  if (category && category !== 'all') {
+    query += ` AND category = ?`;
+    params.push(category);
+  }
+
+  query += ` ORDER BY delivered_at DESC LIMIT ?`;
+  params.push(limit);
+
+  const stmt = db.prepare(query);
+  const rows = await stmt.all(...params);
   return (rows || []).map((r) => ({
     id: r.id,
     userId: r.user_id,
@@ -343,8 +358,37 @@ export async function getNotificationHistory(userId, limit = 25) {
     prayerTime: r.prayer_time,
     isRead: Boolean(r.is_read),
     pushSent: Boolean(r.push_sent),
+    category: r.category || 'prayer',
+    deepLink: r.deep_link || '/app?tab=salah',
     deliveredAt: r.delivered_at,
   }));
+}
+
+/**
+ * Delete a specific notification for a user
+ * @param {number} id
+ * @param {string} userId
+ */
+export async function deleteNotification(id, userId) {
+  const stmt = db.prepare(`
+    DELETE FROM notification_logs
+    WHERE id = ? AND (user_id = ? OR user_id = 'guest_user')
+  `);
+  const result = await stmt.run(id, userId);
+  return Boolean(result?.changes > 0 || result?.rowCount > 0);
+}
+
+/**
+ * Delete all notifications for a user
+ * @param {string} userId
+ */
+export async function deleteAllNotifications(userId) {
+  const stmt = db.prepare(`
+    DELETE FROM notification_logs
+    WHERE user_id = ? OR user_id = 'guest_user'
+  `);
+  const result = await stmt.run(userId);
+  return result?.changes || result?.rowCount || 0;
 }
 
 /**
