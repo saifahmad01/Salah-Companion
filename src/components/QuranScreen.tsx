@@ -323,6 +323,25 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
     device.hapticFeedback('light')
   }
 
+  // Return from PDF reader to 600 words dashboard while preserving reading position
+  const handleClosePdfModalWithState = (lastWord: QuranWord | null, lastPageIndex: number) => {
+    setIsPdfModalOpen(false)
+    setActiveTab('vocabulary')
+    if (lastWord) {
+      setPdfModalInitialWord(lastWord)
+      setPdfModalInitialPageIndex(lastWord.pageIndex)
+      // Smoothly scroll back to the active word in the 600 words grid
+      setTimeout(() => {
+        const el = document.getElementById(`word-card-${lastWord.id}`)
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        }
+      }, 100)
+    } else {
+      setPdfModalInitialPageIndex(lastPageIndex)
+    }
+  }
+
   // Filter 600 words
   const filteredWords = useMemo(() => {
     return QURAN_VOCABULARY_600.filter((word) => {
@@ -792,6 +811,7 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
               return (
                 <div
                   key={w.id}
+                  id={`word-card-${w.id}`}
                   onClick={() => handleOpenWordPdf(w)}
                   className={`p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between cursor-pointer ${
                     isLearned
@@ -1364,6 +1384,7 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
         initialWord={pdfModalInitialWord}
         initialPageIndex={pdfModalInitialPageIndex}
         onClose={() => setIsPdfModalOpen(false)}
+        onCloseWithState={handleClosePdfModalWithState}
         wordProgressMap={wordProgressMap}
         onToggleBookmark={handleToggleBookmark}
         onToggleLearned={handleToggleLearned}

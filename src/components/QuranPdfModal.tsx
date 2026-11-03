@@ -22,6 +22,7 @@ interface QuranPdfModalProps {
   initialWord?: QuranWord | null
   initialPageIndex?: number
   onClose: () => void
+  onCloseWithState?: (lastWord: QuranWord | null, lastPageIndex: number) => void
   wordProgressMap: Record<number, UserWordProgress>
   onToggleBookmark: (wordId: number) => void
   onToggleLearned: (wordId: number) => void
@@ -34,6 +35,7 @@ export const QuranPdfModal: React.FC<QuranPdfModalProps> = ({
   initialWord,
   initialPageIndex = 0,
   onClose,
+  onCloseWithState,
   wordProgressMap,
   onToggleBookmark,
   onToggleLearned,
@@ -148,11 +150,35 @@ export const QuranPdfModal: React.FC<QuranPdfModalProps> = ({
     }
   }
 
+  const isPushedHistoryRef = useRef(false)
+
+  // Handle Back to 600 Words with confirmation only if unsaved operations (e.g. in-flight download)
+  const handleBackTo600Words = useCallback(
+    (popHistory = true) => {
+      if (isDownloading) {
+        const confirmExit = window.confirm(
+          'A PDF download is currently in progress. Are you sure you want to return to the 600 Words dashboard?'
+        )
+        if (!confirmExit) return
+      }
+
+      device.hapticFeedback('light')
+      onCloseWithState?.(activeWord, currentPageIndex)
+
+      if (popHistory && isPushedHistoryRef.current && window.history.state?.modal === 'quran_vocab_pdf_modal') {
+        isPushedHistoryRef.current = false
+        window.history.back()
+      }
+      onClose()
+    },
+    [isDownloading, activeWord, currentPageIndex, onClose, onCloseWithState]
+  )
+
   // Keyboard navigation
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!isOpen) return
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') handleBackTo600Words(true)
       else if (e.key === 'ArrowLeft') handlePrevPage()
       else if (e.key === 'ArrowRight') handleNextPage()
       else if (e.key === '+' || e.key === '=') handleZoomIn()
@@ -160,7 +186,35 @@ export const QuranPdfModal: React.FC<QuranPdfModalProps> = ({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [isOpen, currentPageIndex, onClose])
+  }, [isOpen, currentPageIndex, handleBackTo600Words])
+
+  // Browser & Android hardware back button integration
+  useEffect(() => {
+    if (!isOpen) {
+      isPushedHistoryRef.current = false
+      return
+    }
+
+    isPushedHistoryRef.current = true
+    window.history.pushState({ modal: 'quran_vocab_pdf_modal' }, '')
+
+    const handlePopState = () => {
+      isPushedHistoryRef.current = false
+      handleBackTo600Words(false)
+    }
+
+    window.addEventListener('popstate', handlePopState)
+
+    const removeBackButton = device.addBackButtonListener(() => {
+      handleBackTo600Words(true)
+      return true
+    })
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState)
+      removeBackButton()
+    }
+  }, [isOpen, handleBackTo600Words])
 
   // Mobile Touch Gestures
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -226,32 +280,34 @@ export const QuranPdfModal: React.FC<QuranPdfModalProps> = ({
       {/* TOP ACTION BAR                                            */}
       {/* ======================================================== */}
       <div className="flex-shrink-0 px-3 sm:px-5 py-2.5 bg-gradient-to-r from-[#0C382B] via-[#092B21] to-[#0C382B] border-b border-[#E2B755]/20 flex items-center justify-between gap-2 shadow-md">
-        {/* Left: Back / Close & Page Indicator */}
-        <div className="flex items-center gap-2 sm:gap-3">
+        {/* Left: Prominent Back to 600 Words Button & Page Indicator */}
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             type="button"
-            onClick={onClose}
-            aria-label="Close reader"
-            className="w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 flex items-center justify-center text-white active:scale-95 transition cursor-pointer"
+            onClick={() => handleBackTo600Words(true)}
+            aria-label="Back to 600 Words"
+            className="px-3 sm:px-3.5 py-1.5 rounded-full bg-[#E2B755] hover:bg-[#D4A33B] text-[#0C382B] border border-[#E2B755] flex items-center gap-1.5 active:scale-95 transition cursor-pointer text-xs font-bold shadow-md touch-target flex-shrink-0"
           >
-            <X className="w-5 h-5" />
+            <ChevronLeft className="w-4 h-4 stroke-[3]" />
+            <span className="hidden sm:inline">Back to 600 Words</span>
+            <span className="sm:hidden font-bold">Back</span>
           </button>
 
-          <div>
-            <div className="flex items-center gap-1.5">
-              <span className="font-serif font-bold text-sm sm:text-base text-[#F6E6C2] tracking-wide">
-                Top 600 Words of the Quran
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="font-serif font-bold text-xs sm:text-base text-[#F6E6C2] tracking-wide truncate">
+                Top 600 Words
               </span>
-              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#E2B755]/20 text-[#E2B755] border border-[#E2B755]/30">
+              <span className="hidden md:inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#E2B755]/20 text-[#E2B755] border border-[#E2B755]/30">
                 Official PDF
               </span>
             </div>
-            <div className="flex items-center gap-2 text-[11px] text-emerald-200/80">
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] text-emerald-200/80 truncate">
               <span>Page {currentPageIndex + 1} of {TOTAL_PAGES}</span>
               {activeWord && (
                 <>
                   <span>•</span>
-                  <span className="text-[#E2B755] font-semibold">
+                  <span className="text-[#E2B755] font-semibold truncate">
                     Word #{activeWord.id} ({activeWord.transliteration})
                   </span>
                 </>
