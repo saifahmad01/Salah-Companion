@@ -19,7 +19,7 @@ import {
   HelpCircle,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { salahApi } from '../services/backendApi'
+import { oauth } from '../platform/oauth'
 
 type AuthMode = 'login' | 'register' | 'forgot' | 'otp'
 
@@ -522,9 +522,17 @@ export const LoginPage: React.FC = () => {
   }
 
   // Google OAuth Flow
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     setGoogleLoading(true)
-    window.location.href = salahApi.getGoogleOAuthUrl()
+    try {
+      await oauth.startGoogleOAuth(() => {
+        setGoogleLoading(false)
+      })
+    } catch (err) {
+      console.error('Google OAuth error:', err)
+      setGoogleLoading(false)
+      setFormError('Failed to launch Google Sign-In. Please try again.')
+    }
   }
 
   return (

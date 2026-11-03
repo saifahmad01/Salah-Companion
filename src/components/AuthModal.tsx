@@ -12,6 +12,7 @@ import {
   Mail,
 } from 'lucide-react'
 import { salahApi, type UserProfile } from '../services/backendApi'
+import { oauth } from '../platform/oauth'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -52,9 +53,15 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   if (!isOpen) return null
 
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     setGoogleLoading(true)
-    window.location.href = salahApi.getGoogleOAuthUrl()
+    try {
+      await oauth.startGoogleOAuth(() => {
+        setGoogleLoading(false)
+      })
+    } catch {
+      setGoogleLoading(false)
+    }
   }
 
   const handleUpdateProfile = async (e: React.FormEvent) => {

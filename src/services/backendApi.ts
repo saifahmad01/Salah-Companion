@@ -436,8 +436,12 @@ export const salahApi = {
   /**
    * Get direct URL to initiate Google OAuth 2.0 flow
    */
-  getGoogleOAuthUrl(): string {
-    return `${PRIMARY_BASE_URL}/auth/google`;
+  getGoogleOAuthUrl(redirectTo?: string): string {
+    const base = `${PRIMARY_BASE_URL}/auth/google`;
+    if (redirectTo) {
+      return `${base}?redirect_to=${encodeURIComponent(redirectTo)}`;
+    }
+    return base;
   },
 
   /**

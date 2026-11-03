@@ -48,6 +48,10 @@ backups/
 .vscode/*
 !.vscode/extensions.json
 .idea
+# Large media and PDF assets
+*.pdf
+Quran Roman Urdu Hindi .pdf
+
 .DS_Store
 Thumbs.db
 *.suo

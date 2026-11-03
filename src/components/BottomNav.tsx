@@ -10,7 +10,7 @@ interface BottomNavProps {
 
 export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onTabChange }) => {
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 max-w-[440px] mx-auto bg-white/95 backdrop-blur-md border-t border-[#EBE7DC] px-3 pt-2 pb-1.5 z-40 select-none shadow-[0_-4px_16px_rgba(0,0,0,0.03)]">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 w-full max-w-lg mx-auto bg-white/95 backdrop-blur-md border-t border-[#EBE7DC] px-2 pt-2 pb-[max(0.6rem,env(safe-area-inset-bottom))] z-40 select-none shadow-[0_-4px_16px_rgba(0,0,0,0.03)]">
       <div className="flex items-center justify-around">
         {/* 1. Home */}
         <button

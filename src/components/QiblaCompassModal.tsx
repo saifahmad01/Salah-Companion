@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
+import { device } from '../platform/device'
 import {
   X,
   Compass,
@@ -221,7 +222,15 @@ export const QiblaCompassModal: React.FC<QiblaCompassModalProps> = ({
 
   // Gentle haptic feedback when device aligns within +/- 3 degrees of Kaaba
   useEffect(() => {
-    if (isAligned && typeof navigator !== 'undefined' && 'vibrate' in navigator) {
+    if (isAligned) {
+      const now = Date.now()
+      if (now - lastVibratedRef.current > 1800) {
+        lastVibratedRef.current = now
+        device.vibrateAlignment()
+      }
+      return
+    }
+    if (false) {
       const now = Date.now()
       if (now - lastVibratedRef.current > 1800) {
         try {

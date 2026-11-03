@@ -58,6 +58,9 @@ const devAllowedOrigins = [
 // Production origins
 const prodAllowedOrigins = [
   'https://salah-companion.mdsaif.workers.dev',
+  'https://localhost',
+  'capacitor://localhost',
+  'http://localhost',
 ];
 
 const configuredOrigins = (config.corsOrigin || '')
@@ -97,7 +100,10 @@ app.use(
       if (
         allowedOrigins.includes(origin) ||
         origin === 'https://salah-companion.mdsaif.workers.dev' ||
-        origin.endsWith('.workers.dev')
+        origin.endsWith('.workers.dev') ||
+        origin === 'https://localhost' ||
+        origin === 'capacitor://localhost' ||
+        origin === 'http://localhost'
       ) {
         return callback(null, origin);
       }
