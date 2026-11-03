@@ -78,11 +78,14 @@ CREATE TABLE IF NOT EXISTS notification_logs (
   prayer_time TEXT,
   is_read INTEGER NOT NULL DEFAULT 0,
   push_sent INTEGER NOT NULL DEFAULT 0,
+  category TEXT DEFAULT 'prayer',
+  deep_link TEXT DEFAULT '/app?tab=salah',
   delivered_at TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(user_id, prayer_name, date, reminder_type)
 );
 CREATE INDEX IF NOT EXISTS idx_notif_logs_user_date ON notification_logs(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_notif_logs_user_unread ON notification_logs(user_id, is_read);
+CREATE INDEX IF NOT EXISTS idx_notif_logs_user_category ON notification_logs(user_id, category);
 
 -- 7. Personal Quran Reading Logs table
 CREATE TABLE IF NOT EXISTS quran_reading_logs (
@@ -167,6 +170,25 @@ CREATE TABLE IF NOT EXISTS quran_reading_progress_states (
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_reading_progress_user ON quran_reading_progress_states(user_id);
+
+-- 12. Admin Prayer Corrections & Audit History
+CREATE TABLE IF NOT EXISTS admin_prayer_corrections (
+  id TEXT PRIMARY KEY,
+  admin_id TEXT NOT NULL,
+  admin_email TEXT,
+  user_id TEXT NOT NULL,
+  prayer_log_id TEXT,
+  prayer_name TEXT NOT NULL,
+  date TEXT NOT NULL,
+  previous_status TEXT,
+  new_status TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (admin_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_admin_corrections_user ON admin_prayer_corrections(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_admin_corrections_admin ON admin_prayer_corrections(admin_id);
 
 
 

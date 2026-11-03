@@ -499,7 +499,21 @@ erDiagram
         String prayerTime "Nullable"
         Boolean isRead "Default: false"
         Boolean pushSent "Default: false"
+        String category "prayer | reminder | system"
+        String deepLink "App route"
         DateTime deliveredAt
+    }
+
+    AdminPrayerCorrection {
+        String id PK "UUID"
+        String adminId FK "Admin user ID"
+        String userId FK "Target user ID"
+        String prayerName
+        String date "YYYY-MM-DD"
+        String oldStatus "Nullable"
+        String newStatus
+        String reason "Mandatory explanation"
+        DateTime createdAt
     }
 
     QuranResource {
@@ -523,6 +537,7 @@ erDiagram
 2. **User → DeedLog:** One-to-many. Unique compound constraint: `@@unique([userId, deedType, date])`.
 3. **PendingRegistration:** Isolated staging table. Users are **never** inserted into the `users` table until their email OTP is cryptographically verified. Stored token format: `<hash>:<failedAttempts>:<timestamp>`.
 4. **NotificationLog:** Stores delivery history for idempotency. Unique constraint: `@@unique([userId, prayerName, date, reminderType])`. Prevents duplicate alerts within the same window.
+5. **AdminPrayerCorrection:** Immutable audit log tracking every administrative change, old vs new status, target user, admin actor, timestamp, and mandatory explanation reason.
 
 ---
 
@@ -672,10 +687,17 @@ Base URL: `http://localhost:8080/api` (Dev) | `https://salah-companion-z3i4.onre
 | `PUT` | `/api/notifications/preferences` | Optional | Update notification preferences. |
 | `POST` | `/api/notifications/subscribe` | Optional | Register Web Push browser subscription. |
 | `POST` | `/api/notifications/unsubscribe` | Optional | Remove Web Push subscription. |
-| `GET` | `/api/notifications/history` | Optional | List delivered notification history. |
+| `GET` | `/api/notifications/history` | Optional | List delivered notification history with optional category filtering (`prayer`, `reminder`, `system`). |
 | `PATCH`| `/api/notifications/:id/read` | Optional | Mark specific notification as read. |
 | `POST` | `/api/notifications/mark-all-read` | Optional | Mark all user notifications as read. |
+| `DELETE`| `/api/notifications/:id` | Optional | Delete specific notification from history. |
+| `DELETE`| `/api/notifications` | Optional | Clear all notifications for user. |
 | `POST` | `/api/notifications/test` | Optional | Dispatch immediate test notification. |
+
+### Progress Endpoints (`/api/progress`)
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/progress/summary` | User Token | Multi-period analytics (`period=daily\|weekly\|monthly\|yearly\|custom`), real status counts, streaks, 5-prayer breakdowns, completion trends, and period comparison. |
 
 ### Admin Endpoints (`/api/admin`)
 | Method | Path | Auth Required | Description |
@@ -685,6 +707,10 @@ Base URL: `http://localhost:8080/api` (Dev) | `https://salah-companion-z3i4.onre
 | `PATCH`| `/api/admin/users/:id/role` | Admin Only | Promote or demote user (`USER` vs `ADMIN`). Permanent admins protected. |
 | `DELETE`| `/api/admin/users/:id` | Admin Only | Delete user account and associated logs. Permanent admins protected. |
 | `POST` | `/api/admin/broadcast` | Admin Only | Dispatch broadcast notification to all registered Web Push subscribers. |
+| `GET` | `/api/admin/prayers` | Admin Only | Search and filter user prayer logs by user, prayer, status, and date range. |
+| `POST` | `/api/admin/prayers/correct` | Admin Only | Correct or delete a prayer record for any user with mandatory reason & audit logging. |
+| `GET` | `/api/admin/prayers/corrections` | Admin Only | Paginated audit trail of all administrative corrections (`admin_prayer_corrections`). |
+| `GET` | `/api/admin/analytics/salah` | Admin Only | Aggregated KPIs: completion rates, quality breakdown, notification delivery rates, recent corrections. |
 
 ---
 

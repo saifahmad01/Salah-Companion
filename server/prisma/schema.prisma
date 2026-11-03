@@ -43,6 +43,8 @@ model User {
   wordProgress            UserWordProgress[]
   pageBookmarks           QuranPageBookmark[]
   readingProgressStates   QuranReadingProgressState[]
+  adminCorrectionsReceived AdminPrayerCorrection[] @relation("TargetUser")
+  adminCorrectionsMade     AdminPrayerCorrection[] @relation("AdminUser")
 
   @@index([email])
   @@index([verificationTokenHash])
@@ -210,11 +212,14 @@ model NotificationLog {
   prayerTime   String?  @map("prayer_time")
   isRead       Boolean  @default(false) @map("is_read")
   pushSent     Boolean  @default(false) @map("push_sent")
+  category     String?  @default("prayer")
+  deepLink     String?  @default("/app?tab=salah") @map("deep_link")
   deliveredAt  DateTime @default(now()) @map("delivered_at")
 
   @@unique([userId, prayerName, date, reminderType])
   @@index([userId, date])
   @@index([userId, isRead])
+  @@index([userId, category])
   @@map("notification_logs")
 }
 
@@ -277,6 +282,29 @@ model QuranReadingProgressState {
   @@unique([userId, resourceKey])
   @@index([userId])
   @@map("quran_reading_progress_states")
+}
+
+// ----------------------------------------------------------------------------
+// Admin Prayer Corrections & Audit History
+// ----------------------------------------------------------------------------
+model AdminPrayerCorrection {
+  id             String   @id @default(uuid())
+  adminId        String   @map("admin_id")
+  admin          User     @relation("AdminUser", fields: [adminId], references: [id], onDelete: Cascade)
+  adminEmail     String?  @map("admin_email")
+  userId         String   @map("user_id")
+  user           User     @relation("TargetUser", fields: [userId], references: [id], onDelete: Cascade)
+  prayerLogId    String?  @map("prayer_log_id")
+  prayerName     String   @map("prayer_name")
+  date           String   // "YYYY-MM-DD"
+  previousStatus String?  @map("previous_status")
+  newStatus      String   @map("new_status")
+  reason         String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  @@index([userId, date])
+  @@index([adminId])
+  @@map("admin_prayer_corrections")
 }
 
 

@@ -606,11 +606,13 @@ export const salahApi = {
 
   /**
    * Fetch consolidated progress & analytics summary (Protected via JWT)
-   * GET /api/progress/summary?startDate=YYYY-MM-DD
+   * GET /api/progress/summary?period=daily|weekly|monthly|yearly|custom&startDate=YYYY-MM-DD&endDate=YYYY-MM-DD
    */
-  async getProgressSummary(params?: { startDate?: string; date?: string }) {
+  async getProgressSummary(params?: { period?: string; startDate?: string; endDate?: string; date?: string }) {
     const search = new URLSearchParams();
+    if (params?.period) search.set('period', params.period);
     if (params?.startDate) search.set('startDate', params.startDate);
+    if (params?.endDate) search.set('endDate', params.endDate);
     if (params?.date) search.set('date', params.date);
     const query = search.toString() ? `?${search.toString()}` : '';
     return await fetchWithAuth(`/progress/summary${query}`, { method: 'GET' });
@@ -720,10 +722,10 @@ export const salahApi = {
 
   /**
    * Retrieve notification history log
-   * GET /api/notifications/history
+   * GET /api/notifications/history?limit=50&category=prayer|reminder|system
    */
   async getNotificationHistory(
-    limit = 25,
+    limitOrParams: number | { limit?: number; category?: string; userId?: string } = 50,
     userId?: string
   ): Promise<{
     success: boolean;
@@ -732,8 +734,14 @@ export const salahApi = {
     history: NotificationHistoryItem[];
   }> {
     const params = new URLSearchParams();
-    params.set('limit', limit.toString());
-    if (userId) params.set('userId', userId);
+    if (typeof limitOrParams === 'number') {
+      params.set('limit', limitOrParams.toString());
+      if (userId) params.set('userId', userId);
+    } else {
+      if (limitOrParams.limit) params.set('limit', limitOrParams.limit.toString());
+      if (limitOrParams.category) params.set('category', limitOrParams.category);
+      if (limitOrParams.userId || userId) params.set('userId', limitOrParams.userId || userId || '');
+    }
     return await fetchWithAuth(`/notifications/history?${params.toString()}`, { method: 'GET' });
   },
 
@@ -754,6 +762,22 @@ export const salahApi = {
       method: 'POST',
       body: JSON.stringify({ userId }),
     });
+  },
+
+  /**
+   * Delete a single notification
+   * DELETE /api/notifications/:id
+   */
+  async deleteNotification(id: number): Promise<{ success: boolean; message: string }> {
+    return await fetchWithAuth(`/notifications/${id}`, { method: 'DELETE' });
+  },
+
+  /**
+   * Delete all notifications for user
+   * DELETE /api/notifications
+   */
+  async clearAllNotifications(): Promise<{ success: boolean; message: string; deletedCount?: number }> {
+    return await fetchWithAuth('/notifications', { method: 'DELETE' });
   },
 
   /**
@@ -989,6 +1013,66 @@ export const adminApi = {
       body: JSON.stringify(payload),
     });
   },
+
+  async getAdminPrayers(params: {
+    q?: string;
+    prayer?: string;
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{
+    success: boolean;
+    data: AdminPrayerLogItem[];
+    pagination: { total: number; page: number; limit: number; totalPages: number };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params.q) searchParams.set('q', params.q);
+    if (params.prayer) searchParams.set('prayer', params.prayer);
+    if (params.status) searchParams.set('status', params.status);
+    if (params.startDate) searchParams.set('startDate', params.startDate);
+    if (params.endDate) searchParams.set('endDate', params.endDate);
+    if (params.page) searchParams.set('page', params.page.toString());
+    if (params.limit) searchParams.set('limit', params.limit.toString());
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return await fetchWithAuth(`/admin/prayers${query}`, { method: 'GET' });
+  },
+
+  async correctUserPrayer(payload: {
+    userId: string;
+    prayerName: string;
+    date: string;
+    status: 'on_time' | 'late' | 'qada' | 'missed' | 'delete';
+    reason: string;
+    completedAt?: string;
+  }): Promise<{ success: boolean; message: string; prayerLog?: any; audit: any }> {
+    return await fetchWithAuth('/admin/prayers/correct', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getPrayerCorrections(params: {
+    userId?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{
+    success: boolean;
+    data: AdminPrayerCorrectionItem[];
+    pagination: { total: number; page: number; limit: number; totalPages: number };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params.userId) searchParams.set('userId', params.userId);
+    if (params.page) searchParams.set('page', params.page.toString());
+    if (params.limit) searchParams.set('limit', params.limit.toString());
+    const query = searchParams.toString() ? `?${searchParams.toString()}` : '';
+    return await fetchWithAuth(`/admin/prayers/corrections${query}`, { method: 'GET' });
+  },
+
+  async getAdminSalahAnalytics(): Promise<{ success: boolean; analytics: AdminSalahAnalyticsData }> {
+    return await fetchWithAuth('/admin/analytics/salah', { method: 'GET' });
+  },
 };
 
 export const quranApi = {
@@ -1023,13 +1107,67 @@ export interface NotificationHistoryItem {
   userId: string;
   prayerName: string;
   date: string;
-  reminderType: 'start' | 'reminder_30min' | 'test';
+  reminderType: 'start' | 'reminder_30min' | 'test' | string;
   title: string;
   body: string;
   prayerTime?: string | null;
   isRead: boolean;
   pushSent: boolean;
+  category?: 'prayer' | 'reminder' | 'system' | string;
+  deepLink?: string;
   deliveredAt: string;
+}
+
+export interface AdminPrayerLogItem {
+  id: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  prayerName: string;
+  date: string;
+  status: 'on_time' | 'late' | 'qada' | 'missed';
+  time: string | null;
+  timestamp: string | null;
+  updatedAt: string | null;
+}
+
+export interface AdminPrayerCorrectionItem {
+  id: string;
+  adminId: string;
+  adminEmail?: string;
+  userId: string;
+  userName?: string;
+  userEmail?: string;
+  prayerName: string;
+  date: string;
+  oldStatus: string | null;
+  newStatus: string;
+  reason: string;
+  createdAt: string;
+}
+
+export interface AdminSalahAnalyticsData {
+  overview: {
+    totalPrayerLogs: number;
+    completionRate: number;
+    completedCount: number;
+    onTimeCount: number;
+    lateCount: number;
+    qadaCount: number;
+    missedCount: number;
+    totalTrackedSlots: number;
+    missedRatio: number;
+    qadaRatio: number;
+  };
+  prayerDistribution: Record<string, { total: number; onTime: number; late: number; qada: number; missed: number }>;
+  notifications: {
+    totalDelivered: number;
+    pushSent: number;
+    readCount: number;
+    deliveryRate: number;
+    readRate: number;
+  };
+  recentCorrections: AdminPrayerCorrectionItem[];
 }
 
 export interface QuranReadingSession {

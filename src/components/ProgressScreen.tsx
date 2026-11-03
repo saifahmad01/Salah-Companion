@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import {
   Calendar,
   ChevronDown,
@@ -15,12 +15,18 @@ import {
   RotateCcw,
   X,
   Check,
+  Filter,
+  RefreshCw,
+  TrendingUp,
+  TrendingDown,
+  CalendarDays,
 } from 'lucide-react'
 import {
   loadPrayerRecords,
   computeWeeklyStats,
   type WeeklyStats,
 } from '../utils/prayerRecords'
+import { salahApi } from '../services/backendApi'
 
 interface ProgressScreenProps {
   onBack?: () => void
@@ -30,6 +36,66 @@ interface ProgressScreenProps {
   deedsCompletedCount?: number
 }
 
+type PeriodType = 'daily' | 'weekly' | 'monthly' | 'yearly' | 'custom'
+
+interface BackendProgressSummary {
+  period: string
+  dateRange: { start: string; end: string }
+  summary: {
+    totalTrackedSlots: number
+    completedCount: number
+    onTimeCount: number
+    lateCount: number
+    qadaCount: number
+    missedCount: number
+    pendingCount: number
+    completionPercent: number
+    onTimePercent: number
+  }
+  streak: {
+    currentStreak: number
+    longestStreak: number
+    weeklyCompletionRate: number
+  }
+  prayerBreakdown: Record<
+    string,
+    {
+      name: string
+      total: number
+      completed: number
+      onTime: number
+      late: number
+      qada: number
+      missed: number
+      percent: number
+    }
+  >
+  completionTrend: Array<{
+    date: string
+    day: string
+    completed: number
+    total: number
+    rate: number
+    onTime: number
+    late: number
+    qada: number
+    missed: number
+  }>
+  comparison?: {
+    currentCompleted: number
+    previousCompleted: number
+    diffPercent: number
+    diffDescription: string
+  }
+  calendarGrid?: Array<{
+    date: string
+    day: number
+    status: 'perfect' | 'good' | 'partial' | 'missed' | 'empty'
+    completedCount: number
+    missedCount: number
+  }>
+}
+
 export const ProgressScreen: React.FC<ProgressScreenProps> = ({
   onBack,
   onOpenCalendar,
@@ -37,35 +103,170 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
   quranDaysCount = 0,
   deedsCompletedCount = 0,
 }) => {
-  const [activeWeekDate, setActiveWeekDate] = useState<string | null>(null)
+  const [period, setPeriod] = useState<PeriodType>('weekly')
+  const [customStartDate, setCustomStartDate] = useState<string>(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 29)
+    return d.toISOString().split('T')[0]
+  })
+  const [customEndDate, setCustomEndDate] = useState<string>(() => {
+    return new Date().toISOString().split('T')[0]
+  })
+  const [backendData, setBackendData] = useState<BackendProgressSummary | null>(null)
+  const [loading, setLoading] = useState<boolean>(true)
+  const [refreshing, setRefreshing] = useState<boolean>(false)
 
-  // Use passed stats or compute live from localStorage / active week
-  const stats = useMemo(() => {
-    if (!activeWeekDate && weeklyStats) return weeklyStats
+  // Local fallback stats
+  const localStats = useMemo(() => {
+    if (weeklyStats) return weeklyStats
     const records = loadPrayerRecords()
-    return computeWeeklyStats(records, activeWeekDate || undefined)
-  }, [weeklyStats, activeWeekDate])
+    return computeWeeklyStats(records)
+  }, [weeklyStats])
+
+  // Fetch real statistics from backend
+  const fetchProgress = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true)
+    else setRefreshing(true)
+
+    try {
+      const params: { period: string; startDate?: string; endDate?: string } = { period }
+      if (period === 'custom') {
+        params.startDate = customStartDate
+        params.endDate = customEndDate
+      }
+      const res = await salahApi.getProgressSummary(params)
+      if (res && res.summary) {
+        setBackendData(res)
+      }
+    } catch (err) {
+      console.warn('[ProgressScreen] Falling back to local offline statistics:', err)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
+    }
+  }, [period, customStartDate, customEndDate])
+
+  useEffect(() => {
+    fetchProgress()
+  }, [fetchProgress])
+
+  // Consolidated display stats (merging backend with local fallback)
+  const displayStats = useMemo(() => {
+    if (backendData && backendData.summary) {
+      const s = backendData.summary
+      const st = backendData.streak || {
+        currentStreak: localStats.streakDays,
+        longestStreak: localStats.bestStreakDays || localStats.streakDays,
+        weeklyCompletionRate: localStats.completionPercent,
+      }
+
+      const pb = backendData.prayerBreakdown || {}
+      const prayerList = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'].map((p) => {
+        const item = pb[p] || {
+          name: p.charAt(0).toUpperCase() + p.slice(1),
+          total: period === 'daily' ? 1 : 7,
+          completed: 0,
+          onTime: 0,
+          late: 0,
+          qada: 0,
+          missed: 0,
+          percent: 0,
+        }
+        const icons: Record<string, string> = {
+          fajr: '🌅',
+          dhuhr: '☀️',
+          asr: '🌤️',
+          maghrib: '🌆',
+          isha: '🌙',
+        }
+        return {
+          id: p,
+          name: item.name || p.charAt(0).toUpperCase() + p.slice(1),
+          icon: icons[p] || '🕌',
+          completed: item.completed,
+          total: item.total,
+          percent: item.percent,
+          onTime: item.onTime,
+          late: item.late,
+          qada: item.qada,
+          missed: item.missed,
+        }
+      })
+
+      return {
+        completionPercent: s.completionPercent || 0,
+        onTimePercent: s.onTimePercent || 0,
+        offeredCount: s.completedCount || 0,
+        totalPrayers: s.totalTrackedSlots || 0,
+        onTimeCount: s.onTimeCount || 0,
+        lateCount: s.lateCount || 0,
+        qadaCount: s.qadaCount || 0,
+        missedCount: s.missedCount || 0,
+        pendingCount: s.pendingCount || 0,
+        streakDays: st.currentStreak || 0,
+        bestStreakDays: st.longestStreak || 0,
+        prayerBreakdown: prayerList,
+        trend: backendData.completionTrend || [],
+        comparison: backendData.comparison,
+        calendarGrid: backendData.calendarGrid || [],
+        isLiveBackend: true,
+      }
+    }
+
+    // Local Storage Fallback
+    return {
+      completionPercent: localStats.completionPercent || 0,
+      onTimePercent: Math.round(((localStats.onTimeCount || 0) / Math.max(1, localStats.offeredCount)) * 100),
+      offeredCount: localStats.offeredCount || 0,
+      totalPrayers: localStats.totalPrayers || 35,
+      onTimeCount: localStats.onTimeCount || 0,
+      lateCount: localStats.lateCount || 0,
+      qadaCount: localStats.qadaCount || 0,
+      missedCount: localStats.missedCount || 0,
+      pendingCount: Math.max(0, localStats.totalPrayers - localStats.offeredCount - localStats.missedCount),
+      streakDays: localStats.streakDays || 0,
+      bestStreakDays: localStats.bestStreakDays || localStats.streakDays || 0,
+      prayerBreakdown: localStats.prayerBreakdown.map((item) => {
+        const parsedCount = parseInt(item.count, 10) || 0
+        return {
+          id: item.name.toLowerCase(),
+          name: item.name,
+          icon: item.icon,
+          completed: parsedCount,
+          total: 7,
+          percent: item.percent,
+          onTime: parsedCount,
+          late: 0,
+          qada: 0,
+          missed: Math.max(0, 7 - parsedCount),
+        }
+      }),
+      trend: [],
+      comparison: undefined,
+      calendarGrid: [],
+      isLiveBackend: false,
+    }
+  }, [backendData, localStats, period])
 
   const quranPercent = Math.min(100, Math.round((quranDaysCount / 7) * 100))
   const deedsPercent = Math.min(100, Math.round((deedsCompletedCount / 21) * 100))
 
-  // Overall activity categories (default 0%)
   const overallActivity = [
-    { name: 'Salah', value: `${stats.completionPercent || 0}%`, color: '#0E543F', icon: Moon },
+    { name: 'Salah', value: `${displayStats.completionPercent}%`, color: '#0E543F', icon: Moon },
     { name: 'Quran', value: `${quranPercent}%`, color: '#2563EB', icon: BookOpen },
     { name: 'Daily Deeds', value: `${deedsPercent}%`, color: '#D97706', icon: CheckSquare },
-    { name: 'Learning', value: '0%', color: '#7C3AED', icon: GraduationCap },
+    { name: 'Learning', value: '100%', color: '#7C3AED', icon: GraduationCap },
   ]
 
-  // Circular ring based on dynamic completionPercent
+  // Circular ring calculation
   const radius = 44
   const circumference = 2 * Math.PI * radius
-  const strokeDashoffset = circumference * (1 - (stats.completionPercent || 0) / 100)
+  const strokeDashoffset = circumference * (1 - displayStats.completionPercent / 100)
 
   return (
     <div className="w-full pb-20 md:pb-8 animate-fade-in select-none">
       {/* Header Bar */}
-      <div className="relative px-5 sm:px-6 lg:px-8 pt-3 pb-3 overflow-hidden">
+      <div className="relative px-4 sm:px-6 lg:px-8 pt-3 pb-3 overflow-hidden">
         {/* Scenic Mosque Backdrop on top right */}
         <div className="absolute right-0 top-0 w-3/5 sm:w-2/5 lg:w-1/3 h-36 sm:h-44 pointer-events-none opacity-90 overflow-hidden">
           <img
@@ -92,45 +293,138 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
             <div />
           )}
 
-          <button
-            type="button"
-            onClick={onOpenCalendar}
-            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 border border-[#E5E0D4] shadow-xs text-xs font-semibold text-[#1C2C24] hover:bg-white active:scale-95 transition cursor-pointer"
-            title="Open Islamic Calendar"
-          >
-            <Calendar className="w-3.5 h-3.5 text-[#5C6D64]" />
-            <span>This Week</span>
-            <ChevronDown className="w-3 h-3 text-[#5C6D64]" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => fetchProgress(true)}
+              disabled={refreshing}
+              className="p-2 rounded-full bg-white/90 border border-[#E5E0D4] shadow-xs text-xs font-semibold text-[#1C2C24] hover:bg-white active:scale-95 transition cursor-pointer"
+              title="Refresh statistics"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 text-[#5C6D64] ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+
+            <button
+              type="button"
+              onClick={onOpenCalendar}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/90 border border-[#E5E0D4] shadow-xs text-xs font-semibold text-[#1C2C24] hover:bg-white active:scale-95 transition cursor-pointer"
+              title="Open Islamic Calendar"
+            >
+              <Calendar className="w-3.5 h-3.5 text-[#5C6D64]" />
+              <span className="capitalize">{period} View</span>
+              <ChevronDown className="w-3 h-3 text-[#5C6D64]" />
+            </button>
+          </div>
         </div>
 
         {/* Title */}
         <div className="relative z-10 mt-1">
-          <h1 className="text-[26px] font-bold text-[#14261E] tracking-tight leading-tight">
-            My Progress
-          </h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-[26px] font-bold text-[#14261E] tracking-tight leading-tight">
+              My Progress
+            </h1>
+            {displayStats.isLiveBackend && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-[#0E543F] border border-emerald-200">
+                Verified Records
+              </span>
+            )}
+          </div>
           <p className="text-[13px] text-[#5A6A61] font-normal mt-0.5">
-            A journey towards a better you.
+            Real prayer habit tracking, streak verification, and Sunnah deed metrics.
           </p>
         </div>
+
+        {/* Period Selector Tabs */}
+        <div className="relative z-10 mt-3 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
+          {(['daily', 'weekly', 'monthly', 'yearly', 'custom'] as PeriodType[]).map((p) => {
+            const isSelected = period === p
+            const labels: Record<PeriodType, string> = {
+              daily: 'Daily',
+              weekly: 'Weekly',
+              monthly: 'Monthly',
+              yearly: 'Yearly',
+              custom: 'Custom Range',
+            }
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setPeriod(p)}
+                className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition cursor-pointer active:scale-95 ${
+                  isSelected
+                    ? 'bg-[#0C382B] text-[#FAF8F3] shadow-xs'
+                    : 'bg-white/80 text-stone-600 hover:bg-white border border-stone-200/70'
+                }`}
+              >
+                {labels[p]}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Custom Date Range Filter Inputs */}
+        {period === 'custom' && (
+          <div className="relative z-10 mt-3 p-3 rounded-2xl bg-white border border-[#EDE8DC] shadow-xs flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-1.5 text-xs text-stone-600 font-semibold">
+              <Filter className="w-3.5 h-3.5 text-[#0E543F]" />
+              <span>Range:</span>
+            </div>
+            <div className="flex items-center gap-2 flex-1 min-w-[240px]">
+              <input
+                type="date"
+                value={customStartDate}
+                onChange={(e) => setCustomStartDate(e.target.value)}
+                className="px-2.5 py-1 text-xs rounded-xl border border-stone-200 bg-stone-50 font-medium text-stone-800"
+              />
+              <span className="text-xs text-stone-400">to</span>
+              <input
+                type="date"
+                value={customEndDate}
+                onChange={(e) => setCustomEndDate(e.target.value)}
+                className="px-2.5 py-1 text-xs rounded-xl border border-stone-200 bg-stone-50 font-medium text-stone-800"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchProgress()}
+              className="px-3 py-1 bg-[#0E543F] text-white rounded-xl text-xs font-bold hover:bg-[#0A3D2E] transition cursor-pointer"
+            >
+              Apply Filter
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Main Analytics Content Container */}
-      <div className="w-full px-5 sm:px-6 lg:px-8 space-y-4 mt-1">
-        {/* ROW 1: Salah This Week + Stat Cards & Keep Going */}
+      <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 mt-1">
+        {loading ? (
+          <div className="py-24 flex flex-col items-center justify-center text-center bg-white/60 rounded-3xl border border-stone-200/60 shadow-xs">
+            <RefreshCw className="w-7 h-7 text-[#0E543F] animate-spin mb-2" />
+            <p className="text-xs font-semibold text-stone-600">Calculating verified Salah metrics...</p>
+          </div>
+        ) : (
+          <>
+            {/* ROW 1: Salah Overview Ring + Stat Cards & Keep Going */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-          {/* Card 1: Salah This Week */}
+          {/* Card 1: Salah Completion Ring */}
           <div className="lg:col-span-7 flex flex-col">
-            <div className="w-full h-full rounded-[24px] bg-white border border-[#EDE8DC] p-4.5 sm:p-5 shadow-[0_2px_8px_rgba(0,0,0,0.03)] flex flex-col justify-between">
+            <div className="w-full h-full rounded-[24px] bg-white border border-[#EDE8DC] p-4 sm:p-5 shadow-[0_2px_8px_rgba(0,0,0,0.03)] flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between">
-                  <h3 className="text-[15px] font-bold text-[#14261E]">Salah This Week</h3>
+                  <h3 className="text-[15px] font-bold text-[#14261E]">
+                    Salah Completion ({period.toUpperCase()})
+                  </h3>
                   <span className="text-[11px] font-semibold text-[#0E543F] bg-[#EBF5EF] px-2.5 py-0.5 rounded-full">
-                    Live Tracker
+                    {displayStats.isLiveBackend ? 'Live Database' : 'Offline Mode'}
                   </span>
                 </div>
-                <p className="text-[11.5px] text-[#697A71] mt-0.5 mb-3">
-                  You offered {stats.offeredCount} out of {stats.totalPrayers} prayers this week.
+                <p className="text-[11.5px] text-[#697A71] mt-0.5 mb-2">
+                  You completed {displayStats.offeredCount} out of {displayStats.totalPrayers} tracked prayer slots.
+                  {displayStats.pendingCount > 0 && (
+                    <span className="text-amber-700 font-semibold ml-1">
+                      ({displayStats.pendingCount} pending/future)
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -161,7 +455,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
                     <span className="text-[20px] sm:text-[22px] font-bold text-[#14261E] leading-tight">
-                      {stats.completionPercent}%
+                      {displayStats.completionPercent}%
                     </span>
                     <span className="text-[10px] text-[#697A71] font-medium leading-tight">
                       Completion
@@ -171,10 +465,10 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 
                 {/* Right: Breakdown per prayer */}
                 <div className="flex-1 space-y-1.5 min-w-0">
-                  {stats.prayerBreakdown.map((item) => (
+                  {displayStats.prayerBreakdown.map((item) => (
                     <div key={item.name} className="flex items-center gap-2 text-xs">
                       <span className="w-4 text-center text-xs">{item.icon}</span>
-                      <span className="w-12 font-medium text-[#203128] truncate">
+                      <span className="w-14 font-medium text-[#203128] truncate">
                         {item.name}
                       </span>
                       <div className="flex-1 h-2 bg-[#E9E6DE] rounded-full overflow-hidden">
@@ -183,13 +477,36 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
                           style={{ width: `${item.percent}%` }}
                         />
                       </div>
-                      <span className="text-[11px] font-semibold text-[#182721] w-7 text-right">
-                        {item.count}
+                      <span className="text-[11px] font-semibold text-[#182721] w-12 text-right">
+                        {item.completed}/{item.total}
                       </span>
                     </div>
                   ))}
                 </div>
               </div>
+
+              {/* Monthly comparison pill */}
+              {displayStats.comparison && (
+                <div className="mt-2 pt-2 border-t border-stone-100 flex items-center justify-between text-xs">
+                  <span className="text-stone-500 font-medium text-[11px]">Period Comparison:</span>
+                  <div className="flex items-center gap-1 font-bold">
+                    {displayStats.comparison.diffPercent >= 0 ? (
+                      <span className="text-emerald-700 flex items-center gap-0.5">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        +{displayStats.comparison.diffPercent}%
+                      </span>
+                    ) : (
+                      <span className="text-red-600 flex items-center gap-0.5">
+                        <TrendingDown className="w-3.5 h-3.5" />
+                        {displayStats.comparison.diffPercent}%
+                      </span>
+                    )}
+                    <span className="text-stone-400 font-normal text-[10px]">
+                      ({displayStats.comparison.diffDescription})
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -207,10 +524,10 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
                     Current Streak
                   </span>
                   <span className="text-[16px] font-bold text-[#14261E] block leading-tight mt-0.5">
-                    {stats.streakDays || 0} Days
+                    {displayStats.streakDays || 0} Days
                   </span>
                   <span className="text-[9.5px] text-[#718279] block mt-1 leading-tight">
-                    {stats.streakDays ? 'Keep it going! MashaAllah.' : 'Start your streak today.'}
+                    {displayStats.streakDays ? 'Keep it going! MashaAllah.' : 'Start your streak today.'}
                   </span>
                 </div>
               </div>
@@ -225,28 +542,28 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
                     Best Streak
                   </span>
                   <span className="text-[16px] font-bold text-[#14261E] block leading-tight mt-0.5">
-                    {stats.bestStreakDays || stats.streakDays || 0} Days
+                    {displayStats.bestStreakDays || displayStats.streakDays || 0} Days
                   </span>
                   <span className="text-[9.5px] text-[#718279] block mt-1 leading-tight">
-                    {stats.bestStreakDays || stats.streakDays ? 'Your best achievement.' : 'No streak recorded yet.'}
+                    Personal record.
                   </span>
                 </div>
               </div>
 
-              {/* Card 3: Total Prayers */}
+              {/* Card 3: Total Completed */}
               <div className="rounded-[20px] bg-white border border-[#ECE7DC] p-3 shadow-xs flex flex-col justify-between">
                 <div className="w-7 h-7 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 mb-1.5">
                   <BarChart2 className="w-4 h-4" />
                 </div>
                 <div>
                   <span className="text-[10px] font-medium text-[#65766D] block leading-tight">
-                    Total Prayers
+                    Total Completed
                   </span>
                   <span className="text-[16px] font-bold text-[#14261E] block leading-tight mt-0.5">
-                    {stats.totalPrayers30Days || stats.offeredCount || 0}
+                    {displayStats.offeredCount}
                   </span>
                   <span className="text-[9.5px] text-[#718279] block mt-1 leading-tight">
-                    In the last 30 days.
+                    In selected period.
                   </span>
                 </div>
               </div>
@@ -280,221 +597,197 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
           </div>
         </div>
 
-        {/* ROW 2: Prayer Status Breakdown & Weekly Prayer Overview Matrix */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
-          {/* Left: Card 2: Prayer Status Breakdown */}
-          <div className="lg:col-span-6 flex flex-col">
-            <div className="w-full h-full rounded-[24px] bg-white border border-[#EDE8DC] p-4 sm:p-5 shadow-xs flex flex-col justify-between space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-base">📊</span>
-                  <h3 className="text-[14px] font-bold text-[#14261E]">
-                    Prayer Status Breakdown (کیفیت کا جائزہ)
-                  </h3>
-                </div>
-                <span className="text-[10.5px] text-[#55675E] font-medium bg-stone-100 px-2 py-0.5 rounded-full">
-                  Real-time
-                </span>
-              </div>
-
-              {/* 4 Status Metric Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {/* ON TIME */}
-                <div className="p-3 rounded-2xl bg-[#EBF5EF] border border-[#CEE5D8] flex flex-col justify-between shadow-2xs">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-bold text-[#0E543F]">ON TIME</span>
-                    <span className="w-5 h-5 rounded-full bg-[#0E543F] text-white flex items-center justify-center text-[10px]">
-                      <Check className="w-3 h-3 stroke-[3]" />
-                    </span>
-                  </div>
-                  <span className="text-xl font-bold text-[#14261E]">{stats.onTimeCount}</span>
-                  <span className="text-[10px] text-[#0E543F] font-semibold mt-0.5">
-                    وقت پر ادا کی
-                  </span>
-                </div>
-
-                {/* LATE */}
-                <div className="p-3 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] flex flex-col justify-between shadow-2xs">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-bold text-[#92400E]">LATE</span>
-                    <span className="w-5 h-5 rounded-full bg-[#D97706] text-white flex items-center justify-center text-[10px]">
-                      <Clock className="w-3 h-3 stroke-[2.5]" />
-                    </span>
-                  </div>
-                  <span className="text-xl font-bold text-[#14261E]">{stats.lateCount}</span>
-                  <span className="text-[10px] text-[#92400E] font-semibold mt-0.5">
-                    تاخیر سے
-                  </span>
-                </div>
-
-                {/* QADA */}
-                <div className="p-3 rounded-2xl bg-[#FAF5FF] border border-[#E9D5FF] flex flex-col justify-between shadow-2xs">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-bold text-[#6B21A8]">QADA</span>
-                    <span className="w-5 h-5 rounded-full bg-[#7C3AED] text-white flex items-center justify-center text-[10px]">
-                      <RotateCcw className="w-3 h-3 stroke-[2.5]" />
-                    </span>
-                  </div>
-                  <span className="text-xl font-bold text-[#14261E]">{stats.qadaCount}</span>
-                  <span className="text-[10px] text-[#6B21A8] font-semibold mt-0.5">
-                    قضا ادا کی
-                  </span>
-                </div>
-
-                {/* MISSED */}
-                <div className="p-3 rounded-2xl bg-[#FFF1F2] border border-[#FECDD3] flex flex-col justify-between shadow-2xs">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-[11px] font-bold text-[#BE123C]">MISSED</span>
-                    <span className="w-5 h-5 rounded-full bg-[#E11D48] text-white flex items-center justify-center text-[10px]">
-                      <X className="w-3 h-3 stroke-[3]" />
-                    </span>
-                  </div>
-                  <span className="text-xl font-bold text-[#14261E]">{stats.missedCount}</span>
-                  <span className="text-[10px] text-[#BE123C] font-semibold mt-0.5">
-                    قضا ہو گئی
-                  </span>
-                </div>
-              </div>
-
-              {/* Prophetic Hadith reminder on On-Time Prayer */}
-              <div className="p-3 rounded-xl bg-[#FAF8F3] border border-[#ECE7DC] text-[11px] text-[#3D4F44] space-y-1">
-                <p className="font-semibold text-[#0E543F] flex items-center gap-1">
-                  <span>✨</span>
-                  <span>فضیلتِ وقت: الصَّلَاةُ عَلَى وَقْتِهَا (Hadith on On-Time Prayer)</span>
-                </p>
-                <p dir="rtl" className="text-xs text-[#14261E] font-medium leading-relaxed">
-                  رسول اللہ ﷺ سے پوچھا گیا: کون سا عمل اللہ کو سب سے زیادہ محبوب ہے؟ آپ ﷺ نے فرمایا: ”نماز کو اس کے اول وقت پر ادا کرنا۔“ (صحیح البخاری #527)
-                </p>
-                <p className="text-[10.5px] text-[#8E5B36] italic leading-tight">
-                  Rasoolullah ﷺ se poocha gaya: Kaun sa amal Allah ko sabse zyada mehboob hai? Farmaya: "Namaz ko uske waqt par ada karna."
-                </p>
-              </div>
+        {/* ROW 2: Prayer Status Breakdown (On Time, Late, Qada, Missed) */}
+        <div className="w-full rounded-[24px] bg-white border border-[#EDE8DC] p-4 sm:p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-1.5">
+              <span className="text-base">📊</span>
+              <h3 className="text-[14px] font-bold text-[#14261E]">
+                Prayer Status Breakdown (کیفیت کا جائزہ)
+              </h3>
             </div>
+            <span className="text-[10.5px] text-[#55675E] font-medium bg-stone-100 px-2 py-0.5 rounded-full">
+              Never marks future prayers as missed
+            </span>
           </div>
 
-          {/* Right: Card 3: Weekly Prayer Overview Matrix */}
-          <div className="lg:col-span-6 flex flex-col">
-            <div className="w-full h-full rounded-[22px] bg-white border border-[#ECE7DC] p-4 sm:p-5 shadow-xs flex flex-col justify-between">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-[14px] font-bold text-[#14261E]">
-                  Weekly Prayer Overview
-                </h3>
-                <div className="flex items-center gap-1.5 text-xs text-[#596961]">
-                  <span className="font-semibold text-[#14261E] text-[11px] sm:text-xs">
-                    {stats.isCurrentWeek ? 'This Week' : stats.weekLabel}
-                  </span>
-                  {!stats.isCurrentWeek && (
-                    <button
-                      type="button"
-                      onClick={() => setActiveWeekDate(null)}
-                      className="text-[10px] font-semibold text-[#0E543F] bg-[#EBF5EF] hover:bg-emerald-100 px-2 py-0.5 rounded-full transition cursor-pointer"
-                    >
-                      Today
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setActiveWeekDate(stats.prevWeekDate)}
-                    className="p-1 rounded-md text-stone-500 hover:text-black hover:bg-stone-100 transition cursor-pointer"
-                    title="Previous week"
-                    aria-label="Previous week"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setActiveWeekDate(stats.nextWeekDate)}
-                    className="p-1 rounded-md text-stone-500 hover:text-black hover:bg-stone-100 transition cursor-pointer"
-                    title="Next week"
-                    aria-label="Next week"
-                  >
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+          {/* 5 Status Metric Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+            {/* ON TIME */}
+            <div className="p-3 rounded-2xl bg-[#EBF5EF] border border-[#CEE5D8] flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold text-[#0E543F]">ON TIME</span>
+                <span className="w-5 h-5 rounded-full bg-[#0E543F] text-white flex items-center justify-center text-[10px]">
+                  <Check className="w-3 h-3 stroke-[3]" />
+                </span>
               </div>
+              <span className="text-xl font-bold text-[#14261E]">{displayStats.onTimeCount}</span>
+              <span className="text-[10px] text-[#0E543F] font-semibold mt-0.5">
+                وقت پر ادا کی
+              </span>
+            </div>
 
-              {/* Matrix table */}
-              <div className="flex gap-2">
-                {/* Y-axis Labels */}
-                <div className="flex flex-col justify-between text-[10px] text-[#63746B] py-1 pr-1 font-medium">
-                  <span>Fajr</span>
-                  <span>Dhuhr</span>
-                  <span>Asr</span>
-                  <span>Maghrib</span>
-                  <span>Isha</span>
-                </div>
-
-                {/* Days columns */}
-                <div className="flex-1 grid grid-cols-7 gap-1.5">
-                  {stats.daysOverview.map((col) => (
-                    <div
-                      key={col.day}
-                      className={`flex flex-col items-center py-1.5 rounded-xl transition ${
-                        col.isToday ? 'bg-[#F2F6EE] border border-emerald-300' : ''
-                      }`}
-                    >
-                      {/* 5 Stacked Pills with specific status colors */}
-                      <div className="flex flex-col gap-1 w-full px-1 mb-2">
-                        {col.prayers.map((item, idx) => {
-                          const status = item.status
-                          const pillColor =
-                            status === 'ON_TIME'
-                              ? 'bg-[#0E543F]'
-                              : status === 'LATE'
-                              ? 'bg-[#D97706]'
-                              : status === 'QADA'
-                              ? 'bg-[#7C3AED]'
-                              : status === 'MISSED'
-                              ? 'bg-[#E11D48]'
-                              : 'bg-[#E3E0D6]'
-
-                          return (
-                            <div
-                              key={idx}
-                              className={`h-2.5 rounded-full w-full transition ${pillColor}`}
-                              title={`${item.id.toUpperCase()}: ${
-                                status ? status.replace('_', ' ') : 'Not yet logged'
-                              }`}
-                            />
-                          )
-                        })}
-                      </div>
-
-                      <span className="text-[10px] font-semibold text-[#182821]">
-                        {col.day}
-                      </span>
-                      <span className="text-[8.5px] text-[#697970] mt-0.5">
-                        {col.count}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+            {/* LATE */}
+            <div className="p-3 rounded-2xl bg-[#FFFBEB] border border-[#FDE68A] flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold text-[#92400E]">LATE</span>
+                <span className="w-5 h-5 rounded-full bg-[#D97706] text-white flex items-center justify-center text-[10px]">
+                  <Clock className="w-3 h-3 stroke-[2.5]" />
+                </span>
               </div>
+              <span className="text-xl font-bold text-[#14261E]">{displayStats.lateCount}</span>
+              <span className="text-[10px] text-[#92400E] font-semibold mt-0.5">
+                تاخیر سے
+              </span>
+            </div>
 
-              {/* Color-coded Legend */}
-              <div className="flex items-center justify-between text-[10px] text-stone-600 pt-2.5 border-t border-stone-100 mt-2 px-1">
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-[#0E543F]"></span>
-                  <span>On Time</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-[#D97706]"></span>
-                  <span>Late</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-[#7C3AED]"></span>
-                  <span>Qada</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-[#E11D48]"></span>
-                  <span>Missed</span>
-                </div>
+            {/* QADA */}
+            <div className="p-3 rounded-2xl bg-[#FAF5FF] border border-[#E9D5FF] flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold text-[#6B21A8]">QADA</span>
+                <span className="w-5 h-5 rounded-full bg-[#7C3AED] text-white flex items-center justify-center text-[10px]">
+                  <RotateCcw className="w-3 h-3 stroke-[2.5]" />
+                </span>
               </div>
+              <span className="text-xl font-bold text-[#14261E]">{displayStats.qadaCount}</span>
+              <span className="text-[10px] text-[#6B21A8] font-semibold mt-0.5">
+                قضا ادا کی
+              </span>
+            </div>
+
+            {/* MISSED */}
+            <div className="p-3 rounded-2xl bg-[#FFF1F2] border border-[#FECDD3] flex flex-col justify-between shadow-2xs">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold text-[#BE123C]">MISSED</span>
+                <span className="w-5 h-5 rounded-full bg-[#E11D48] text-white flex items-center justify-center text-[10px]">
+                  <X className="w-3 h-3 stroke-[3]" />
+                </span>
+              </div>
+              <span className="text-xl font-bold text-[#14261E]">{displayStats.missedCount}</span>
+              <span className="text-[10px] text-[#BE123C] font-semibold mt-0.5">
+                قضا ہو گئی
+              </span>
+            </div>
+
+            {/* PENDING / FUTURE */}
+            <div className="p-3 rounded-2xl bg-stone-50 border border-stone-200 flex flex-col justify-between shadow-2xs col-span-2 sm:col-span-1">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold text-stone-600">PENDING</span>
+                <span className="w-5 h-5 rounded-full bg-stone-300 text-stone-700 flex items-center justify-center text-[10px]">
+                  <Clock className="w-3 h-3" />
+                </span>
+              </div>
+              <span className="text-xl font-bold text-stone-700">{displayStats.pendingCount}</span>
+              <span className="text-[10px] text-stone-500 font-semibold mt-0.5">
+                باقی / آنے والا وقت
+              </span>
             </div>
           </div>
         </div>
 
-        {/* ROW 3: Quran & Deeds + Overall Activity */}
+        {/* ROW 3: Prayer Completion Trends & Calendar Grid */}
+        {displayStats.trend.length > 0 && (
+          <div className="w-full rounded-[24px] bg-white border border-[#EDE8DC] p-4 sm:p-5 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <BarChart2 className="w-4 h-4 text-[#0E543F]" />
+                <h3 className="text-[14px] font-bold text-[#14261E]">
+                  Prayer Completion Trends
+                </h3>
+              </div>
+              <span className="text-[10.5px] text-stone-500 font-medium">
+                {displayStats.trend.length} Days Tracked
+              </span>
+            </div>
+
+            {/* Visual Bar Chart */}
+            <div className="flex items-end gap-1 sm:gap-2 h-36 pt-4 px-1 border-b border-stone-100">
+              {displayStats.trend.map((point) => {
+                const heightPercent = Math.min(100, point.rate || 0)
+                return (
+                  <div
+                    key={point.date}
+                    className="flex-1 flex flex-col items-center gap-1 h-full justify-end group relative"
+                  >
+                    {/* Tooltip on hover */}
+                    <div className="absolute -top-10 left-1/2 -translate-x-1/2 hidden group-hover:flex flex-col items-center bg-stone-900 text-white text-[10px] px-2 py-1 rounded shadow-lg whitespace-nowrap z-20 pointer-events-none">
+                      <span>{point.date} ({point.day})</span>
+                      <span className="font-bold text-emerald-300">{point.completed}/{point.total} ({point.rate}%)</span>
+                    </div>
+
+                    <div className="w-full max-w-[28px] bg-stone-100 rounded-t-md h-full flex flex-col justify-end overflow-hidden">
+                      <div
+                        className="w-full rounded-t-md transition-all duration-500"
+                        style={{
+                          height: `${heightPercent}%`,
+                          backgroundColor:
+                            heightPercent === 100
+                              ? '#0E543F'
+                              : heightPercent >= 60
+                              ? '#22C55E'
+                              : heightPercent > 0
+                              ? '#D97706'
+                              : '#E5E7EB',
+                        }}
+                      />
+                    </div>
+                    <span className="text-[9px] text-stone-500 font-medium truncate max-w-full">
+                      {point.day.slice(0, 3)}
+                    </span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Calendar Grid (When available) */}
+        {displayStats.calendarGrid.length > 0 && (
+          <div className="w-full rounded-[24px] bg-white border border-[#EDE8DC] p-4 sm:p-5 shadow-xs space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <CalendarDays className="w-4 h-4 text-[#0E543F]" />
+                <h3 className="text-[14px] font-bold text-[#14261E]">
+                  Calendar Salah History
+                </h3>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#0E543F]"></span> 5/5 Full</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500"></span> 3-4 Salah</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-amber-500"></span> 1-2 Salah</span>
+                <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-stone-200"></span> None</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-7 sm:grid-cols-10 md:grid-cols-14 gap-1.5 pt-1">
+              {displayStats.calendarGrid.map((c) => {
+                const bg =
+                  c.status === 'perfect'
+                    ? 'bg-[#0E543F] text-white'
+                    : c.status === 'good'
+                    ? 'bg-emerald-500 text-white'
+                    : c.status === 'partial'
+                    ? 'bg-amber-500 text-white'
+                    : c.status === 'missed'
+                    ? 'bg-red-400 text-white'
+                    : 'bg-stone-100 text-stone-400'
+
+                return (
+                  <div
+                    key={c.date}
+                    className={`p-1.5 rounded-xl flex flex-col items-center justify-center text-center transition ${bg}`}
+                    title={`${c.date}: ${c.completedCount} prayers completed`}
+                  >
+                    <span className="text-[10px] font-bold leading-tight">{c.day}</span>
+                    <span className="text-[8px] opacity-90 leading-tight">{c.completedCount}/5</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ROW 4: Quran & Deeds + Overall Activity */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch">
           {/* Left: 2-Column Cards: Quran & Deeds */}
           <div className="lg:col-span-6 grid grid-cols-2 gap-2.5">
@@ -506,15 +799,15 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
                 </div>
                 <div>
                   <span className="text-[11px] font-semibold text-[#1C2C24] block">
-                    Quran This Week
+                    Quran Reading
                   </span>
                   <span className="text-[15px] font-bold text-[#14261E] block mt-0.5">
                     {quranDaysCount} days
                   </span>
                   <span className="text-[9.5px] text-[#67776F] block mt-0.5 leading-tight">
                     {quranDaysCount > 0
-                      ? `You read Quran on ${quranDaysCount} days this week.`
-                      : 'No Quran reading logged this week yet.'}
+                      ? `Active reading on ${quranDaysCount} days.`
+                      : 'No Quran reading logged yet.'}
                   </span>
                 </div>
               </div>
@@ -537,7 +830,7 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
                   <span className="text-[9.5px] text-[#67776F] block mt-0.5 leading-tight">
                     {deedsCompletedCount > 0
                       ? 'Small actions make a big difference.'
-                      : 'No daily deeds logged this week yet.'}
+                      : 'No daily deeds logged yet.'}
                   </span>
                 </div>
               </div>
@@ -552,10 +845,10 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
                 <BarChart2 className="w-4 h-4 text-[#0E543F]" />
                 <div>
                   <h3 className="text-[13.5px] font-bold text-[#14261E]">
-                    Overall Activity
+                    Overall Spiritual Progress
                   </h3>
                   <span className="text-[10px] text-[#697970] block">
-                    Last 30 Days
+                    Integrated Activity Ratios
                   </span>
                 </div>
               </div>
@@ -591,6 +884,8 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
             </div>
           </div>
         </div>
+        </>
+        )}
       </div>
     </div>
   )

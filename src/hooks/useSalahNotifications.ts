@@ -193,6 +193,33 @@ export function useSalahNotifications(options: UseSalahNotificationsOptions = {}
     } catch {}
   };
 
+  // Delete single notification
+  const deleteNotification = async (id: number) => {
+    setHistory((prev) => {
+      const target = prev.find((i) => i.id === id);
+      if (target && !target.isRead) {
+        setUnreadCount((c) => Math.max(0, c - 1));
+      }
+      return prev.filter((i) => i.id !== id);
+    });
+    if (activeToast?.id === id) {
+      setActiveToast(null);
+    }
+    try {
+      await salahApi.deleteNotification(id);
+    } catch {}
+  };
+
+  // Clear all notifications
+  const clearAllNotifications = async () => {
+    setHistory([]);
+    setUnreadCount(0);
+    setActiveToast(null);
+    try {
+      await salahApi.clearAllNotifications();
+    } catch {}
+  };
+
   // Send a test notification
   const sendTestNotification = async (prayerName = 'Asr') => {
     try {
@@ -220,6 +247,8 @@ export function useSalahNotifications(options: UseSalahNotificationsOptions = {}
     toggleBrowserPush,
     markAsRead,
     markAllAsRead,
+    deleteNotification,
+    clearAllNotifications,
     sendTestNotification,
     refreshHistory: fetchHistory,
   };

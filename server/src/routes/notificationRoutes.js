@@ -9,6 +9,8 @@ import {
   getHistory,
   markRead,
   markAllRead,
+  deleteNotificationHandler,
+  clearAllNotificationsHandler,
   testNotification,
 } from '../controllers/notificationController.js';
 
@@ -29,6 +31,8 @@ notificationRouter.post('/unsubscribe', optionalAuth, unsubscribePush);
 notificationRouter.get('/history', optionalAuth, getHistory);
 notificationRouter.patch('/:id/read', optionalAuth, markRead);
 notificationRouter.post('/mark-all-read', optionalAuth, markAllRead);
+notificationRouter.delete('/:id', optionalAuth, deleteNotificationHandler);
+notificationRouter.delete('/', optionalAuth, clearAllNotificationsHandler);
 
 // Test notification delivery
 notificationRouter.post('/test', optionalAuth, testNotification);
