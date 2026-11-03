@@ -1,6 +1,6 @@
 name = "salah-companion"
 main = "./src/worker.ts"
-compatibility_date = "2026-10-11"
+compatibility_date = "2026-11-03"
 
 [assets]
 directory = "./dist"
@@ -11,4 +11,3 @@ not_found_handling = "single-page-application"
 command = "npm run build"
 
 [previews]
-
