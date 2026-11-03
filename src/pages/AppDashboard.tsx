@@ -52,7 +52,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query'
 import { reverseGeocodeCoordinates } from '../utils/geocoding'
 import type { PrayerItem, DeedItem, PrayerStatus } from '../types'
-import { LogOut, Volume2, Shield, Compass, ChevronRight, ArrowLeft } from 'lucide-react'
+import { LogOut, Volume2, Shield, Compass, ChevronRight, ArrowLeft, Building } from 'lucide-react'
 import { useSalahNotifications } from '../hooks/useSalahNotifications'
 import { QiblaCompassModal } from '../components/QiblaCompassModal'
 import { PrayerConfirmationModal } from '../components/PrayerConfirmationModal'
@@ -1219,33 +1219,66 @@ export const AppDashboard = () => {
                 <div className="lg:col-span-5 space-y-4 mt-4 lg:mt-0">
                   <TodaysDeeds deeds={deeds} onToggleDeed={handleToggleDeed} />
 
-                  {/* Quick Qibla Compass Card */}
-                  <div
-                    onClick={() => setIsQiblaOpen(true)}
-                    className="w-full rounded-[22px] bg-gradient-to-r from-[#0C4535] to-[#082E22] text-white p-3.5 px-4 flex items-center justify-between cursor-pointer hover:shadow-md transition active:scale-[0.99] border border-emerald-900/40"
-                    role="button"
-                    tabIndex={0}
-                    title="Open Qibla Compass (قبلہ نما)"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-[#F5DC96] border border-white/10 flex-shrink-0">
-                        <Compass className="w-5 h-5 stroke-[2]" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <h4 className="text-[13.5px] font-bold text-white">Qibla Compass (قبلہ نما)</h4>
-                          <span className="text-[9.5px] font-bold uppercase tracking-wider bg-[#F5DC96] text-[#0C4535] px-1.5 py-0.2 rounded-md">
-                            Live
-                          </span>
+                  {/* Quick Tools Grid: Qibla Compass & Nearby Mosques */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+                    {/* 1. Quick Qibla Compass Card */}
+                    <div
+                      onClick={() => setIsQiblaOpen(true)}
+                      className="w-full rounded-[22px] bg-gradient-to-r from-[#0C4535] to-[#082E22] text-white p-3.5 px-4 flex items-center justify-between cursor-pointer hover:shadow-md transition active:scale-[0.99] border border-emerald-900/40"
+                      role="button"
+                      tabIndex={0}
+                      title="Open Qibla Compass (قبلہ نما)"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-[#F5DC96] border border-white/10 flex-shrink-0">
+                          <Compass className="w-5 h-5 stroke-[2]" />
                         </div>
-                        <p className="text-[11px] text-emerald-100/80 mt-0.5 truncate">
-                          Face from {city.displayShort || city.name} to Kaaba, Makkah
-                        </p>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="text-[13.5px] font-bold text-white">Qibla Compass (قبلہ نما)</h4>
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider bg-[#F5DC96] text-[#0C4535] px-1.5 py-0.2 rounded-md">
+                              Live
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-emerald-100/80 mt-0.5 truncate">
+                            Face from {city.displayShort || city.name} to Kaaba, Makkah
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 text-[#F5DC96] text-xs font-bold flex-shrink-0">
+                        <span>Open</span>
+                        <ChevronRight className="w-4 h-4" />
                       </div>
                     </div>
-                    <div className="flex items-center gap-1 text-[#F5DC96] text-xs font-bold flex-shrink-0">
-                      <span>Open</span>
-                      <ChevronRight className="w-4 h-4" />
+
+                    {/* 2. Quick Nearby Mosques Card */}
+                    <div
+                      onClick={() => setIsMosqueFinderOpen(true)}
+                      className="w-full rounded-[22px] bg-gradient-to-r from-[#0A2E22] to-[#062017] text-white p-3.5 px-4 flex items-center justify-between cursor-pointer hover:shadow-md transition active:scale-[0.99] border border-emerald-900/40"
+                      role="button"
+                      tabIndex={0}
+                      title="Find Nearby Mosques (قریبی مساجد)"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center text-[#E2B755] border border-white/10 flex-shrink-0">
+                          <Building className="w-5 h-5 stroke-[2]" />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="text-[13.5px] font-bold text-white">Nearby Mosques (مساجد)</h4>
+                            <span className="text-[9.5px] font-bold uppercase tracking-wider bg-[#E2B755] text-[#0C382B] px-1.5 py-0.2 rounded-md">
+                              Maps
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-emerald-100/80 mt-0.5 truncate">
+                            Discover Jamia & local Masjids near {city.displayShort || city.name}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 text-[#E2B755] text-xs font-bold flex-shrink-0">
+                        <span>Find</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </div>
                     </div>
                   </div>
 

@@ -860,7 +860,55 @@ export const salahApi = {
       body: JSON.stringify({ isActive }),
     });
   },
+
+  /**
+   * Personal PDF Page Bookmarks
+   */
+  async getQuranPageBookmarks(resourceKey?: string): Promise<{ success: boolean; data: QuranPageBookmarkItem[] }> {
+    const query = resourceKey ? `?resourceKey=${encodeURIComponent(resourceKey)}` : '';
+    return await fetchWithAuth(`/quran/bookmarks${query}`, { method: 'GET' });
+  },
+
+  async saveQuranPageBookmark(payload: {
+    resourceKey: string;
+    pageNumber: number;
+    title: string;
+    notes?: string;
+  }): Promise<{ success: boolean; data: QuranPageBookmarkItem }> {
+    return await fetchWithAuth('/quran/bookmarks', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async deleteQuranPageBookmark(id: string): Promise<{ success: boolean; id: string }> {
+    return await fetchWithAuth(`/quran/bookmarks/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  /**
+   * Persistent Reading Progress State
+   */
+  async getQuranReadingProgressState(resourceKey = 'quran-roman-urdu'): Promise<{ success: boolean; data: QuranReadingProgressStateItem }> {
+    return await fetchWithAuth(`/quran/reading-progress?resourceKey=${encodeURIComponent(resourceKey)}`, {
+      method: 'GET',
+    });
+  },
+
+  async saveQuranReadingProgressState(payload: {
+    resourceKey: string;
+    lastPage: number;
+    totalPages?: number;
+    lastSurah?: string;
+  }): Promise<{ success: boolean; data: QuranReadingProgressStateItem }> {
+    return await fetchWithAuth('/quran/reading-progress', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
 };
+
 
 
 export interface AdminOverviewData {
@@ -1043,6 +1091,28 @@ export interface QuranResourceItem {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface QuranPageBookmarkItem {
+  id: string;
+  userId: string;
+  resourceKey: string;
+  pageNumber: number;
+  title: string;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuranReadingProgressStateItem {
+  id?: string;
+  userId?: string;
+  resourceKey: string;
+  lastPage: number;
+  totalPages: number;
+  lastSurah?: string | null;
+  lastReadAt: string;
+}
+
 
 
 

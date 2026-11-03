@@ -41,6 +41,8 @@ model User {
   deedLogs                DeedLog[]
   quranReadingLogs        QuranReadingLog[]
   wordProgress            UserWordProgress[]
+  pageBookmarks           QuranPageBookmark[]
+  readingProgressStates   QuranReadingProgressState[]
 
   @@index([email])
   @@index([verificationTokenHash])
@@ -237,4 +239,44 @@ model QuranResource {
   @@index([isActive])
   @@map("quran_resources")
 }
+
+// ----------------------------------------------------------------------------
+// Personal Quran & Vocabulary Page Bookmarks (User-specific)
+// ----------------------------------------------------------------------------
+model QuranPageBookmark {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceKey String   @map("resource_key") // "quran-roman-urdu" | "vocab-600-words"
+  pageNumber  Int      @map("page_number")
+  title       String
+  notes       String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, resourceKey, pageNumber])
+  @@index([userId, resourceKey])
+  @@map("quran_page_bookmarks")
+}
+
+// ----------------------------------------------------------------------------
+// Persistent Reading Progress State per User & Resource
+// ----------------------------------------------------------------------------
+model QuranReadingProgressState {
+  id          String   @id @default(uuid())
+  userId      String   @map("user_id")
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resourceKey String   @map("resource_key") // "quran-roman-urdu" | "vocab-600-words"
+  lastPage    Int      @default(1) @map("last_page")
+  totalPages  Int      @default(608) @map("total_pages")
+  lastSurah   String?  @map("last_surah")
+  lastReadAt  DateTime @default(now()) @map("last_read_at")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@unique([userId, resourceKey])
+  @@index([userId])
+  @@map("quran_reading_progress_states")
+}
+
 

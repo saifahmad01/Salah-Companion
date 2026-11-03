@@ -137,5 +137,37 @@ CREATE TABLE IF NOT EXISTS quran_resources (
 CREATE INDEX IF NOT EXISTS idx_quran_resources_key ON quran_resources(resource_key);
 CREATE INDEX IF NOT EXISTS idx_quran_resources_active ON quran_resources(is_active);
 
+-- 10. Personal Quran & Vocabulary Page Bookmarks
+CREATE TABLE IF NOT EXISTS quran_page_bookmarks (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  resource_key TEXT NOT NULL,
+  page_number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, resource_key, page_number),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_page_bookmarks_user ON quran_page_bookmarks(user_id, resource_key);
+
+-- 11. Quran Reading Progress States
+CREATE TABLE IF NOT EXISTS quran_reading_progress_states (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  resource_key TEXT NOT NULL,
+  last_page INTEGER NOT NULL DEFAULT 1,
+  total_pages INTEGER NOT NULL DEFAULT 608,
+  last_surah TEXT,
+  last_read_at TEXT NOT NULL DEFAULT (datetime('now')),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, resource_key),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_reading_progress_user ON quran_reading_progress_states(user_id);
+
+
 
 
