@@ -28,6 +28,7 @@ import {
   type UserWordProgress,
 } from '../data/quranVocabulary'
 import { QURAN_SURAHS, type SurahMeta } from '../data/quranSurahs'
+import { QURAN_PARAS, getParaForQuranPage } from '../data/quranParas'
 import {
   offlineQuranService,
   SUPABASE_STORAGE_URLS,
@@ -1006,32 +1007,78 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
           </div>
 
           {/* Reading Progress Card */}
-          <div className="bg-[#FAF8F3] rounded-2xl p-5 border border-stone-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider font-bold text-stone-500">
-                Last Reading Session
-              </p>
-              <h4 className="font-serif font-bold text-base text-emerald-950 mt-1">
-                Surah {readingProgress.lastSurah} • Page {readingProgress.lastPage}
-              </h4>
-              <p className="text-xs text-stone-600 mt-0.5">
-                Last read on {readingProgress.lastReadDate}
-              </p>
+          {(() => {
+            const lastPara = getParaForQuranPage(readingProgress.lastPage || 1)
+            return (
+              <div className="bg-[#FAF8F3] rounded-2xl p-5 border border-stone-200 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-wider font-bold text-stone-500">
+                    Last Reading Session
+                  </p>
+                  <h4 className="font-serif font-bold text-base text-emerald-950 mt-1">
+                    Surah {readingProgress.lastSurah} • Para {lastPara.number} ({lastPara.name}) • Page {readingProgress.lastPage || 1}
+                  </h4>
+                  <p className="text-xs text-stone-600 mt-0.5">
+                    Last read on {readingProgress.lastReadDate || 'Today'}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setQuranReaderPage(readingProgress.lastPage || 1)
+                      setIsQuranReaderOpen(true)
+                      device.hapticFeedback('medium')
+                    }}
+                    className="px-5 py-2.5 rounded-xl bg-[#0C382B] text-white font-bold text-xs shadow-md hover:bg-emerald-950 transition flex items-center gap-2 cursor-pointer touch-target active:scale-95"
+                  >
+                    <BookOpen className="w-4 h-4 text-[#E2B755]" />
+                    <span>Continue Reading (Page {readingProgress.lastPage || 1})</span>
+                  </button>
+                </div>
+              </div>
+            )
+          })()}
+
+          {/* Quick Para Navigation Grid (30 Paras / Juz) */}
+          <div className="bg-white rounded-2xl p-5 border border-stone-200/90 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Layers className="w-4 h-4 text-[#0C382B]" />
+                <h3 className="font-serif font-bold text-sm sm:text-base text-stone-900">
+                  Browse by Para / Juz (پارہ 1–30)
+                </h3>
+              </div>
+              <span className="text-xs text-stone-500">Click any Para to open</span>
             </div>
 
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setQuranReaderPage(readingProgress.lastPage || 1)
-                  setIsQuranReaderOpen(true)
-                  device.hapticFeedback('medium')
-                }}
-                className="px-5 py-2.5 rounded-xl bg-[#0C382B] text-white font-bold text-xs shadow-md hover:bg-emerald-950 transition flex items-center gap-2 cursor-pointer touch-target active:scale-95"
-              >
-                <BookOpen className="w-4 h-4 text-[#E2B755]" />
-                <span>Continue Reading (Page {readingProgress.lastPage || 1})</span>
-              </button>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 pt-1 max-h-64 overflow-y-auto no-scrollbar">
+              {QURAN_PARAS.map((p) => (
+                <button
+                  key={p.number}
+                  type="button"
+                  onClick={() => {
+                    setQuranReaderPage(p.startPage)
+                    setIsQuranReaderOpen(true)
+                    device.hapticFeedback('light')
+                  }}
+                  className="p-2.5 rounded-xl bg-[#FAF8F3] hover:bg-[#0C382B] hover:text-white border border-stone-200 hover:border-[#0C382B] text-left transition group cursor-pointer"
+                >
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-[#0C382B] group-hover:text-[#E2B755]">
+                      Para {p.number}
+                    </span>
+                    <span className="font-arabic text-xs group-hover:text-amber-200">{p.arabicName}</span>
+                  </div>
+                  <p className="text-xs font-semibold text-stone-800 group-hover:text-white truncate mt-0.5">
+                    {p.name}
+                  </p>
+                  <p className="text-[10px] text-stone-500 group-hover:text-emerald-200/80">
+                    Page {p.startPage}
+                  </p>
+                </button>
+              ))}
             </div>
           </div>
 

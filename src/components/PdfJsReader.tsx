@@ -5,6 +5,8 @@ import pdfjsWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -21,10 +23,17 @@ import {
   AlertCircle,
   ArrowUpDown,
   ArrowLeftRight,
+  Search,
+  Layers,
 } from 'lucide-react'
 import { offlineQuranService, type OfflinePdfStatus } from '../services/offlineQuranService'
 import { salahApi, type QuranPageBookmarkItem } from '../services/backendApi'
 import { QURAN_SURAHS } from '../data/quranSurahs'
+import { type QuranParaMeta, getParaForQuranPage } from '../data/quranParas'
+import { QuranSearchModal } from './QuranSearchModal'
+import { QuranParaModal } from './QuranParaModal'
+import { type QuranSearchResult } from '../data/quranSearchIndex'
+import { QURAN_VOCABULARY_600 } from '../data/quranVocabulary'
 
 // Configure PDF.js worker using Vite's URL asset loader
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
@@ -111,6 +120,15 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
   // Direct page input state
   const [pageInputVal, setPageInputVal] = useState<string>(String(initialPage))
+
+  // Search & Para Navigation Modals state
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState<boolean>(false)
+  const [isParaModalOpen, setIsParaModalOpen] = useState<boolean>(false)
+  const [currentTargetWord, setCurrentTargetWord] = useState(targetWord)
+
+  useEffect(() => {
+    setCurrentTargetWord(targetWord)
+  }, [targetWord])
 
   // Personal Page Bookmarks state
   const [bookmarks, setBookmarks] = useState<QuranPageBookmarkItem[]>([])
@@ -353,6 +371,55 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
   // ==========================================================================
   // NAVIGATION & ZOOM HANDLERS
   // ==========================================================================
+  const handleFirstPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(1)
+      setPageInputVal('1')
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    }
+  }
+
+  const handleLastPage = () => {
+    if (pdfDoc && currentPage < totalPages) {
+      setCurrentPage(totalPages)
+      setPageInputVal(String(totalPages))
+      if (scrollContainerRef.current) {
+        scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+      }
+    }
+  }
+
+  const handleSelectSearchResult = (result: QuranSearchResult) => {
+    setIsSearchModalOpen(false)
+    const targetPage = Math.min(Math.max(1, result.pageNumber), totalPages || 608)
+    setCurrentPage(targetPage)
+    setPageInputVal(String(targetPage))
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+    if (result.vocabData) {
+      setCurrentTargetWord({
+        id: result.vocabData.id,
+        arabic: result.vocabData.arabic,
+        transliteration: result.vocabData.transliteration,
+        meaning: result.vocabData.meaningEnglish || result.vocabData.meaning,
+        reference: result.vocabData.surahAyahRef,
+      })
+    }
+  }
+
+  const handleSelectPara = (para: QuranParaMeta) => {
+    setIsParaModalOpen(false)
+    const targetPage = Math.min(Math.max(1, para.startPage), totalPages || 608)
+    setCurrentPage(targetPage)
+    setPageInputVal(String(targetPage))
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
   const handlePrevPage = () => {
     if (currentPage > 1) {
       const next = currentPage - 1
@@ -591,22 +658,47 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
     }
   }, [userZoom])
 
-  // Keyboard navigation
+  // Keyboard navigation & global shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Hotkey to open Search (Ctrl+K or Cmd+K)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault()
+        setIsSearchModalOpen(true)
+        return
+      }
+
+      // If user is currently focused on an input or textarea, let default typing happen
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.key === 'ArrowLeft') handlePrevPage()
-      else if (e.key === 'ArrowRight') handleNextPage()
-      else if (e.key === 'Escape') onClose()
+
+      // Forward slash "/" hotkey opens search
+      if (e.key === '/') {
+        e.preventDefault()
+        setIsSearchModalOpen(true)
+        return
+      }
+
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') handlePrevPage()
+      else if (e.key === 'ArrowRight' || e.key === 'PageDown') handleNextPage()
+      else if (e.key === 'Home') handleFirstPage()
+      else if (e.key === 'End') handleLastPage()
+      else if (e.key === 'Escape') {
+        if (isSearchModalOpen) setIsSearchModalOpen(false)
+        else if (isParaModalOpen) setIsParaModalOpen(false)
+        else if (isBookmarksDrawerOpen) setIsBookmarksDrawerOpen(false)
+        else onClose()
+      }
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [currentPage, totalPages])
+  }, [currentPage, totalPages, isSearchModalOpen, isParaModalOpen, isBookmarksDrawerOpen])
+
+  const currentPara = getParaForQuranPage(currentPage)
 
   return createPortal(
     <div
       ref={containerRef}
-      className="fixed inset-0 z-[9999] flex flex-col bg-[#03120D] text-[#F5EEDB] select-none overflow-hidden touch-manipulation"
+      className="fixed inset-0 z-[99999] flex flex-col bg-[#03120D] text-[#F5EEDB] select-none overflow-hidden touch-manipulation w-screen h-screen"
       style={{
         overscrollBehavior: 'contain',
       }}
@@ -635,14 +727,44 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
             </h1>
             <p className="text-[10px] sm:text-xs text-emerald-200/80 truncate">
               {resourceKey === 'quran-roman-urdu'
-                ? `Surah ${getSurahForQuranPage(currentPage)} • Page ${currentPage} of ${totalPages || '...'}`
+                ? `Surah ${getSurahForQuranPage(currentPage)} • Para ${currentPara.number} (${currentPara.name}) • Page ${currentPage} of ${totalPages || '...'}`
+                : currentTargetWord
+                ? `Word #${currentTargetWord.id} (${currentTargetWord.transliteration}) • Page ${currentPage} of ${totalPages || '...'}`
                 : subtitle || `Page ${currentPage} of ${totalPages || '...'}`}
             </p>
           </div>
         </div>
 
-        {/* Right: Fit-Mode, Zoom, Bookmarks, and Offline Status */}
+        {/* Right: Search, Para Selector, Fit-Mode, Zoom, Bookmarks, and Offline Status */}
         <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          {/* Quick Search Button */}
+          <button
+            type="button"
+            onClick={() => setIsSearchModalOpen(true)}
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 text-[#E2B755] border border-[#235845] text-xs font-semibold shadow-xs transition cursor-pointer touch-target flex-shrink-0"
+            title="Search Quran by Surah, Para, Page, Ayah or Word (Ctrl+K or /)"
+          >
+            <Search className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Search</span>
+            <kbd className="hidden lg:inline text-[9px] px-1 py-0.5 rounded bg-black/40 text-emerald-200/80 border border-white/10 font-mono">
+              ⌘K
+            </kbd>
+          </button>
+
+          {/* Dedicated Para / Juz Selector (only for Quran) */}
+          {resourceKey === 'quran-roman-urdu' && (
+            <button
+              type="button"
+              onClick={() => setIsParaModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 text-[#E2B755] border border-[#235845] text-xs font-semibold shadow-xs transition cursor-pointer touch-target flex-shrink-0"
+              title="Select Para / Juz (1 to 30)"
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Para {currentPara.number}</span>
+              <span className="sm:hidden">P.{currentPara.number}</span>
+            </button>
+          )}
+
           {/* Fit Page / Fit Width Mode Switcher */}
           <div className="flex items-center bg-[#124232] rounded-xl p-0.5 border border-[#235845]">
             <button
@@ -789,22 +911,22 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       )}
 
       {/* Target Word Sub-banner (When opened from 600 words) */}
-      {targetWord && (
+      {currentTargetWord && (
         <div className="flex-shrink-0 bg-[#0A261D] border-b border-[#1D4A3A] px-3 sm:px-5 py-2 flex items-center justify-between gap-2 text-xs">
           <div className="flex items-center gap-2 min-w-0">
             <span className="px-2 py-0.5 rounded-md bg-[#E2B755] text-[#051A13] font-bold text-[11px] shadow-xs">
-              Word #{targetWord.id}
+              Word #{currentTargetWord.id}
             </span>
-            <span className="font-arabic text-sm text-[#E2B755]">{targetWord.arabic}</span>
-            <span className="text-white font-semibold truncate">({targetWord.transliteration})</span>
-            <span className="text-[#A0C4B2] truncate hidden sm:inline">— {targetWord.meaning}</span>
+            <span className="font-arabic text-sm text-[#E2B755]">{currentTargetWord.arabic}</span>
+            <span className="text-white font-semibold truncate">({currentTargetWord.transliteration})</span>
+            <span className="text-[#A0C4B2] truncate hidden sm:inline">— {currentTargetWord.meaning}</span>
           </div>
 
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {onToggleBookmark && (
               <button
                 type="button"
-                onClick={() => onToggleBookmark(targetWord.id)}
+                onClick={() => onToggleBookmark(currentTargetWord.id)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                   isBookmarked
                     ? 'bg-[#E2B755] text-[#051A13] border-[#E2B755]'
@@ -819,7 +941,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
             {onToggleLearned && (
               <button
                 type="button"
-                onClick={() => onToggleLearned(targetWord.id)}
+                onClick={() => onToggleLearned(currentTargetWord.id)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                   isLearned
                     ? 'bg-[#1D7355] text-white border-[#27916C]'
@@ -897,17 +1019,33 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       {/* ======================================================== */}
       {/* 3. BOTTOM FLOATING NAVIGATION & JUMP TOOLBAR              */}
       {/* ======================================================== */}
-      <footer className="flex-shrink-0 flex items-center justify-between px-3 md:px-8 py-2.5 bg-[#092E22] border-t border-[#1A4B3A] shadow-2xl z-30">
-        {/* Previous Page */}
-        <button
-          type="button"
-          onClick={handlePrevPage}
-          disabled={currentPage <= 1 || isLoading}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs sm:text-sm font-bold text-white border border-[#235845] cursor-pointer touch-target flex-shrink-0"
-        >
-          <ChevronLeft className="w-4 h-4 text-[#E2B755]" />
-          <span className="hidden sm:inline">Previous</span>
-        </button>
+      <footer className="flex-shrink-0 flex items-center justify-between px-3 md:px-8 py-2.5 bg-[#092E22] border-t border-[#1A4B3A] shadow-2xl z-30 gap-2">
+        {/* Navigation Left: First Page & Previous Page */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={handleFirstPage}
+            disabled={currentPage <= 1 || isLoading}
+            className="flex items-center justify-center p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs font-bold text-white border border-[#235845] cursor-pointer touch-target"
+            title="Go to First Page (Page 1)"
+            aria-label="First Page"
+          >
+            <ChevronsLeft className="w-4 h-4 text-[#E2B755]" />
+            <span className="hidden md:inline ml-1 text-xs">First</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handlePrevPage}
+            disabled={currentPage <= 1 || isLoading}
+            className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs sm:text-sm font-bold text-white border border-[#235845] cursor-pointer touch-target"
+            title="Go to Previous Page"
+            aria-label="Previous Page"
+          >
+            <ChevronLeft className="w-4 h-4 text-[#E2B755]" />
+            <span className="hidden sm:inline">Prev</span>
+          </button>
+        </div>
 
         {/* Center: Interactive Page Slider & Jump Input */}
         <div className="flex items-center gap-2 sm:gap-4 max-w-xs sm:max-w-md w-full justify-center">
@@ -921,7 +1059,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
               setCurrentPage(val)
               setPageInputVal(String(val))
             }}
-            className="w-20 sm:w-44 h-1.5 bg-[#124232] rounded-lg appearance-none cursor-pointer accent-[#E2B755]"
+            className="w-16 sm:w-44 h-1.5 bg-[#124232] rounded-lg appearance-none cursor-pointer accent-[#E2B755]"
             title={`Slide page (1 to ${totalPages || 1})`}
           />
 
@@ -939,16 +1077,32 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
           </form>
         </div>
 
-        {/* Next Page */}
-        <button
-          type="button"
-          onClick={handleNextPage}
-          disabled={currentPage >= totalPages || isLoading}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs sm:text-sm font-bold text-white border border-[#235845] cursor-pointer touch-target flex-shrink-0"
-        >
-          <span className="hidden sm:inline">Next</span>
-          <ChevronRight className="w-4 h-4 text-[#E2B755]" />
-        </button>
+        {/* Navigation Right: Next Page & Last Page */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          <button
+            type="button"
+            onClick={handleNextPage}
+            disabled={currentPage >= totalPages || isLoading}
+            className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs sm:text-sm font-bold text-white border border-[#235845] cursor-pointer touch-target"
+            title="Go to Next Page"
+            aria-label="Next Page"
+          >
+            <span className="hidden sm:inline">Next</span>
+            <ChevronRight className="w-4 h-4 text-[#E2B755]" />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleLastPage}
+            disabled={currentPage >= totalPages || isLoading}
+            className="flex items-center justify-center p-2 sm:px-2.5 sm:py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs font-bold text-white border border-[#235845] cursor-pointer touch-target"
+            title={`Go to Last Page (Page ${totalPages || 608})`}
+            aria-label="Last Page"
+          >
+            <span className="hidden md:inline mr-1 text-xs">Last</span>
+            <ChevronsRight className="w-4 h-4 text-[#E2B755]" />
+          </button>
+        </div>
       </footer>
 
       {/* ======================================================== */}
@@ -1097,6 +1251,28 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* 6. ADVANCED QURAN SEARCH MODAL (SURAH, PARA, AYAH, PAGE) */}
+      {/* ======================================================== */}
+      <QuranSearchModal
+        isOpen={isSearchModalOpen}
+        onClose={() => setIsSearchModalOpen(false)}
+        onSelectResult={handleSelectSearchResult}
+        resourceKey={resourceKey}
+        vocabWords={QURAN_VOCABULARY_600}
+        currentPage={currentPage}
+      />
+
+      {/* ======================================================== */}
+      {/* 7. DEDICATED 30 PARA / JUZ SELECTOR MODAL                */}
+      {/* ======================================================== */}
+      <QuranParaModal
+        isOpen={isParaModalOpen}
+        onClose={() => setIsParaModalOpen(false)}
+        onSelectPara={handleSelectPara}
+        currentPage={currentPage}
+      />
     </div>,
     document.body
   )

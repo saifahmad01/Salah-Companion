@@ -772,6 +772,15 @@ Salah completion is permitted **strictly for today's local calendar date**.
   - Native touch-manipulation and vertical scrolling: `overscrollBehavior: 'contain'`, `touchAction: 'pan-x pan-y'`, and hardware-accelerated 60fps CSS pinch-to-zoom distance tracking with high-DPI canvas re-rendering on touch end.
   - Ultra-Sharp High-DPI Rendering: Native Device Pixel Ratio (DPR up to 3.0) viewport scaling, high-quality image smoothing, and bundled offline `/cmaps/` and `/standard_fonts/` for crystal-clear Arabic calligraphy, tajweed harakat, and Roman Urdu translations without blurriness.
   - Mobile, tablet, and desktop responsive controls: Instant "Fit Page" (`↕`) mode showing 100% of the page margins without scrolling, "Fit Width" (`↔`) mode for maximum text readability, smooth zoom in/out (50%–350%), direct page input jump, interactive page slider, and true fullscreen mode.
+  - Advanced Quran Search & Navigation (`QuranSearchModal.tsx`, `quranSearchIndex.ts`):
+    - Search toolbar button + keyboard hotkeys (`Ctrl+K`, `Cmd+K`, or `/`) for zero-latency client search without network roundtrips.
+    - Multi-criteria evaluation: Page number (1–608), Para/Juz (1–30), Surah name/number (1–114), Ayah references (e.g., `2:255`, `18:10`), and Arabic text search with Unicode normalization (tashkeel stripping, alef/kaf/yeh normalization, tatweel removal).
+    - Famous Ayahs quick index (Ayat al-Kursi, Amanar-Rasul, Surah Al-Kahf, Ya-Sin, Dua of Yunus).
+    - In vocabulary mode (`vocab-600-words`), searches across Arabic words, English/Urdu meanings, transliterations, and jumps directly to the matching word's PDF page with active word highlight.
+  - Authoritative 30 Paras / Juz Navigation (`QuranParaModal.tsx`, `quranParas.ts`):
+    - Dedicated Para navigation modal and quick browse grid on Reader subtab covering all 30 Paras with Arabic titles, Roman Urdu names, starting Surahs, starting Ayahs, and exact Medina Mushaf page mappings (Para 1 p. 1 to Para 30 p. 582).
+    - Top bar header subtitle automatically calculates and displays: `Surah {name} • Para {number} ({name}) • Page {current} of {total}`.
+  - Page Navigation & Quick Jumps: First Page (`|<<`, Page 1) and Last Page (`>>|`, Page 608) quick action buttons alongside Prev/Next and page number slider/input.
   - Personal PDF Bookmarks & Notes: Bookmark any page in the Holy Quran or 600 Words PDF with custom title and reflection notes (`GET /api/quran/bookmarks`, `POST /api/quran/bookmarks`, `DELETE /api/quran/bookmarks/:id`), slide-out bookmarks drawer, and offline IndexedDB sync.
   - Reading position persistence & auto-save: Tracks and automatically saves last reading position (`GET /api/quran/progress-state`, `PUT /api/quran/progress-state`) with debounce, surfacing a high-impact "Continue Reading (Page X)" hero button on both Tracker and Reader dashboards.
   - Permanent Offline First Resilience (IndexedDB `salah_offline_quran_db`):
