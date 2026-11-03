@@ -1,14 +1,7 @@
 // ============================================================================
-// Salah Companion - Production Service Worker for Web Push Notifications
+// Salah Companion - Push Notification Handler for Web Push
+// Imported by the primary Workbox service worker (/sw.js)
 // ============================================================================
-
-self.addEventListener('install', (event) => {
-  self.skipWaiting();
-});
-
-self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
-});
 
 // Push event listener: displays push notification when browser is backgrounded/closed
 self.addEventListener('push', (event) => {
@@ -24,7 +17,7 @@ self.addEventListener('push', (event) => {
   const title = data.title || 'Salah Companion Prayer Reminder';
   const options = {
     body: data.body || 'It is time for prayer. Answer the call to Salah.',
-    icon: '/images/app-logo.png',
+    icon: '/pwa-192x192.png',
     badge: '/favicon.svg',
     tag: `salah-${data.prayerName || 'reminder'}-${data.reminderType || 'start'}`,
     renotify: true,
@@ -56,7 +49,7 @@ self.addEventListener('notificationclick', (event) => {
 
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // If a tab is already open, focus it and navigate
+      // If a tab or standalone window is already open, focus it and navigate
       for (const client of clientList) {
         if (client.url.includes('/app') && 'focus' in client) {
           return client.focus();

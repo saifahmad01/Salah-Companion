@@ -19,21 +19,31 @@ export default defineConfig({
         'images/app-logo.png',
       ],
       manifest: {
+        id: '/',
         name: 'Salah Companion',
         short_name: 'Salah',
         description: 'Islamic Prayer Times, Daily Hadith, Quran, and Accurate Qibla Compass',
         theme_color: '#064E3B',
         background_color: '#064E3B',
         display: 'standalone',
+        display_override: ['standalone', 'minimal-ui', 'window-controls-overlay'],
         orientation: 'portrait',
         scope: '/',
         start_url: '/',
+        categories: ['lifestyle', 'utilities', 'education', 'productivity'],
+        prefer_related_applications: false,
         icons: [
           {
             src: '/pwa-192x192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
+          },
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'maskable',
           },
           {
             src: '/pwa-512x512.png',
@@ -48,8 +58,34 @@ export default defineConfig({
             purpose: 'maskable',
           },
         ],
+        shortcuts: [
+          {
+            name: 'Salah Times',
+            short_name: 'Salah',
+            description: "View today's prayer schedule and tracking",
+            url: '/app?tab=salah',
+            icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+          },
+          {
+            name: 'Qibla Compass',
+            short_name: 'Qibla',
+            description: 'Find Kaaba direction',
+            url: '/app?action=qibla',
+            icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+          },
+          {
+            name: 'Daily Hadith',
+            short_name: 'Hadith',
+            description: 'Read authentic Hadith reflections',
+            url: '/app?tab=hadith',
+            icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+          },
+        ],
       },
       workbox: {
+        importScripts: ['/push-handler.js'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\/.*/, /^\/\.well-known\/.*/],
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,jpg,woff,woff2}'],
         // Exclude large PDF files from service worker precaching
         globIgnores: ['**/*.pdf', '**/Quran*'],
