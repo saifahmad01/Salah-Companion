@@ -50,7 +50,11 @@ export default {
       }
     }
 
-    // 4. Default asset routing (SPA fallback handled via wrangler.toml)
-    return env.ASSETS.fetch(request);
+    // 4. Default asset routing with explicit SPA fallback for client routes
+    const assetResponse = await env.ASSETS.fetch(request);
+    if (assetResponse.status === 404 && !url.pathname.startsWith('/api') && !url.pathname.includes('.')) {
+      return env.ASSETS.fetch(new Request(new URL('/index.html', request.url), request));
+    }
+    return assetResponse;
   },
 };
