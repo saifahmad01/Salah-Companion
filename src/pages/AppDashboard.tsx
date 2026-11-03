@@ -7,6 +7,10 @@ import { HadithCard } from '../components/HadithCard'
 import { TodaysDeeds } from '../components/TodaysDeeds'
 import { StrengthenIman } from '../components/StrengthenIman'
 import { BottomNav, type NavTab } from '../components/BottomNav'
+import { DesktopSidebar } from '../components/DesktopSidebar'
+import { QuranScreen } from '../components/QuranScreen'
+import { MosqueFinderModal } from '../components/MosqueFinderModal'
+import { location, device } from '../platform'
 import { MySalahScreen } from '../components/MySalahScreen'
 import { HadithScreen } from '../components/HadithScreen'
 import { ProgressScreen } from '../components/ProgressScreen'
@@ -146,6 +150,7 @@ export const AppDashboard = () => {
 
   const handleChangeTimeFormat = (format: string) => {
     setTimeFormat(format)
+    device.configureStatusBar()
     try {
       localStorage.setItem('salah_time_format', format)
     } catch {}
@@ -158,6 +163,7 @@ export const AppDashboard = () => {
 
     const handleFocus = () => {
       setCurrentTime(new Date())
+      device.hapticFeedback('medium')
       queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
       queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
     }
@@ -252,6 +258,7 @@ export const AppDashboard = () => {
   useEffect(() => {
     if (prevDateKeyRef.current !== todayDateKey) {
       prevDateKeyRef.current = todayDateKey
+      device.hapticFeedback('medium')
       queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
       queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
       setAllPrayerRecords(loadPrayerRecords())
@@ -475,6 +482,7 @@ export const AppDashboard = () => {
         }
       }
 
+      device.hapticFeedback('medium')
       queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
       queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
 
@@ -542,7 +550,8 @@ export const AppDashboard = () => {
             completed: false,
           })
         }
-        queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+        device.hapticFeedback('medium')
+      queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
         queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
         setIsPrayerStatusModalOpen(false)
         setPrayerForStatusModal(null)
@@ -589,7 +598,8 @@ export const AppDashboard = () => {
             completed: false,
           })
         }
-        queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
+        device.hapticFeedback('medium')
+      queryClient.invalidateQueries({ queryKey: ['weekly-prayers'] })
         queryClient.invalidateQueries({ queryKey: ['progress-summary'] })
         setIsPrayerStatusModalOpen(false)
         setPrayerForStatusModal(null)
@@ -729,11 +739,14 @@ export const AppDashboard = () => {
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false)
   const [isQiblaOpen, setIsQiblaOpen] = useState(false)
+  const [isMosqueFinderOpen, setIsMosqueFinderOpen] = useState(false)
+  const [quranViewMode, setQuranViewMode] = useState<'quran' | 'hadith'>('quran')
 
   // Inner modals state evaluation
   const isAnyInnerModalOpen =
     isSignOutModalOpen ||
     isQiblaOpen ||
+    isMosqueFinderOpen ||
     isLocationOpen ||
     isAuthModalOpen ||
     isCalendarOpen ||
@@ -756,6 +769,7 @@ export const AppDashboard = () => {
     } else if (selectedPrayerDetail) {
       setSelectedPrayerDetail(null)
     } else if (isQiblaOpen) setIsQiblaOpen(false)
+    else if (isMosqueFinderOpen) setIsMosqueFinderOpen(false)
     else if (isLocationOpen) setIsLocationOpen(false)
     else if (isAuthModalOpen) setIsAuthModalOpen(false)
     else if (isCalendarOpen) setIsCalendarOpen(false)
@@ -805,7 +819,37 @@ export const AppDashboard = () => {
   }
 
   const handleDetectGPS = async () => {
-    if (!navigator.geolocation) {
+    try {
+      const pos = await location.getCurrentPosition(12000)
+      if (!pos.success || !pos.coords) {
+        alert(pos.error || 'Could not access GPS location. Please select your location from the search bar.')
+        return
+      }
+      const lat = pos.coords.latitude
+      const lng = pos.coords.longitude
+      const resolved = await reverseGeocodeCoordinates(lat, lng)
+      const newCity: CityInfo = {
+        name: resolved.displayShort || resolved.name || resolved.city,
+        state: resolved.state,
+        lat,
+        lng,
+        suburb: resolved.suburb,
+        fullAddress: resolved.fullAddress,
+        displayShort: resolved.displayShort,
+        isGPS: true,
+        accuracy: pos.coords.accuracy,
+      }
+      setCity(newCity)
+      try {
+        localStorage.setItem('salah_saved_location', JSON.stringify(newCity))
+      } catch {}
+    } catch (e) {
+      console.error('Failed to reverse geocode:', e)
+    } finally {
+      setIsDetectingGPS(false)
+    }
+    return
+    if (false) {
       alert('Geolocation is not supported by your browser.')
       return
     }
@@ -917,7 +961,21 @@ export const AppDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-[#EDE8DE] flex flex-col items-center justify-start sm:py-6 antialiased font-sans">
+    <div className="min-h-screen bg-[#EDE8DE] flex antialiased font-sans">
+      {/* Desktop Sidebar (lg: screens and above) */}
+      <DesktopSidebar
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        user={currentUser}
+        unreadNotifsCount={notifUnreadCount}
+        onOpenQibla={() => setIsQiblaOpen(true)}
+        onOpenMosqueFinder={() => setIsMosqueFinderOpen(true)}
+        onOpenNotifications={() => setIsNotificationsOpen(true)}
+        onSignOut={() => setIsSignOutModalOpen(true)}
+        onOpenAdmin={() => navigate('/admin')}
+      />
+
+      <div className="flex-1 flex flex-col items-center justify-start sm:py-6 overflow-x-hidden min-w-0">
       {/* Top Application Bar with Navigation to Dashboard Tabs & Logout */}
       <div className="w-full max-w-6xl xl:max-w-7xl px-4 sm:px-6 lg:px-8 mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
@@ -946,7 +1004,7 @@ export const AppDashboard = () => {
         </div>
 
         {/* Center: Desktop Navigation Bar for Post-Login Screens */}
-        <nav className="hidden md:flex items-center gap-1 bg-white/90 backdrop-blur-md px-2 py-1 rounded-full border border-stone-200 shadow-xs">
+        <nav className="hidden md:flex lg:hidden items-center gap-1 bg-white/90 backdrop-blur-md px-2 py-1 rounded-full border border-stone-200 shadow-xs">
           {[
             { id: 'home', label: 'Home', icon: '🕌' },
             { id: 'salah', label: 'My Salah', icon: '⏰' },
@@ -1088,7 +1146,7 @@ export const AppDashboard = () => {
       )}
 
       {/* Main App Container - Natural Responsive Viewport across Mobile, Tablet, Laptop and Desktop */}
-      <main className="w-full max-w-6xl xl:max-w-7xl min-h-screen sm:min-h-0 bg-[#FAF8F3] sm:rounded-2xl lg:rounded-3xl shadow-xl sm:border border-stone-200/80 relative overflow-x-hidden pb-6 flex flex-col justify-between">
+      <main className="w-full max-w-6xl xl:max-w-7xl min-h-screen sm:min-h-0 bg-[#FAF8F3] sm:rounded-2xl lg:rounded-3xl shadow-xl sm:border border-stone-200/80 relative overflow-x-hidden pb-24 md:pb-8 flex flex-col justify-between">
         <div className="w-full">
           {/* TAB 1: HOME */}
           {activeTab === 'home' && (
@@ -1116,6 +1174,7 @@ export const AppDashboard = () => {
                   setIsCalendarOpen(true)
                 }}
                 onOpenQibla={() => setIsQiblaOpen(true)}
+                onOpenMosqueFinder={() => setIsMosqueFinderOpen(true)}
               />
 
               {/* 2-Column Responsive Dashboard on Laptop/Desktop */}
@@ -1220,8 +1279,15 @@ export const AppDashboard = () => {
 
           {/* TAB 3: HADITH */}
           {activeTab === 'quran' && (
+            quranViewMode === 'quran' ? (
+              <QuranScreen
+                onBack={() => setActiveTab('home')}
+                onOpenHadithView={() => setQuranViewMode('hadith')}
+              />
+            ) : (
             <HadithScreen
               onBack={() => setActiveTab('home')}
+              onBackToQuran={() => setQuranViewMode('quran')}
               onOpenFullHadith={handleOpenHadithWithData}
               gregorianDateStr={gregorianDateStr}
               hijriDateStr={hijriDateStr}
@@ -1234,6 +1300,7 @@ export const AppDashboard = () => {
                 setIsCalendarOpen(true)
               }}
             />
+            )
           )}
 
           {/* TAB 4: PROGRESS */}
@@ -1396,7 +1463,15 @@ export const AppDashboard = () => {
           onStay={handleStay}
           onExit={handleLeave}
         />
+        <MosqueFinderModal
+          isOpen={isMosqueFinderOpen}
+          onClose={() => setIsMosqueFinderOpen(false)}
+          latitude={city.lat}
+          longitude={city.lng}
+          cityName={city.displayShort || city.name}
+        />
       </main>
+      </div>
     </div>
   )
 }

@@ -48,6 +48,13 @@ backups/
 .vscode/*
 !.vscode/extensions.json
 .idea
+# Large media and PDF assets
+*.pdf
+!public/*.pdf
+!public/**/*.pdf
+scratch/
+Quran Roman Urdu Hindi .pdf
+
 .DS_Store
 Thumbs.db
 *.suo
@@ -55,3 +62,10 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Large local PDFs
+Top 600 Words of the Quran.pdf
+*.pdf
+!public/**/*.pdf
+
+*.traineddata

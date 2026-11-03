@@ -7,6 +7,7 @@ import { hadithRouter } from './hadithRoutes.js';
 import { userRouter } from './userRoutes.js';
 import { notificationRouter } from './notificationRoutes.js';
 import { adminRouter } from './adminRoutes.js';
+import quranRouter from './quranRoutes.js';
 
 import { checkDbHealth } from '../db/connection.js';
 
@@ -48,4 +49,7 @@ apiRouter.use('/notifications', notificationRouter);
 
 // Admin Dashboard & Operations (/api/admin/...)
 apiRouter.use('/admin', adminRouter);
+
+// Personal Quran Reading Tracker & Vocabulary Progress (/api/quran/...)
+apiRouter.use('/quran', quranRouter);
 

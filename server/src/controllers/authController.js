@@ -143,8 +143,53 @@ export function sanitizeUser(user) {
  * GET /api/auth/google
  */
 export async function initiateGoogleOAuth(req, res) {
-  const state = crypto.randomBytes(32).toString('hex');
+  const csrf = crypto.randomBytes(32).toString('hex');
   const isProd = config.nodeEnv === 'production';
+
+  const requestedRedirect = (req.query.redirect_to || req.query.redirectTo || req.headers.referer || '').trim();
+  let frontendOrigin = getEffectiveFrontendUrl(req);
+  let isCustomScheme = false;
+
+  if (requestedRedirect) {
+    try {
+      if (
+        requestedRedirect.startsWith('com.salahcompanion.app://') ||
+        requestedRedirect.startsWith('salah-companion://')
+      ) {
+        frontendOrigin = requestedRedirect;
+        isCustomScheme = true;
+      } else {
+        const parsed = new URL(requestedRedirect);
+        if (
+          parsed.origin.endsWith('.workers.dev') ||
+          parsed.origin.includes('salah-companion.mdsaif.workers.dev') ||
+          parsed.origin.includes('localhost') ||
+          parsed.origin.includes('127.0.0.1')
+        ) {
+          frontendOrigin = parsed.origin;
+        }
+      }
+    } catch {
+      if (
+        requestedRedirect.startsWith('com.salahcompanion.app://') ||
+        requestedRedirect.startsWith('salah-companion://')
+      ) {
+        frontendOrigin = requestedRedirect;
+        isCustomScheme = true;
+      }
+    }
+  }
+
+  if (!isCustomScheme && frontendOrigin.includes('netlify.app')) {
+    frontendOrigin = 'https://salah-companion.mdsaif.workers.dev';
+  }
+
+  // If a custom scheme or specific redirect was requested, encode into state so it survives cross-site cookie drops
+  let state = csrf;
+  if (isCustomScheme || (requestedRedirect && frontendOrigin !== getEffectiveFrontendUrl(req))) {
+    const destBase64 = Buffer.from(frontendOrigin).toString('base64url');
+    state = `${csrf}_dest_${destBase64}`;
+  }
 
   res.cookie('oauth_state', state, {
     httpOnly: true,
@@ -153,25 +198,6 @@ export async function initiateGoogleOAuth(req, res) {
     maxAge: 10 * 60 * 1000,
     path: '/',
   });
-
-  const referer = req.query.redirect_to || req.headers.referer;
-  let frontendOrigin = getEffectiveFrontendUrl(req);
-  if (referer) {
-    try {
-      const parsed = new URL(referer);
-      if (
-        parsed.origin.endsWith('.workers.dev') ||
-        parsed.origin.includes('salah-companion.mdsaif.workers.dev') ||
-        parsed.origin.includes('localhost') ||
-        parsed.origin.includes('127.0.0.1')
-      ) {
-        frontendOrigin = parsed.origin;
-      }
-    } catch {}
-  }
-  if (frontendOrigin.includes('netlify.app')) {
-    frontendOrigin = 'https://salah-companion.mdsaif.workers.dev';
-  }
 
   res.cookie('oauth_frontend', frontendOrigin, {
     httpOnly: true,
@@ -196,7 +222,10 @@ export async function initiateGoogleOAuth(req, res) {
     return res.redirect(`${redirectUri}?code=mock_google_oauth_code&state=${state}&test_secret=${encodeURIComponent(config.jwtSecret)}`);
   }
 
-  return res.redirect(`${frontendOrigin}/login?auth_error=GOOGLE_NOT_CONFIGURED`);
+  const errorTarget = isCustomScheme
+    ? `${frontendOrigin}${frontendOrigin.includes('?') ? '&' : '?'}auth_error=GOOGLE_NOT_CONFIGURED`
+    : `${frontendOrigin}/login?auth_error=GOOGLE_NOT_CONFIGURED`;
+  return res.redirect(errorTarget);
 }
 
 /**
@@ -206,22 +235,166 @@ export async function initiateGoogleOAuth(req, res) {
 export async function handleGoogleOAuthCallback(req, res) {
   const { code, state, error } = req.query;
 
-  let frontendBase = (req.cookies?.oauth_frontend || getEffectiveFrontendUrl(req)).replace(/\/+$/, '');
-  if (frontendBase.includes('netlify.app')) {
+  // Determine destination from state param first, then cookie, then default
+  let frontendBase = '';
+  let isCustomScheme = false;
+
+  if (typeof state === 'string' && state.includes('_dest_')) {
+    try {
+      const parts = state.split('_dest_');
+      if (parts[1]) {
+        const decoded = Buffer.from(parts[1], 'base64url').toString('utf8');
+        if (
+          decoded.startsWith('com.salahcompanion.app://') ||
+          decoded.startsWith('salah-companion://')
+        ) {
+          frontendBase = decoded;
+          isCustomScheme = true;
+        } else {
+          const parsed = new URL(decoded);
+          if (
+            parsed.origin.endsWith('.workers.dev') ||
+            parsed.origin.includes('salah-companion.mdsaif.workers.dev') ||
+            parsed.origin.includes('localhost') ||
+            parsed.origin.includes('127.0.0.1')
+          ) {
+            frontendBase = parsed.origin;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[GoogleAuth] Failed to parse destination from state:', e.message);
+    }
+  }
+
+  if (!frontendBase) {
+    frontendBase = (req.cookies?.oauth_frontend || getEffectiveFrontendUrl(req)).replace(/\/+$/, '');
+    if (frontendBase.startsWith('com.salahcompanion.app://') || frontendBase.startsWith('salah-companion://')) {
+      isCustomScheme = true;
+    }
+  }
+
+  if (!isCustomScheme && frontendBase.includes('netlify.app')) {
     frontendBase = 'https://salah-companion.mdsaif.workers.dev';
   }
+
   res.clearCookie('oauth_frontend', { path: '/' });
 
+  const sendCustomSchemeTrampoline = (targetUrl, intentUrl, isSuccess, message) => {
+    return res.status(200).send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${isSuccess ? 'Authentication Successful' : 'Authentication Notice'} - Salah Companion</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #064E3B;
+      color: #FAF8F5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 24px;
+      box-sizing: border-box;
+      text-align: center;
+    }
+    .card {
+      background: #07241A;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 24px;
+      padding: 36px 24px;
+      max-width: 420px;
+      width: 100%;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    }
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(255,255,255,0.15);
+      border-top-color: #10B981;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h1 { font-size: 21px; font-weight: 700; margin: 0 0 10px; color: #FFFFFF; }
+    p { font-size: 14px; color: #A7F3D0; line-height: 1.5; margin: 0 0 26px; }
+    .btn {
+      display: inline-block;
+      background: #10B981;
+      color: #064E3B;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 13px 32px;
+      border-radius: 9999px;
+      text-decoration: none;
+      box-shadow: 0 4px 14px rgba(16,185,129,0.35);
+      transition: transform 0.15s ease;
+    }
+    .btn:active { transform: scale(0.96); }
+  </style>
+</head>
+<body>
+  <div class="card">
+    ${isSuccess ? '<div class="spinner"></div>' : ''}
+    <h1>${isSuccess ? 'Authentication Successful!' : 'Sign-In Notice'}</h1>
+    <p>${message || (isSuccess ? 'Returning you to Salah Companion...' : 'Please return to the app.')}</p>
+    <a id="launchBtn" class="btn" href="${targetUrl}">${isSuccess ? 'Open Salah Companion' : 'Return to App'}</a>
+  </div>
+  <script>
+    const customSchemeUrl = ${JSON.stringify(targetUrl)};
+    const intentUrl = ${JSON.stringify(intentUrl)};
+    try {
+      window.location.replace(intentUrl);
+    } catch (e) {
+      window.location.replace(customSchemeUrl);
+    }
+    setTimeout(function() {
+      try {
+        window.location.href = customSchemeUrl;
+      } catch (e) {}
+    }, 600);
+  </script>
+</body>
+</html>`);
+  };
+
+  const handleSuccess = (token) => {
+    if (isCustomScheme) {
+      const separator = frontendBase.includes('?') ? '&' : '?';
+      const customSchemeUrl = `${frontendBase}${separator}auth=google_success&token=${encodeURIComponent(token)}`;
+      const intentUrl = `intent://auth-callback?auth=google_success&token=${encodeURIComponent(token)}#Intent;scheme=com.salahcompanion.app;package=com.salahcompanion.app;end`;
+      return sendCustomSchemeTrampoline(customSchemeUrl, intentUrl, true, 'Returning you to Salah Companion...');
+    }
+    return res.redirect(`${frontendBase}/app?auth=google_success&token=${encodeURIComponent(token)}`);
+  };
+
+  const handleError = (errCode) => {
+    if (isCustomScheme) {
+      const separator = frontendBase.includes('?') ? '&' : '?';
+      const customSchemeUrl = `${frontendBase}${separator}auth_error=${encodeURIComponent(errCode)}`;
+      const intentUrl = `intent://auth-callback?auth_error=${encodeURIComponent(errCode)}#Intent;scheme=com.salahcompanion.app;package=com.salahcompanion.app;end`;
+      return sendCustomSchemeTrampoline(customSchemeUrl, intentUrl, false, 'Google sign-in was not completed: ' + errCode);
+    }
+    return res.redirect(`${frontendBase}/login?auth_error=${encodeURIComponent(errCode)}`);
+  };
+
   if (error) {
-    return res.redirect(`${frontendBase}/login?auth_error=${encodeURIComponent(String(error))}`);
+    return handleError(String(error));
   }
 
   const savedState = req.cookies?.oauth_state;
   if (!savedState || savedState !== state) {
-    if (!savedState && state && typeof state === 'string' && state.length === 64) {
-      console.warn('[GoogleAuth] oauth_state cookie not attached, falling back to query state');
+    const isValidStateFormat = state && typeof state === 'string' &&
+      (state.length === 64 || (state.includes('_dest_') && state.split('_dest_')[0].length === 64));
+    if (!savedState && isValidStateFormat) {
+      console.warn('[GoogleAuth] oauth_state cookie not attached, falling back to query state validation');
     } else {
-      return res.redirect(`${frontendBase}/login?auth_error=CSRF_STATE_MISMATCH`);
+      return handleError('CSRF_STATE_MISMATCH');
     }
   }
 
@@ -274,13 +447,13 @@ export async function handleGoogleOAuthCallback(req, res) {
     const token = signToken(user);
     setAuthCookie(res, token);
 
-    return res.redirect(`${frontendBase}/app?auth=google_success&token=${encodeURIComponent(token)}`);
+    return handleSuccess(token);
   } catch (err) {
     console.error('[GoogleAuth] Callback error:', err.message);
     const errCode = err.message?.includes('GOOGLE_NOT_CONFIGURED')
       ? 'GOOGLE_NOT_CONFIGURED'
       : (err.message || 'AUTH_FAILED');
-    return res.redirect(`${frontendBase}/login?auth_error=${encodeURIComponent(errCode)}`);
+    return handleError(errCode);
   }
 }
 

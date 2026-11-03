@@ -84,3 +84,58 @@ CREATE TABLE IF NOT EXISTS notification_logs (
 CREATE INDEX IF NOT EXISTS idx_notif_logs_user_date ON notification_logs(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_notif_logs_user_unread ON notification_logs(user_id, is_read);
 
+-- 7. Personal Quran Reading Logs table
+CREATE TABLE IF NOT EXISTS quran_reading_logs (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  surah_name TEXT NOT NULL,
+  start_page INTEGER NOT NULL,
+  end_page INTEGER NOT NULL,
+  start_ruku INTEGER NOT NULL,
+  end_ruku INTEGER NOT NULL,
+  pages_read INTEGER NOT NULL,
+  rukus_read INTEGER NOT NULL,
+  notes TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_quran_reading_user_date ON quran_reading_logs(user_id, date);
+
+-- 8. User Vocabulary Progress (Top 600 Words)
+CREATE TABLE IF NOT EXISTS user_word_progress (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  word_id INTEGER NOT NULL,
+  is_learned INTEGER NOT NULL DEFAULT 0,
+  is_bookmarked INTEGER NOT NULL DEFAULT 0,
+  review_count INTEGER NOT NULL DEFAULT 0,
+  last_reviewed TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, word_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_user_word_progress_user ON user_word_progress(user_id);
+
+-- 9. Quran & Study PDF Resources (Supabase Storage Metadata)
+CREATE TABLE IF NOT EXISTS quran_resources (
+  id TEXT PRIMARY KEY,
+  resource_key TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  public_url TEXT NOT NULL,
+  metadata TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_quran_resources_key ON quran_resources(resource_key);
+CREATE INDEX IF NOT EXISTS idx_quran_resources_active ON quran_resources(is_active);
+
+
+

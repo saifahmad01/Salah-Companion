@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.salahcompanion.app",
+      "sha256_cert_fingerprints": [
+        "71:9D:D5:BE:CC:27:5E:06:D1:7D:F4:9B:E5:6A:5C:51:B8:26:3C:0C:BF:FC:F1:6E:6E:A2:28:29:72:8F:A4:2C"
+      ]
+    }
+  }
+]

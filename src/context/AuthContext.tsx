@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { salahApi, authStorage, type UserProfile } from '../services/backendApi'
+import { oauth, platform } from '../platform'
 
 interface AuthContextType {
   user: UserProfile | null
@@ -34,6 +36,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState(true)
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const initStartedRef = useRef(false)
+  const processingCallbackRef = useRef(false)
+  const navigate = useNavigate()
 
   // Automatically dismiss temporary notification toasts after 4 seconds
   useEffect(() => {
@@ -123,35 +127,66 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return await salahApi.resendOtp(email)
   }
 
-  useEffect(() => {
-    if (initStartedRef.current) return
-    initStartedRef.current = true
+  /**
+   * Process OAuth response callback from deep links or web search parameters
+   */
+  const handleOAuthCallbackUrl = async (rawUrlOrSearch: string): Promise<boolean> => {
+    if (!rawUrlOrSearch) return false
 
-    const initAuth = async () => {
-      const params = new URLSearchParams(window.location.search)
-      const authStatus = params.get('auth')
-      const authError = params.get('auth_error')
-      const tokenParam = params.get('token')
+    let searchPart = ''
+    if (rawUrlOrSearch.includes('?')) {
+      searchPart = rawUrlOrSearch.substring(rawUrlOrSearch.indexOf('?') + 1).split('#')[0]
+    } else if (rawUrlOrSearch.startsWith('?')) {
+      searchPart = rawUrlOrSearch.substring(1).split('#')[0]
+    }
 
-      // 1. Google OAuth Callback
-      if (authStatus === 'google_success') {
-        try {
-          if (tokenParam) {
-            authStorage.setToken(tokenParam)
-          }
-          const profile = await refreshUser()
-          if (profile) {
-            setBanner({
-              type: 'success',
-              message: '🎉 Successfully signed in with Google! Welcome back to Salah Companion.',
-            })
-          }
-        } finally {
-          const targetPath = window.location.pathname.startsWith('/app') ? window.location.pathname : '/app'
-          window.history.replaceState({}, document.title, targetPath)
-          setLoading(false)
+    let hashPart = ''
+    if (rawUrlOrSearch.includes('#')) {
+      hashPart = rawUrlOrSearch.substring(rawUrlOrSearch.indexOf('#') + 1)
+    }
+
+    const queryParams = new URLSearchParams(searchPart)
+    const hashParams = new URLSearchParams(hashPart)
+
+    const authStatus = queryParams.get('auth') || hashParams.get('auth')
+    const authError =
+      queryParams.get('auth_error') ||
+      hashParams.get('auth_error') ||
+      queryParams.get('error') ||
+      hashParams.get('error')
+    const tokenParam =
+      queryParams.get('token') ||
+      hashParams.get('token') ||
+      queryParams.get('access_token') ||
+      hashParams.get('access_token')
+
+    if (!authStatus && !authError && !tokenParam) {
+      return false
+    }
+
+    // Guard against duplicate handling
+    if (processingCallbackRef.current) {
+      return true
+    }
+    processingCallbackRef.current = true
+
+    try {
+      // Dismiss native Chrome Custom Tab overlay immediately
+      await oauth.closeBrowser()
+
+      if (tokenParam || authStatus === 'google_success') {
+        if (tokenParam) {
+          authStorage.setToken(tokenParam)
         }
-        return
+        const profile = await refreshUser()
+        if (profile) {
+          setBanner({
+            type: 'success',
+            message: '🎉 Successfully signed in! Welcome back to Salah Companion.',
+          })
+        }
+        navigate('/app', { replace: true })
+        return true
       }
 
       if (authError) {
@@ -167,36 +202,80 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
           type: 'error',
           message: errorDescriptions[authError] || `Google sign-in failed: ${decodeURIComponent(authError)}`,
         })
-        const targetPath = window.location.pathname.startsWith('/app') ? '/login' : window.location.pathname
+        navigate('/login', { replace: true })
+        return true
+      }
+    } finally {
+      if (!platform.isNative()) {
+        const targetPath = window.location.pathname.startsWith('/app') ? '/app' : '/login'
         window.history.replaceState({}, document.title, targetPath)
-        setLoading(false)
-        return
       }
-
-      // Notice toast (e.g. redirected from legacy route)
-      const noticeParam = params.get('notice')
-      if (noticeParam === 'use_otp') {
-        setBanner({
-          type: 'success',
-          message: 'Please enter your email to receive a secure 6-digit verification code.',
-        })
-      } else if (noticeParam === 'use_google') {
-        setBanner({
-          type: 'success',
-          message: 'Please sign in with Google or Email OTP to access your account.',
-        })
-      }
-
-      // 2. Regular session restoration
-      try {
-        await refreshUser()
-      } finally {
-        setLoading(false)
-      }
+      setLoading(false)
+      setTimeout(() => {
+        processingCallbackRef.current = false
+      }, 1500)
     }
 
-    initAuth()
-  }, [])
+    return false
+  }
+
+  useEffect(() => {
+    // 1. Listen for native deep link URL (Capacitor AppUrlOpen)
+    const removeUrlListener = oauth.addUrlOpenListener(async (url) => {
+      console.log('[Auth] Deep link URL received:', url)
+      await handleOAuthCallbackUrl(url)
+    })
+
+    // 2. Check cold start URL if running natively
+    if (platform.isNative()) {
+      oauth.getLaunchUrl().then((launchUrl) => {
+        if (launchUrl) {
+          console.log('[Auth] App launched with URL:', launchUrl)
+          handleOAuthCallbackUrl(launchUrl)
+        }
+      })
+    }
+
+    // 3. Web or initial load auth check
+    if (!initStartedRef.current) {
+      initStartedRef.current = true
+
+      const initAuth = async () => {
+        const params = new URLSearchParams(window.location.search)
+        const hasOAuthParams = params.has('auth') || params.has('auth_error')
+
+        if (hasOAuthParams) {
+          await handleOAuthCallbackUrl(window.location.search)
+          return
+        }
+
+        const noticeParam = params.get('notice')
+        if (noticeParam === 'use_otp') {
+          setBanner({
+            type: 'success',
+            message: 'Please enter your email to receive a secure 6-digit verification code.',
+          })
+        } else if (noticeParam === 'use_google') {
+          setBanner({
+            type: 'success',
+            message: 'Please sign in with Google or Email OTP to access your account.',
+          })
+        }
+
+        try {
+          await refreshUser()
+        } finally {
+          setLoading(false)
+        }
+      }
+
+      initAuth()
+    }
+
+    return () => {
+      removeUrlListener()
+    }
+  }, [navigate])
 
   const logout = async (): Promise<void> => {
     try {

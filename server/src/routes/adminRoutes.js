@@ -6,6 +6,11 @@ import {
   deleteUser,
   broadcastNotification,
 } from '../controllers/adminController.js';
+import {
+  getAdminQuranResources,
+  upsertQuranResource,
+  toggleResourceStatus,
+} from '../controllers/quranResourceController.js';
 import { protectRoute, restrictTo } from '../middlewares/authMiddleware.js';
 
 export const adminRouter = Router();
@@ -27,3 +32,11 @@ adminRouter.delete('/users/:id', deleteUser);
 
 // POST /api/admin/broadcast
 adminRouter.post('/broadcast', broadcastNotification);
+
+// ============================================================================
+// Quran PDF Resource Admin Endpoints
+// ============================================================================
+adminRouter.get('/quran/resources', getAdminQuranResources);
+adminRouter.post('/quran/resources', upsertQuranResource);
+adminRouter.patch('/quran/resources/:id/status', toggleResourceStatus);
+

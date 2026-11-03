@@ -1,7 +1,7 @@
-import { Bell, User, Calendar, Moon, Wifi, MapPin, ChevronDown, Shield, Compass } from 'lucide-react'
+import { Bell, User, Calendar, Moon, MapPin, ChevronDown, Shield, Compass, Building } from 'lucide-react'
 
 interface HeaderProps {
-  currentTimeStr: string
+  currentTimeStr?: string
   cityName: string
   gregorianDateStr: string
   hijriDateStr: string
@@ -17,10 +17,11 @@ interface HeaderProps {
   onOpenEnglishCalendar?: () => void
   onOpenArabicCalendar?: () => void
   onOpenQibla?: () => void
+  onOpenMosqueFinder?: () => void
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  currentTimeStr,
+  currentTimeStr: _currentTimeStr,
   cityName,
   gregorianDateStr,
   hijriDateStr,
@@ -36,34 +37,12 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenEnglishCalendar,
   onOpenArabicCalendar,
   onOpenQibla,
+  onOpenMosqueFinder,
 }) => {
   return (
-    <header className="relative w-full overflow-hidden select-none">
-      {/* iOS Status Bar - Connected to Real Time of India (Hidden on tablet/laptop/desktop) */}
-      <div className="flex sm:hidden items-center justify-between px-7 pt-3 pb-2 text-[#0F1D16] text-[14px] font-semibold tracking-tight">
-        <span className="font-semibold">{currentTimeStr}</span>
-        <div className="flex items-center gap-1.5 text-[#0F1D16]">
-          {/* Cellular signal 4 bars */}
-          <div className="flex items-end gap-[1.5px] h-3 mr-0.5">
-            <span className="w-[3px] h-1.5 bg-current rounded-sm"></span>
-            <span className="w-[3px] h-2 bg-current rounded-sm"></span>
-            <span className="w-[3px] h-2.5 bg-current rounded-sm"></span>
-            <span className="w-[3px] h-3 bg-current rounded-sm"></span>
-          </div>
-          {/* Wi-Fi Icon */}
-          <Wifi className="w-[15px] h-[15px] stroke-[2.4]" />
-          {/* Battery Icon */}
-          <div className="flex items-center">
-            <div className="w-[22px] h-[11px] border-[1.5px] border-current rounded-[3.5px] p-[1.5px] flex items-center">
-              <div className="w-[15px] h-full bg-current rounded-[1.5px]"></div>
-            </div>
-            <div className="w-[1.5px] h-[4px] bg-current rounded-r-[1px] ml-[0.5px]"></div>
-          </div>
-        </div>
-      </div>
-
+    <header className="relative w-full overflow-hidden select-none pt-safe">
       {/* App Bar (Logo, Title, Location Badge, Actions) */}
-      <div className="flex items-center justify-between px-5 sm:px-6 lg:px-8 pt-3 pb-2.5">
+      <div className="flex items-center justify-between px-4 sm:px-6 lg:px-8 pt-1.5 sm:pt-2 pb-2.5">
         <div className="flex items-center gap-3">
           <div className="relative w-10 h-10 sm:w-11 sm:h-11 rounded-xl overflow-hidden shadow-sm border border-emerald-900/10 flex-shrink-0 bg-[#0E3D2E]">
             <img
@@ -132,6 +111,19 @@ export const Header: React.FC<HeaderProps> = ({
               className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/90 hover:bg-emerald-50 border border-[#E5E2D9] shadow-sm flex items-center justify-center text-[#0C4535] transition-transform active:scale-95 cursor-pointer"
             >
               <Compass className="w-[18px] h-[18px] stroke-[1.8] text-[#0C4535]" />
+            </button>
+          )}
+
+          {/* Mosque Finder Button */}
+          {onOpenMosqueFinder && (
+            <button
+              type="button"
+              onClick={onOpenMosqueFinder}
+              aria-label="Find Nearby Mosques"
+              title="Find Nearby Mosques (مساجد)"
+              className="relative w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white/90 hover:bg-emerald-50 border border-[#E5E2D9] shadow-sm flex items-center justify-center text-[#0C382B] transition-transform active:scale-95 cursor-pointer touch-target"
+            >
+              <Building className="w-[18px] h-[18px] stroke-[1.8] text-[#0C382B]" />
             </button>
           )}
 

@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { device } from '../platform/device'
+import { platform } from '../platform/platform'
 
 interface UseExitConfirmationOptions {
   enabled?: boolean
@@ -107,6 +109,37 @@ export function useExitConfirmation(options: UseExitConfirmationOptions = {}) {
     }
   }, [enabled])
 
+  // 3. Native Android hardware back button handler via Capacitor
+  useEffect(() => {
+    if (!enabled || !platform.isNative()) return
+
+    const removeBackButton = device.addBackButtonListener(() => {
+      if (isExitingRef.current) return false
+
+      if (hasInnerModalOpenRef.current && onCloseInnerModalRef.current) {
+        onCloseInnerModalRef.current()
+        return true
+      }
+
+      if (hasInnerNavigationRef.current && onNavigateBackRef.current) {
+        onNavigateBackRef.current()
+        return true
+      }
+
+      if (showExitModalRef.current) {
+        setShowExitModal(false)
+        return true
+      }
+
+      setShowExitModal(true)
+      return true
+    })
+
+    return () => {
+      removeBackButton()
+    }
+  }, [enabled])
+
   // User chooses "Stay": close modal and remain in app
   const handleStay = useCallback(() => {
     setShowExitModal(false)
@@ -116,6 +149,11 @@ export function useExitConfirmation(options: UseExitConfirmationOptions = {}) {
   const handleLeave = useCallback(() => {
     isExitingRef.current = true
     setShowExitModal(false)
+
+    if (platform.isNative()) {
+      device.exitApp()
+      return
+    }
 
     // Attempt window.close() where browser permits (e.g. standalone PWAs or script-opened windows)
     try {

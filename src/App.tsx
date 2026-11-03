@@ -1,21 +1,34 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './context/AuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { PublicOnlyRoute } from './components/PublicOnlyRoute'
 import { AdminRoute } from './components/AdminRoute'
 import { ServerWarmupNotice } from './components/ServerWarmupNotice'
+import { PwaInstallPrompt } from './components/PwaInstallPrompt'
 import LandingPage from './pages/LandingPage'
 import LoginPage from './pages/LoginPage'
 import ResetPasswordPage from './pages/ResetPasswordPage'
 import AppDashboard from './pages/AppDashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import AuthCallbackPage from './pages/AuthCallbackPage'
+import { device } from './platform/device'
 
 export default function App() {
+  useEffect(() => {
+    // Configure native status bar color and dark style globally on launch
+    device.configureStatusBar()
+  }, [])
+
   return (
     <BrowserRouter>
       <AuthProvider>
         <ServerWarmupNotice />
+        <PwaInstallPrompt />
         <Routes>
+          {/* Dedicated OAuth & Deep Link Callback Route */}
+          <Route path="/auth-callback" element={<AuthCallbackPage />} />
+
           {/* Public Landing Page (accessible to logged-out visitors; authenticated users redirected to /app) */}
           <Route
             path="/"
