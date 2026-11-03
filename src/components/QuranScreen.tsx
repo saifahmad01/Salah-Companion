@@ -284,6 +284,25 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
     } catch {}
   }
 
+  // Word Navigation in Modal
+  const handlePrevWord = () => {
+    if (!selectedWordDetail) return
+    const idx = QURAN_VOCABULARY_600.findIndex((w) => w.id === selectedWordDetail.id)
+    if (idx > 0) {
+      setSelectedWordDetail(QURAN_VOCABULARY_600[idx - 1])
+      device.hapticFeedback('light')
+    }
+  }
+
+  const handleNextWord = () => {
+    if (!selectedWordDetail) return
+    const idx = QURAN_VOCABULARY_600.findIndex((w) => w.id === selectedWordDetail.id)
+    if (idx < QURAN_VOCABULARY_600.length - 1) {
+      setSelectedWordDetail(QURAN_VOCABULARY_600[idx + 1])
+      device.hapticFeedback('light')
+    }
+  }
+
   // Filter 600 words
   const filteredWords = useMemo(() => {
     return QURAN_VOCABULARY_600.filter((word) => {
@@ -790,10 +809,21 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
                       </div>
                     </div>
 
-                    {/* Arabic Word Display */}
-                    <p className="font-amiri text-2xl text-right text-[#0C382B] font-bold py-1">
-                      {w.arabic}
-                    </p>
+                    {/* Authentic Arabic Word Display from PDF */}
+                    <div className="flex items-center justify-end py-1 h-14 overflow-hidden">
+                      {w.image ? (
+                        <img
+                          src={w.image}
+                          alt={w.transliteration}
+                          className="max-h-12 max-w-[150px] object-contain drop-shadow-xs"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <p className="font-amiri text-2xl text-right text-[#0C382B] font-bold">
+                          {w.arabic}
+                        </p>
+                      )}
+                    </div>
 
                     <div className="mt-1">
                       <p className="font-bold text-xs text-stone-800">{w.transliteration}</p>
@@ -1091,24 +1121,62 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-stone-200 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-700">
-                Word #{selectedWordDetail.id} • {selectedWordDetail.category}
-              </span>
-              <button
-                type="button"
-                onClick={() => setSelectedWordDetail(null)}
-                className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold px-2.5 py-1 rounded-full bg-stone-100 text-stone-700">
+                  Word #{selectedWordDetail.id} / 600
+                </span>
+                {selectedWordDetail.progressPercentage && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                    {selectedWordDetail.progressPercentage}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handlePrevWord}
+                  disabled={selectedWordDetail.id <= 1}
+                  aria-label="Previous word"
+                  className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNextWord}
+                  disabled={selectedWordDetail.id >= 600}
+                  aria-label="Next word"
+                  className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center transition cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedWordDetail(null)}
+                  className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-600 flex items-center justify-center transition cursor-pointer ml-1"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="mt-4 space-y-4">
-              {/* Arabic & Transliteration Card */}
+              {/* Authentic Arabic Calligraphy Image & Transliteration Card */}
               <div className="bg-[#FAF8F3] rounded-2xl p-5 border border-[#E7E2D6] text-center space-y-2">
-                <p className="font-amiri text-4xl text-[#064E3B] font-bold py-1">
-                  {selectedWordDetail.arabic}
-                </p>
+                {selectedWordDetail.image && (
+                  <div className="flex justify-center py-2">
+                    <img
+                      src={selectedWordDetail.image}
+                      alt={selectedWordDetail.transliteration}
+                      className="max-h-20 max-w-[240px] object-contain drop-shadow-sm"
+                    />
+                  </div>
+                )}
+                {selectedWordDetail.arabic && selectedWordDetail.arabic !== selectedWordDetail.transliteration && (
+                  <p className="font-amiri text-2xl text-[#064E3B] font-bold">
+                    {selectedWordDetail.arabic}
+                  </p>
+                )}
                 <h3 className="text-lg font-bold text-stone-900">
                   {selectedWordDetail.transliteration}
                 </h3>
@@ -1116,7 +1184,7 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
                   {selectedWordDetail.meaning}
                 </p>
 
-                <div className="flex items-center justify-center gap-2 pt-2 text-[11px] font-semibold text-stone-500">
+                <div className="flex items-center justify-center gap-2 pt-2 text-[11px] font-semibold text-stone-500 flex-wrap">
                   <span className="px-2.5 py-0.5 rounded-full bg-stone-200 text-stone-700">
                     {selectedWordDetail.partOfSpeech}
                   </span>

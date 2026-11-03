@@ -64,3 +64,5 @@ Thumbs.db
 Top 600 Words of the Quran.pdf
 *.pdf
 !public/**/*.pdf
+
+*.traineddata
