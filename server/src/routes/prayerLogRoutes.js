@@ -7,6 +7,8 @@ import {
   getPrayerAnalytics,
   updatePrayerLog,
   deletePrayerLog,
+  recordQadaPrayer,
+  getPendingQadaPrayers,
 } from '../controllers/prayerLogController.js';
 import { protectRoute, requireVerifiedEmail, validateBody } from '../middlewares/authMiddleware.js';
 import { logPrayerInputSchema } from '../schemas/prayerLogSchema.js';
@@ -16,6 +18,10 @@ export const prayerLogRouter = Router();
 // Enforce authentication & verified email status on all prayer log routes
 prayerLogRouter.use(protectRoute);
 prayerLogRouter.use(requireVerifiedEmail);
+
+// Qada routes
+prayerLogRouter.post('/qada', recordQadaPrayer);
+prayerLogRouter.get('/qada/pending', getPendingQadaPrayers);
 
 // POST /api/prayers/log - Upsert prayer log with dynamic Hadith
 prayerLogRouter.post('/log', validateBody(logPrayerInputSchema), logPrayer);

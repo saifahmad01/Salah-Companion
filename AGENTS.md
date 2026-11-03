@@ -754,6 +754,28 @@ Salah completion is permitted **strictly for today's local calendar date**.
 - Repeated identical submissions return **HTTP 200 OK** with the existing log.
 - Attempting to mark an already completed prayer again without an explicit `isCorrection: true` flag returns **HTTP 409 Conflict** (`PRAYER_ALREADY_COMPLETED`).
 
+### Rule 7: Automated Overdue Missed Salah & Qada Recovery Engine
+- **Automated Lifecycle Transitions:**
+  - `PENDING` $\to$ `COMPLETED` (`on_time`, `late`) upon user logging.
+  - `PENDING` $\to$ `MISSED` automatically once the astronomical deadline for that prayer expires.
+  - `MISSED` $\to$ `QADA` upon user make-up completion via `POST /api/prayers/qada`.
+- **Astronomical Deadlines:**
+  - Fajr deadline: Sunrise (`times.sunrise`).
+  - Dhuhr deadline: Asr start (`times.asr`). On Friday, either Dhuhr or Jumu'ah completion satisfies the midday slot.
+  - Asr deadline: Maghrib start / Sunset (`times.maghrib`).
+  - Maghrib deadline: Isha start (`times.isha`).
+  - Isha deadline: Next day Fajr start.
+  - Past dates (`< todayStr`): All unlogged slots automatically finalize as `missed`.
+- **Strict Invariants:**
+  1. Completed prayers (`on_time`, `late`, `qada`) can **NEVER** become `missed`.
+  2. Active or future prayer windows are **NEVER** marked as `missed`.
+  3. Records with `isAdminOverride: true` are permanently protected and never modified by background automation.
+  4. Automatic missed notifications (`PRAYER_MISSED_REMINDERS`) dispatched via in-app logs and Web Push.
+- **Qada APIs & Progress UI:**
+  - `POST /api/prayers/qada`: Marks missed prayer as `qada`, sets `qadaCompletedAt`, preserves original prayer date, and returns forgiveness Hadith.
+  - `GET /api/prayers/qada/pending`: Returns all pending missed prayers awaiting Qada.
+  - `ProgressScreen.tsx` includes an interactive Qada Recovery card allowing users to view and fulfill missed prayers in 1-click.
+
 ---
 
 ## 14. Quran and Hadith Integration

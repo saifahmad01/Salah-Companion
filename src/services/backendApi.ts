@@ -647,6 +647,25 @@ export const salahApi = {
    * Delete / reset prayer log
    * DELETE /api/prayers/log/:id
    */
+  /**
+   * Record Qada for a missed prayer
+   * POST /api/prayers/qada
+   */
+  async recordQadaPrayer(payload: { prayerName: string; date: string; notes?: string }) {
+    return await fetchWithAuth('/prayers/qada', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /**
+   * Get pending missed prayers awaiting Qada
+   * GET /api/prayers/qada/pending
+   */
+  async getPendingQadaPrayers() {
+    return await fetchWithAuth('/prayers/qada/pending', { method: 'GET' });
+  },
+
   async deletePrayerLog(idOrPrayerName: string, date?: string) {
     const query = date ? `?date=${encodeURIComponent(date)}` : '';
     return await fetchWithAuth(`/prayers/log/${encodeURIComponent(idOrPrayerName)}${query}`, {

@@ -8,6 +8,7 @@ import { errorHandler, notFoundHandler } from './middlewares/errorHandler.js';
 import { db, checkDbHealth } from './db/connection.js';
 import { startNotificationScheduler, stopNotificationScheduler } from './services/notificationScheduler.js';
 import { ensurePermanentAdmins } from './services/adminBootstrapService.js';
+import { startSalahAutomationScheduler, stopSalahAutomationScheduler } from './services/salahAutomationService.js';
 
 // Ensure IPv4 resolution is prioritized across the entire Node.js runtime to prevent IPv6 ENETUNREACH errors on cloud hosts
 try {
@@ -191,6 +192,7 @@ const server = app.listen(config.port, '0.0.0.0', () => {
 const shutdown = () => {
   console.log('\n[Server] Shutting down gracefully...');
   stopNotificationScheduler();
+  stopSalahAutomationScheduler();
   server.close(async () => {
     console.log('[Server] HTTP server closed.');
     try {

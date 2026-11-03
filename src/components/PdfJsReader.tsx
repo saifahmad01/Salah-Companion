@@ -7,24 +7,13 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  ZoomIn,
-  ZoomOut,
-  Maximize2,
-  Minimize2,
-  Download,
-  CheckCircle2,
   Loader2,
-  ArrowLeft,
-  BookOpen,
+  CheckCircle2,
   Bookmark,
   Trash2,
   Plus,
   X,
   AlertCircle,
-  ArrowUpDown,
-  ArrowLeftRight,
-  Search,
-  Layers,
 } from 'lucide-react'
 import { offlineQuranService, type OfflinePdfStatus } from '../services/offlineQuranService'
 import { salahApi, type QuranPageBookmarkItem } from '../services/backendApi'
@@ -34,6 +23,7 @@ import { QuranSearchModal } from './QuranSearchModal'
 import { QuranParaModal } from './QuranParaModal'
 import { type QuranSearchResult } from '../data/quranSearchIndex'
 import { QURAN_VOCABULARY_600 } from '../data/quranVocabulary'
+import { PdfReaderToolbar } from './PdfReaderToolbar'
 
 // Configure PDF.js worker using Vite's URL asset loader
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker
@@ -704,194 +694,40 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       }}
     >
       {/* ======================================================== */}
-      {/* 1. TOP RESPONSIVE HEADER BAR                              */}
       {/* ======================================================== */}
-      <header className="flex-shrink-0 flex items-center justify-between px-3 md:px-6 py-2.5 bg-gradient-to-r from-[#0C382B] via-[#092B21] to-[#0C382B] border-b border-[#E2B755]/20 shadow-md z-30 gap-2">
-        {/* Left: Back Button & Title */}
-        <div className="flex items-center gap-2 md:gap-3 min-w-0">
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#E2B755] hover:bg-[#D4A33B] active:scale-95 transition-all text-xs md:text-sm font-bold text-[#0C382B] border border-[#E2B755] shadow-sm cursor-pointer touch-target flex-shrink-0"
-            title="Return to previous section"
-          >
-            <ArrowLeft className="w-4 h-4 stroke-[2.5]" />
-            <span className="hidden sm:inline">{backButtonLabel}</span>
-            <span className="sm:hidden">Back</span>
-          </button>
-
-          <div className="min-w-0">
-            <h1 className="text-xs sm:text-sm md:text-base font-bold text-white truncate flex items-center gap-1.5">
-              <BookOpen className="w-4 h-4 text-[#E2B755] flex-shrink-0" />
-              <span className="truncate">{title}</span>
-            </h1>
-            <p className="text-[10px] sm:text-xs text-emerald-200/80 truncate">
-              {resourceKey === 'quran-roman-urdu'
-                ? `Surah ${getSurahForQuranPage(currentPage)} • Para ${currentPara.number} (${currentPara.name}) • Page ${currentPage} of ${totalPages || '...'}`
-                : currentTargetWord
-                ? `Word #${currentTargetWord.id} (${currentTargetWord.transliteration}) • Page ${currentPage} of ${totalPages || '...'}`
-                : subtitle || `Page ${currentPage} of ${totalPages || '...'}`}
-            </p>
-          </div>
-        </div>
-
-        {/* Right: Search, Para Selector, Fit-Mode, Zoom, Bookmarks, and Offline Status */}
-        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-          {/* Quick Search Button */}
-          <button
-            type="button"
-            onClick={() => setIsSearchModalOpen(true)}
-            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 text-[#E2B755] border border-[#235845] text-xs font-semibold shadow-xs transition cursor-pointer touch-target flex-shrink-0"
-            title="Search Quran by Surah, Para, Page, Ayah or Word (Ctrl+K or /)"
-          >
-            <Search className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Search</span>
-            <kbd className="hidden lg:inline text-[9px] px-1 py-0.5 rounded bg-black/40 text-emerald-200/80 border border-white/10 font-mono">
-              ⌘K
-            </kbd>
-          </button>
-
-          {/* Dedicated Para / Juz Selector (only for Quran) */}
-          {resourceKey === 'quran-roman-urdu' && (
-            <button
-              type="button"
-              onClick={() => setIsParaModalOpen(true)}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 text-[#E2B755] border border-[#235845] text-xs font-semibold shadow-xs transition cursor-pointer touch-target flex-shrink-0"
-              title="Select Para / Juz (1 to 30)"
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Para {currentPara.number}</span>
-              <span className="sm:hidden">P.{currentPara.number}</span>
-            </button>
-          )}
-
-          {/* Fit Page / Fit Width Mode Switcher */}
-          <div className="flex items-center bg-[#124232] rounded-xl p-0.5 border border-[#235845]">
-            <button
-              type="button"
-              onClick={handleSetFitPage}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer touch-target ${
-                fitMode === 'page' && userZoom === 1.0
-                  ? 'bg-[#E2B755] text-[#051A13] font-bold shadow-xs'
-                  : 'text-[#A0C4B2] hover:text-white'
-              }`}
-              title="Fit Full Page (Display entire page with all margins)"
-            >
-              <ArrowUpDown className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Fit Page</span>
-            </button>
-            <button
-              type="button"
-              onClick={handleSetFitWidth}
-              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer touch-target ${
-                fitMode === 'width' && userZoom === 1.0
-                  ? 'bg-[#E2B755] text-[#051A13] font-bold shadow-xs'
-                  : 'text-[#A0C4B2] hover:text-white'
-              }`}
-              title="Fit to Width (Fills screen horizontally for easy reading)"
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Fit Width</span>
-            </button>
-          </div>
-
-          {/* Zoom In / Out / Reset Controls */}
-          <div className="flex items-center bg-[#124232] rounded-xl p-0.5 border border-[#235845]">
-            <button
-              type="button"
-              onClick={handleZoomOut}
-              disabled={userZoom <= 0.5}
-              className="p-1.5 text-[#E2B755] hover:text-white disabled:opacity-40 transition cursor-pointer"
-              title="Zoom out (-)"
-            >
-              <ZoomOut className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              onClick={handleResetZoom}
-              className="px-2 py-1 text-xs font-mono font-bold text-white hover:text-[#E2B755] transition cursor-pointer"
-              title="Reset Zoom to 100%"
-            >
-              {Math.round(userZoom * 100)}%
-            </button>
-            <button
-              type="button"
-              onClick={handleZoomIn}
-              disabled={userZoom >= 3.5}
-              className="p-1.5 text-[#E2B755] hover:text-white disabled:opacity-40 transition cursor-pointer"
-              title="Zoom in (+)"
-            >
-              <ZoomIn className="w-4 h-4" />
-            </button>
-          </div>
-
-          {/* Bookmarks Drawer Trigger */}
-          <button
-            type="button"
-            onClick={() => setIsBookmarksDrawerOpen(true)}
-            className="relative p-2 rounded-xl bg-[#124232] hover:bg-[#185340] text-[#E2B755] border border-[#235845] transition cursor-pointer touch-target"
-            title="View saved bookmarks"
-          >
-            <Bookmark className="w-4 h-4" fill={isCurrentPageBookmarked ? 'currentColor' : 'none'} />
-            {bookmarks.length > 0 && (
-              <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#E2B755] text-[#051A13] text-[9.5px] font-bold flex items-center justify-center">
-                {bookmarks.length}
-              </span>
-            )}
-          </button>
-
-          {/* Add / Toggle Current Page Bookmark */}
-          <button
-            type="button"
-            onClick={handleOpenAddBookmark}
-            className={`p-2 rounded-xl border transition cursor-pointer touch-target ${
-              isCurrentPageBookmarked
-                ? 'bg-[#E2B755] text-[#051A13] border-[#E2B755]'
-                : 'bg-[#124232] hover:bg-[#185340] text-[#E2B755] border-[#235845]'
-            }`}
-            title={isCurrentPageBookmarked ? 'Page is bookmarked' : 'Bookmark this page'}
-          >
-            <Plus className="w-4 h-4" />
-          </button>
-
-          {/* Offline Ready / Download Pill */}
-          {offlineStatus.isDownloaded ? (
-            <div
-              onClick={handleDeleteOffline}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#0E3B2E] text-[#55D6A0] border border-[#1D6B4F] text-xs font-semibold cursor-pointer hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-800 transition touch-target"
-              title="Downloaded offline. Click to manage/delete."
-            >
-              <CheckCircle2 className="w-3.5 h-3.5 text-[#55D6A0]" />
-              <span className="hidden md:inline">Saved Offline</span>
-            </div>
-          ) : isDownloading ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#1A4B3A] text-xs font-bold text-[#E2B755] border border-[#2D6A4F]">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#E2B755]" />
-              <span>{downloadProgress}%</span>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleDownloadForOffline}
-              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#1A5340] hover:bg-[#236850] active:scale-95 text-xs font-bold text-white border border-[#31785E] transition shadow-xs cursor-pointer touch-target"
-              title="Download full PDF for permanent offline reading"
-            >
-              <Download className="w-3.5 h-3.5 text-[#E2B755]" />
-              <span className="hidden sm:inline">Save Offline</span>
-            </button>
-          )}
-
-          {/* Fullscreen Button */}
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            className="p-2 rounded-xl bg-[#124232] hover:bg-[#185340] text-[#E2B755] border border-[#235845] transition cursor-pointer"
-            title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-          >
-            {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-        </div>
-      </header>
+      {/* 1. TOP RESPONSIVE HEADER BAR (WITH SAFE AREA & MORE MENU) */}
+      {/* ======================================================== */}
+      <PdfReaderToolbar
+        title={title}
+        subtitle={subtitle}
+        resourceKey={resourceKey}
+        currentPage={currentPage}
+        totalPages={totalPages}
+        currentPara={currentPara}
+        targetWord={currentTargetWord}
+        fitMode={fitMode}
+        userZoom={userZoom}
+        isFullscreen={isFullscreen}
+        isCurrentPageBookmarked={isCurrentPageBookmarked}
+        bookmarksCount={bookmarks.length}
+        offlineStatus={offlineStatus}
+        isDownloading={isDownloading}
+        downloadProgress={downloadProgress}
+        backButtonLabel={backButtonLabel}
+        onClose={onClose}
+        onOpenSearch={() => setIsSearchModalOpen(true)}
+        onOpenParaSelector={resourceKey === 'quran-roman-urdu' ? () => setIsParaModalOpen(true) : undefined}
+        onSetFitPage={handleSetFitPage}
+        onSetFitWidth={handleSetFitWidth}
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onResetZoom={handleResetZoom}
+        onOpenBookmarksDrawer={() => setIsBookmarksDrawerOpen(true)}
+        onOpenAddBookmark={handleOpenAddBookmark}
+        onDownloadOffline={handleDownloadForOffline}
+        onDeleteOffline={handleDeleteOffline}
+        onToggleFullscreen={toggleFullscreen}
+      />
 
       {/* Download Error Banner */}
       {downloadError && (
@@ -1019,7 +855,12 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       {/* ======================================================== */}
       {/* 3. BOTTOM FLOATING NAVIGATION & JUMP TOOLBAR              */}
       {/* ======================================================== */}
-      <footer className="flex-shrink-0 flex items-center justify-between px-3 md:px-8 py-2.5 bg-[#092E22] border-t border-[#1A4B3A] shadow-2xl z-30 gap-2">
+      <footer
+        className="flex-shrink-0 flex items-center justify-between px-3 md:px-8 py-2 sm:py-2.5 bg-[#092E22] border-t border-[#1A4B3A] shadow-2xl z-30 gap-2 min-h-[52px]"
+        style={{
+          paddingBottom: 'max(env(safe-area-inset-bottom), 8px)',
+        }}
+      >
         {/* Navigation Left: First Page & Previous Page */}
         <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
           <button

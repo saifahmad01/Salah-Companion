@@ -80,6 +80,21 @@ if (isPostgresUrl) {
   if (fs.existsSync(schemaPath)) {
     const schemaSQL = fs.readFileSync(schemaPath, 'utf-8');
     sqliteDb.exec(schemaSQL);
+
+    // Auto-migrate newly added columns for local SQLite dev database
+    try {
+      const pCols = sqliteDb.pragma('table_info(prayer_logs)');
+      if (pCols && pCols.length > 0) {
+        if (!pCols.some((c) => c.name === 'is_admin_override')) {
+          sqliteDb.prepare('ALTER TABLE prayer_logs ADD COLUMN is_admin_override INTEGER NOT NULL DEFAULT 0').run();
+        }
+        if (!pCols.some((c) => c.name === 'qada_completed_at')) {
+          sqliteDb.prepare('ALTER TABLE prayer_logs ADD COLUMN qada_completed_at DATETIME').run();
+        }
+      }
+    } catch (e) {
+      console.warn('[Database] SQLite column check notice:', e.message);
+    }
   }
 
   console.log(`[Database] SQLite connected successfully at: ${config.dbPath}`);

@@ -208,11 +208,13 @@ export async function correctUserPrayer(req, res, next) {
           status: cleanStatus,
           notes: `[Admin Correction by ${adminUser.email}]: ${reason.trim()}`,
           loggedAt: new Date(),
+          isAdminOverride: true,
         },
         update: {
           status: cleanStatus,
           notes: `[Admin Correction by ${adminUser.email}]: ${reason.trim()}`,
           loggedAt: new Date(),
+          isAdminOverride: true,
         },
       });
 

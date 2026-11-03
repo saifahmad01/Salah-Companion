@@ -67,11 +67,14 @@ model PrayerLog {
   loggedAt        DateTime @default(now()) @map("logged_at")
   notes           String?
   createdAt       DateTime @default(now()) @map("created_at")
+  isAdminOverride Boolean  @default(false) @map("is_admin_override")
+  qadaCompletedAt DateTime? @map("qada_completed_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   @@unique([userId, prayerName, date])
   @@index([userId, date])
   @@index([status])
+  @@index([userId, status])
   @@map("prayer_logs")
 }
 

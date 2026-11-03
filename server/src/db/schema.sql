@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS prayer_logs (
 -- 3. Indexes for fast query performance
 CREATE INDEX IF NOT EXISTS idx_prayer_logs_user_date ON prayer_logs(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_prayer_logs_status ON prayer_logs(status);
+CREATE INDEX IF NOT EXISTS idx_prayer_logs_user_status ON prayer_logs(user_id, status);
 
 -- 4. Notification Preferences table
 CREATE TABLE IF NOT EXISTS notification_preferences (

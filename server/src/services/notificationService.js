@@ -465,3 +465,77 @@ export async function sendPushToUser(userId, payload) {
 
   return { delivered, failed };
 }
+
+
+/**
+ * Authentic, gentle reminders when a prayer window closes and prayer becomes missed
+ */
+export const PRAYER_MISSED_REMINDERS = {
+  fajr: {
+    title: 'Fajr Window Closed',
+    reminder:
+      'Sunrise has occurred and Fajr time has ended. Remember to make up your missed prayer by offering Qada Salah.',
+  },
+  dhuhr: {
+    title: 'Dhuhr Window Closed',
+    reminder:
+      'Asr time has begun and Dhuhr time has ended. Remember to make up your missed prayer by offering Qada Salah.',
+  },
+  asr: {
+    title: 'Asr Window Closed',
+    reminder:
+      'Maghrib has begun and Asr time has ended. Remember to make up your missed prayer by offering Qada Salah.',
+  },
+  maghrib: {
+    title: 'Maghrib Window Closed',
+    reminder:
+      'Isha has begun and Maghrib time has ended. Remember to make up your missed prayer by offering Qada Salah.',
+  },
+  isha: {
+    title: 'Isha Window Closed',
+    reminder:
+      'A new Islamic prayer day has started. Remember to make up your missed Isha prayer by offering Qada Salah.',
+  },
+};
+
+/**
+ * Dispatches an in-app and push notification when a prayer window closes and the prayer becomes missed
+ */
+export async function sendMissedPrayerNotification({ userId, prayerName, date }) {
+  const normPrayer = prayerName.toLowerCase().trim();
+  const reminderMeta = PRAYER_MISSED_REMINDERS[normPrayer] || {
+    title: `${prayerName.toUpperCase()} Window Closed`,
+    reminder: `The time for ${prayerName} has elapsed. Remember to offer Qada Salah.`,
+  };
+
+  const alreadySent = await hasNotificationBeenDelivered(userId, normPrayer, date, 'missed');
+  if (alreadySent) return false;
+
+  const userPrefs = await getUserPreferences(userId);
+  let pushSent = false;
+
+  if (userPrefs?.browserPushEnabled) {
+    const pushResult = await sendPushToUser(userId, {
+      title: reminderMeta.title,
+      body: reminderMeta.reminder,
+      prayerName: normPrayer,
+      reminderType: 'missed',
+      url: '/app?tab=salah',
+    });
+    pushSent = pushResult.delivered > 0;
+  }
+
+  await recordNotificationLog({
+    userId,
+    prayerName: normPrayer,
+    date,
+    reminderType: 'missed',
+    title: reminderMeta.title,
+    body: reminderMeta.reminder,
+    pushSent,
+    category: 'prayer',
+    deepLink: '/app?tab=salah',
+  });
+
+  return true;
+}
