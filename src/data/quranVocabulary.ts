@@ -2,6 +2,10 @@
 export interface QuranWord {
   id: number;
   image?: string;
+  pdfPage: number;
+  pageIndex: number;
+  cardPosition: 'full' | 'top' | 'bottom';
+  pageImage: string;
   arabic: string;
   transliteration: string;
   meaning: string;

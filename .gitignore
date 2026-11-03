@@ -50,6 +50,9 @@ backups/
 .idea
 # Large media and PDF assets
 *.pdf
+!public/*.pdf
+!public/**/*.pdf
+scratch/
 Quran Roman Urdu Hindi .pdf
 
 .DS_Store

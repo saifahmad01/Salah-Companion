@@ -722,9 +722,14 @@ Salah completion is permitted **strictly for today's local calendar date**.
   - Authenticated logging of reading sessions (`POST /api/quran/reading`) with reading date, Surah name and number, starting and ending page numbers (1–604), starting and ending Ruku numbers, and personal reflection notes.
   - Automatically unifies with daily deeds by marking the `quran` deed in `deed_logs` to maintain daily Sunnah habit streaks.
   - Comprehensive dashboard (`GET /api/quran/reading`) with 4 summary metric cards (Total Pages Read, Total Rukus Completed, Total Sessions, Today's Progress), a "Continue Reading" hero card with last position jump, and date-grouped historical recitation logs with deletion capability (`DELETE /api/quran/reading/:id`).
-- **600 Essential Arabic Quran Vocabulary Words (Al Hidaya Curriculum):**
+- **600 Essential Arabic Quran Vocabulary Words & Full Original PDF Reader:**
   - Fully authenticated extracted dataset from the author's verified master curriculum slides (`Top 600 Words of the Quran.pdf`), accounting for ~82% of all repeated Quranic vocabulary.
-  - Includes authentic Arabic calligraphy and script, phonetic English transliterations, English meanings, Roman Urdu meanings (`meaningUrdu`), repeat frequencies in the Holy Quran, grammatical classifications, Surah:Ayah references, and full contextual verse translations in Arabic, English, and Roman Urdu.
+  - Complete 319-page original PDF integrated into a responsive reader (`QuranPdfModal.tsx`) with high-resolution page rendering (`/images/quran_pages/page_000.webp` to `page_318.webp`).
+  - Clicking any vocabulary word immediately displays its exact corresponding full original PDF page (words 1–24 on single-word slides, words 25–600 on two-word slides).
+  - Dynamic visual highlight overlay with a pulsing emerald/gold border accurately focusing on the selected word card (full page, top half, or bottom half).
+  - Multi-touch and responsive controls: zoom in/out/reset, continuous vs. single-page viewing, true fullscreen reading, swipe navigation on mobile, and quick word-switching with haptic feedback.
+  - Prominent "View Full Original PDF (319 Pages)" button in vocabulary header and reader tab.
+  - Offline-ready 52 MB complete original PDF (`/top_600_words_quran.pdf`) with IndexedDB local caching (`offlineQuranService.downloadVocabPdf`) and one-click device download.
   - User-specific learning and bookmark tracking (`GET /api/quran/vocabulary/progress`, `PUT /api/quran/vocabulary/progress/:wordId`, and `POST /api/quran/vocabulary/progress/batch`) with offline IndexedDB synchronization and real-time completion percentages (`X / 600 Words Learned`).
 - **Seamless Quran ↔ Hadith Navigation:**
   - Clear bi-directional switching between Quran and Hadith modules.

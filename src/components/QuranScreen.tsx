@@ -38,6 +38,7 @@ import {
   type QuranReadingDashboardData,
 } from '../services/backendApi'
 import { device } from '../platform/device'
+import { QuranPdfModal } from './QuranPdfModal'
 
 interface QuranScreenProps {
   onBack: () => void
@@ -71,6 +72,9 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
   const [onlyBookmarked, setOnlyBookmarked] = useState(false)
   const [onlyLearned, setOnlyLearned] = useState(false)
   const [selectedWordDetail, setSelectedWordDetail] = useState<QuranWord | null>(null)
+  const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false)
+  const [pdfModalInitialWord, setPdfModalInitialWord] = useState<QuranWord | null>(null)
+  const [pdfModalInitialPageIndex, setPdfModalInitialPageIndex] = useState<number>(0)
   const [wordProgressMap, setWordProgressMap] = useState<Record<number, UserWordProgress>>(() =>
     offlineQuranService.getWordProgressMap()
   )
@@ -301,6 +305,22 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
       setSelectedWordDetail(QURAN_VOCABULARY_600[idx + 1])
       device.hapticFeedback('light')
     }
+  }
+
+  // Open Full Original PDF at Word Page
+  const handleOpenWordPdf = (word: QuranWord) => {
+    setPdfModalInitialWord(word)
+    setPdfModalInitialPageIndex(word.pageIndex)
+    setIsPdfModalOpen(true)
+    device.hapticFeedback('light')
+  }
+
+  // Open Full Original PDF at custom page
+  const handleOpenFullPdf = (pageIndex = 0) => {
+    setPdfModalInitialWord(null)
+    setPdfModalInitialPageIndex(pageIndex)
+    setIsPdfModalOpen(true)
+    device.hapticFeedback('light')
   }
 
   // Filter 600 words
@@ -668,9 +688,19 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
               ></div>
             </div>
 
-            <p className="text-[11px] text-emerald-200/80 mt-2">
-              Mastering these 600 words accounts for ~82% of all vocabulary in the Holy Quran.
-            </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-3 pt-3 border-t border-emerald-800/60">
+              <p className="text-[11px] text-emerald-200/80">
+                Mastering these 600 words accounts for ~82% of all vocabulary in the Holy Quran.
+              </p>
+              <button
+                type="button"
+                onClick={() => handleOpenFullPdf(0)}
+                className="px-4 py-2 rounded-2xl bg-[#E2B755] hover:bg-[#D4A33B] text-[#0C382B] text-xs font-bold shadow-md transition flex items-center justify-center gap-2 cursor-pointer active:scale-95 touch-target flex-shrink-0"
+              >
+                <BookOpen className="w-4 h-4 stroke-[2.5]" />
+                <span>View Full PDF (319 Pages)</span>
+              </button>
+            </div>
           </div>
 
           {/* Search & Filter Toolbar */}
@@ -762,7 +792,7 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
               return (
                 <div
                   key={w.id}
-                  onClick={() => setSelectedWordDetail(w)}
+                  onClick={() => handleOpenWordPdf(w)}
                   className={`p-4 rounded-2xl border transition shadow-xs flex flex-col justify-between cursor-pointer ${
                     isLearned
                       ? 'bg-emerald-50/70 border-emerald-200/90'
@@ -774,6 +804,9 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
                       <div className="flex items-center gap-1.5">
                         <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-600">
                           #{w.id}
+                        </span>
+                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800">
+                          PDF p.{w.pdfPage}
                         </span>
                         {w.repeats && (
                           <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800">
@@ -948,6 +981,49 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
                 <Eye className="w-4 h-4 text-[#E2B755]" />
                 <span>Open Reader</span>
               </a>
+            </div>
+          </div>
+
+          {/* Top 600 Words of the Quran Official PDF Card */}
+          <div className="bg-white rounded-2xl p-5 border border-stone-200/90 shadow-sm">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#0C382B] to-[#043327] p-2 flex items-center justify-center text-[#E2B755] flex-shrink-0 shadow-md">
+                  <Sparkles className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-serif font-bold text-base text-stone-900">
+                      Top 600 Words of the Quran (Al-Hidaya)
+                    </h3>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+                      319 Pages
+                    </span>
+                  </div>
+                  <p className="text-xs text-stone-500 mt-0.5">
+                    Authentic PDF with Arabic Calligraphy, English, and Roman Urdu Meanings
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleOpenFullPdf(0)}
+                  className="px-4 py-2 rounded-xl bg-[#0C382B] hover:bg-emerald-950 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 cursor-pointer touch-target"
+                >
+                  <Eye className="w-4 h-4 text-[#E2B755]" />
+                  <span>Open PDF Reader</span>
+                </button>
+                <a
+                  href="/top_600_words_quran.pdf"
+                  download="Top 600 Words of the Quran.pdf"
+                  className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer touch-target"
+                >
+                  <Download className="w-4 h-4 text-stone-600" />
+                  <span>Download</span>
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -1226,45 +1302,72 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
               </div>
 
               {/* Action Buttons in Modal */}
-              <div className="flex items-center justify-between pt-2">
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-2 pt-2 border-t border-stone-100">
                 <button
                   type="button"
-                  onClick={() => handleToggleBookmark(selectedWordDetail.id)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
-                    wordProgressMap[selectedWordDetail.id]?.isBookmarked
-                      ? 'bg-amber-50 border-amber-300 text-amber-800'
-                      : 'border-stone-200 text-stone-700 hover:bg-stone-50'
-                  }`}
+                  onClick={() => {
+                    handleOpenWordPdf(selectedWordDetail)
+                    setSelectedWordDetail(null)
+                  }}
+                  className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-[#E2B755] text-[#0C382B] text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs hover:bg-[#D4A33B]"
                 >
-                  <Bookmark
-                    className={`w-4 h-4 ${
-                      wordProgressMap[selectedWordDetail.id]?.isBookmarked ? 'fill-amber-500 text-amber-500' : ''
-                    }`}
-                  />
-                  <span>
-                    {wordProgressMap[selectedWordDetail.id]?.isBookmarked ? 'Saved to Bookmarks' : 'Bookmark Word'}
-                  </span>
+                  <BookOpen className="w-4 h-4 stroke-[2.5]" />
+                  <span>View Full PDF Page #{selectedWordDetail.pdfPage}</span>
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => handleToggleLearned(selectedWordDetail.id)}
-                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                    wordProgressMap[selectedWordDetail.id]?.isLearned
-                      ? 'bg-emerald-700 text-white shadow-xs'
-                      : 'bg-[#064E3B] text-white hover:bg-[#085a44]'
-                  }`}
-                >
-                  <CheckCircle2 className="w-4 h-4 text-[#E2B755]" />
-                  <span>
-                    {wordProgressMap[selectedWordDetail.id]?.isLearned ? 'Learned ✓' : 'Mark as Learned'}
-                  </span>
-                </button>
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => handleToggleBookmark(selectedWordDetail.id)}
+                    className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer border ${
+                      wordProgressMap[selectedWordDetail.id]?.isBookmarked
+                        ? 'bg-amber-50 border-amber-300 text-amber-800'
+                        : 'border-stone-200 text-stone-700 hover:bg-stone-50'
+                    }`}
+                  >
+                    <Bookmark
+                      className={`w-4 h-4 ${
+                        wordProgressMap[selectedWordDetail.id]?.isBookmarked ? 'fill-amber-500 text-amber-500' : ''
+                      }`}
+                    />
+                    <span>
+                      {wordProgressMap[selectedWordDetail.id]?.isBookmarked ? 'Saved' : 'Bookmark'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleToggleLearned(selectedWordDetail.id)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                      wordProgressMap[selectedWordDetail.id]?.isLearned
+                        ? 'bg-emerald-700 text-white shadow-xs'
+                        : 'bg-[#064E3B] text-white hover:bg-[#085a44]'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-[#E2B755]" />
+                    <span>
+                      {wordProgressMap[selectedWordDetail.id]?.isLearned ? 'Learned ✓' : 'Mark Learned'}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* ======================================================== */}
+      {/* INTEGRATED FULL ORIGINAL PDF VIEWER MODAL                */}
+      {/* ======================================================== */}
+      <QuranPdfModal
+        isOpen={isPdfModalOpen}
+        initialWord={pdfModalInitialWord}
+        initialPageIndex={pdfModalInitialPageIndex}
+        onClose={() => setIsPdfModalOpen(false)}
+        wordProgressMap={wordProgressMap}
+        onToggleBookmark={handleToggleBookmark}
+        onToggleLearned={handleToggleLearned}
+      />
     </div>
   )
 }
