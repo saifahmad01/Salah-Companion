@@ -18,11 +18,12 @@ import {
   Trash2,
   Plus,
   X,
-  Scan,
   AlertCircle,
+  ArrowUpDown,
+  ArrowLeftRight,
 } from 'lucide-react'
 import { offlineQuranService, type OfflinePdfStatus } from '../services/offlineQuranService'
-import type { QuranPageBookmarkItem } from '../services/backendApi'
+import { salahApi, type QuranPageBookmarkItem } from '../services/backendApi'
 import { QURAN_SURAHS } from '../data/quranSurahs'
 
 // Configure PDF.js worker using Vite's URL asset loader
@@ -80,17 +81,27 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const canvasWrapperRef = useRef<HTMLDivElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const renderTaskRef = useRef<any>(null)
 
   const [pdfDoc, setPdfDoc] = useState<any>(null)
   const [currentPage, setCurrentPage] = useState<number>(initialPage)
   const [totalPages, setTotalPages] = useState<number>(0)
-  const [scale, setScale] = useState<number>(1.0)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [pageRendering, setPageRendering] = useState<boolean>(false)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false)
+
+  // Fit Mode: 'page' (shows 100% of the page without scrolling) vs 'width' (fills screen horizontally)
+  const [fitMode, setFitMode] = useState<'page' | 'width'>('page')
+  // User zoom multiplier (1.0 = 100%, 1.25 = 125%, 1.5 = 150%, 2.0 = 200%)
+  const [userZoom, setUserZoom] = useState<number>(1.0)
+  // Display dimensions for canvas CSS styling
+  const [canvasDisplaySize, setCanvasDisplaySize] = useState<{ width: number; height: number }>({
+    width: 0,
+    height: 0,
+  })
 
   // Offline caching state
   const [offlineStatus, setOfflineStatus] = useState<OfflinePdfStatus>({ isDownloaded: false })
@@ -110,7 +121,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
   // Pinch-to-zoom multi-touch tracking
   const initialPinchDistRef = useRef<number | null>(null)
-  const initialScaleRef = useRef<number>(1.0)
+  const initialZoomRef = useRef<number>(1.0)
 
   // Load offline download status and bookmarks on mount
   useEffect(() => {
@@ -141,28 +152,31 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
     const loadPdf = async () => {
       try {
-        let docLoadingTask: any
-
-        // Check IndexedDB
+        let docLoadingTask: any = null
         const offlineBlob =
           resourceKey === 'quran-roman-urdu'
             ? await offlineQuranService.getQuranBlob()
             : await offlineQuranService.getVocabPdfBlob()
 
+        const basePdfConfig = {
+          cMapUrl: '/cmaps/',
+          cMapPacked: true,
+          standardFontDataUrl: '/standard_fonts/',
+          enableXfa: false,
+        }
+
         if (offlineBlob && offlineBlob.size > 1024 * 1024) {
           const arrayBuffer = await offlineBlob.arrayBuffer()
           docLoadingTask = pdfjsLib.getDocument({
             data: arrayBuffer,
-            cMapUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/cmaps/',
-            cMapPacked: true,
+            ...basePdfConfig,
           })
         } else {
-          // Stream on-demand from Supabase Edge CDN
+          // Stream on-demand from Supabase Edge CDN with byte range requests
           docLoadingTask = pdfjsLib.getDocument({
             url: pdfUrl,
             rangeChunkSize: 65536,
-            cMapUrl: 'https://unpkg.com/pdfjs-dist@4.10.38/cmaps/',
-            cMapPacked: true,
+            ...basePdfConfig,
           })
         }
 
@@ -194,7 +208,9 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
     }
   }, [pdfUrl, resourceKey, initialPage])
 
-  // Render Current Page onto Canvas (Single-Page & Zoom view)
+  // ==========================================================================
+  // HIGH-RESOLUTION CANVAS RENDERING ENGINE
+  // ==========================================================================
   const renderPage = useCallback(
     async (pageNum: number) => {
       if (!pdfDoc || !canvasRef.current || !scrollContainerRef.current) return
@@ -202,42 +218,79 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       try {
         setPageRendering(true)
 
-        // Cancel previous task safely
+        // Cancel previous render task safely before starting a new one
         if (renderTaskRef.current) {
           try {
             renderTaskRef.current.cancel()
           } catch {
             // ignore
           }
+          renderTaskRef.current = null
         }
 
         const page = await pdfDoc.getPage(pageNum)
         const canvas = canvasRef.current
-        const context = canvas.getContext('2d')
+        const context = canvas.getContext('2d', { alpha: false })
         if (!context) return
 
-        // Compute responsive scale factor
-        const containerWidth = scrollContainerRef.current.clientWidth || window.innerWidth || 800
+        // Measure container available dimensions
+        const container = scrollContainerRef.current
+        const containerWidth = container.clientWidth || window.innerWidth || 800
+        const containerHeight = container.clientHeight || window.innerHeight || 600
+
+        // Responsive padding around page
+        const paddingX = window.innerWidth < 640 ? 12 : 24
+        const paddingY = window.innerWidth < 640 ? 12 : 24
+
+        const availWidth = Math.max(280, containerWidth - paddingX)
+        const availHeight = Math.max(300, containerHeight - paddingY)
+
         const unscaledViewport = page.getViewport({ scale: 1.0 })
-        const baseFitScale = (containerWidth - 24) / unscaledViewport.width
-        const effectiveScale = Math.max(0.5, Math.min(3.5, baseFitScale * scale))
 
-        // Device pixel ratio for high-DPI retina rendering
-        const pixelRatio = Math.min(window.devicePixelRatio || 1, 2.5)
-        const viewport = page.getViewport({ scale: effectiveScale })
+        // Compute base scale depending on fit mode
+        let baseScale = 1.0
+        if (fitMode === 'page') {
+          // Fit entire page (height AND width) inside screen with all margins visible
+          const scaleX = availWidth / unscaledViewport.width
+          const scaleY = availHeight / unscaledViewport.height
+          baseScale = Math.min(scaleX, scaleY)
+        } else {
+          // Fit to width: page width matches container width, smooth vertical scroll
+          baseScale = availWidth / unscaledViewport.width
+        }
 
-        canvas.width = Math.floor(viewport.width * pixelRatio)
-        canvas.height = Math.floor(viewport.height * pixelRatio)
-        canvas.style.width = `${Math.floor(viewport.width)}px`
-        canvas.style.height = `${Math.floor(viewport.height)}px`
+        // Apply user zoom multiplier
+        const effectiveScale = Math.max(0.35, Math.min(4.0, +(baseScale * userZoom).toFixed(3)))
 
-        context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
+        // Device pixel ratio for high-DPI retina rendering (up to 3.0 for ultra-sharp mobile displays)
+        const pixelRatio = window.devicePixelRatio || 1
+        const outputScale = Math.max(1, Math.min(3.0, pixelRatio))
+
+        // Viewport scaled for the high-resolution hardware bitmap
+        const renderViewport = page.getViewport({ scale: effectiveScale * outputScale })
+
+        // CSS display layout dimensions (independent of device pixel ratio)
+        const displayWidth = Math.floor(renderViewport.width / outputScale)
+        const displayHeight = Math.floor(renderViewport.height / outputScale)
+
+        // Set hardware canvas dimensions
+        canvas.width = Math.floor(renderViewport.width)
+        canvas.height = Math.floor(renderViewport.height)
+
+        // Set CSS dimensions for layout
+        canvas.style.width = `${displayWidth}px`
+        canvas.style.height = `${displayHeight}px`
+
+        setCanvasDisplaySize({ width: displayWidth, height: displayHeight })
+
+        // Enable high quality image smoothing for crisp Arabic calligraphy
         context.imageSmoothingEnabled = true
         context.imageSmoothingQuality = 'high'
 
         const renderContext = {
           canvasContext: context,
-          viewport: viewport,
+          viewport: renderViewport,
+          intent: 'display',
         }
 
         const renderTask = page.render(renderContext)
@@ -248,13 +301,20 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
         onPageChange?.(pageNum, pdfDoc.numPages)
 
-        // Auto-save reading position locally and remotely (debounced)
+        // Auto-save reading position locally and remotely
         if (resourceKey === 'quran-roman-urdu') {
           const surahName = getSurahForQuranPage(pageNum)
           offlineQuranService.saveReadingProgress({
             lastPage: pageNum,
             lastSurah: surahName,
           })
+          salahApi
+            .saveQuranReadingProgressState({
+              resourceKey: 'quran-roman-urdu',
+              lastPage: pageNum,
+              lastSurah: surahName,
+            })
+            .catch(() => {})
         }
       } catch (err: any) {
         if (err?.name !== 'RenderingCancelledException') {
@@ -263,16 +323,36 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
         setPageRendering(false)
       }
     },
-    [pdfDoc, scale, onPageChange, resourceKey]
+    [pdfDoc, fitMode, userZoom, onPageChange, resourceKey]
   )
 
   useEffect(() => {
     if (pdfDoc && currentPage > 0) {
       renderPage(currentPage)
     }
-  }, [pdfDoc, currentPage, scale, renderPage])
+  }, [pdfDoc, currentPage, fitMode, userZoom, renderPage])
 
-  // Navigation handlers
+  // Handle device rotation and window resize smoothly
+  useEffect(() => {
+    let timer: any = null
+    const handleResize = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (pdfDoc && currentPage > 0) {
+          renderPage(currentPage)
+        }
+      }, 180)
+    }
+    window.addEventListener('resize', handleResize)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener('resize', handleResize)
+    }
+  }, [pdfDoc, currentPage, renderPage])
+
+  // ==========================================================================
+  // NAVIGATION & ZOOM HANDLERS
+  // ==========================================================================
   const handlePrevPage = () => {
     if (currentPage > 1) {
       const next = currentPage - 1
@@ -309,9 +389,33 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
   }
 
   // Zoom handlers
-  const handleZoomIn = () => setScale((prev) => Math.min(3.0, +(prev + 0.25).toFixed(2)))
-  const handleZoomOut = () => setScale((prev) => Math.max(0.6, +(prev - 0.25).toFixed(2)))
-  const handleFitWidth = () => setScale(1.0)
+  const handleZoomIn = () => {
+    setUserZoom((prev) => Math.min(3.5, +(prev + (prev >= 2 ? 0.5 : 0.25)).toFixed(2)))
+  }
+
+  const handleZoomOut = () => {
+    setUserZoom((prev) => Math.max(0.5, +(prev - (prev > 2 ? 0.5 : 0.25)).toFixed(2)))
+  }
+
+  const handleSetFitPage = () => {
+    setFitMode('page')
+    setUserZoom(1.0)
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  const handleSetFitWidth = () => {
+    setFitMode('width')
+    setUserZoom(1.0)
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
+
+  const handleResetZoom = () => {
+    setUserZoom(1.0)
+  }
 
   // Fullscreen toggle
   const toggleFullscreen = () => {
@@ -324,7 +428,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
     }
   }
 
-  // Offline Download & Redownload Handlers
+  // Offline Download & Delete Handlers
   const handleDownloadForOffline = async () => {
     if (isDownloading) return
 
@@ -348,64 +452,74 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
           : await offlineQuranService.getVocabDownloadStatus()
 
       setOfflineStatus(updatedStatus)
-      setIsDownloading(false)
     } catch (err: any) {
       console.error('[PdfJsReader] Download failed:', err)
       setDownloadError(err.message || 'Download failed. Please check network/storage quota.')
+    } finally {
       setIsDownloading(false)
     }
   }
 
   const handleDeleteOffline = async () => {
-    if (confirm('Delete downloaded PDF from local device storage? You can stream online or re-download anytime.')) {
-      if (resourceKey === 'quran-roman-urdu') {
-        await offlineQuranService.deleteDownloadedQuran()
-      } else {
-        await offlineQuranService.deleteDownloadedVocabPdf()
-      }
-      setOfflineStatus({ isDownloaded: false })
+    if (!confirm('Remove downloaded PDF from device storage? You can redownload it anytime.')) {
+      return
+    }
+    if (resourceKey === 'quran-roman-urdu') {
+      await offlineQuranService.deleteDownloadedQuran()
+      setOfflineStatus(await offlineQuranService.getQuranDownloadStatus())
+    } else {
+      await offlineQuranService.deleteDownloadedVocabPdf()
+      setOfflineStatus(await offlineQuranService.getVocabDownloadStatus())
     }
   }
 
-  // Bookmark management
+  // ==========================================================================
+  // BOOKMARK MANAGEMENT
+  // ==========================================================================
   const isCurrentPageBookmarked = bookmarks.some((b) => b.pageNumber === currentPage)
 
   const handleOpenAddBookmark = () => {
-    const defaultTitle =
-      resourceKey === 'quran-roman-urdu'
-        ? `Surah ${getSurahForQuranPage(currentPage)} (Page ${currentPage})`
-        : targetWord
-        ? `Word #${targetWord.id}: ${targetWord.arabic} (${targetWord.transliteration})`
-        : `Vocabulary Page ${currentPage}`
-
-    setBookmarkTitle(defaultTitle)
-    setBookmarkNotes('')
+    const existing = bookmarks.find((b) => b.pageNumber === currentPage)
+    setBookmarkTitle(
+      existing?.title ||
+        (resourceKey === 'quran-roman-urdu'
+          ? `Surah ${getSurahForQuranPage(currentPage)} • Page ${currentPage}`
+          : targetWord
+          ? `Word #${targetWord.id}: ${targetWord.arabic} (${targetWord.transliteration})`
+          : `Page ${currentPage}`)
+    )
+    setBookmarkNotes(existing?.notes || '')
     setIsAddBookmarkModalOpen(true)
   }
 
   const handleSaveBookmark = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!bookmarkTitle.trim()) return
+    try {
+      const saved = await offlineQuranService.addBookmark({
+        resourceKey,
+        pageNumber: currentPage,
+        title: bookmarkTitle.trim() || `Page ${currentPage}`,
+        notes: bookmarkNotes.trim() || undefined,
+      })
 
-    const newBm = await offlineQuranService.addBookmark({
-      resourceKey,
-      pageNumber: currentPage,
-      title: bookmarkTitle.trim(),
-      notes: bookmarkNotes.trim() || undefined,
-    })
+      setBookmarks((prev) => {
+        const filtered = prev.filter((b) => b.pageNumber !== currentPage)
+        return [saved, ...filtered].sort((a, b) => a.pageNumber - b.pageNumber)
+      })
 
-    setBookmarks((prev) => {
-      const filtered = prev.filter((b) => b.pageNumber !== currentPage)
-      filtered.push(newBm)
-      return filtered.sort((a, b) => a.pageNumber - b.pageNumber)
-    })
-
-    setIsAddBookmarkModalOpen(false)
+      setIsAddBookmarkModalOpen(false)
+    } catch (err) {
+      console.error('Failed to save bookmark:', err)
+    }
   }
 
   const handleDeleteBookmark = async (bookmarkId: string, pageNum: number) => {
-    await offlineQuranService.deleteBookmark(resourceKey, bookmarkId, pageNum)
-    setBookmarks((prev) => prev.filter((b) => b.id !== bookmarkId && b.pageNumber !== pageNum))
+    try {
+      await offlineQuranService.deleteBookmark(resourceKey, bookmarkId, pageNum)
+      setBookmarks((prev) => prev.filter((b) => b.id !== bookmarkId))
+    } catch (err) {
+      console.error('Failed to delete bookmark:', err)
+    }
   }
 
   const handleJumpToBookmark = (pageNum: number) => {
@@ -417,49 +531,65 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
     }
   }
 
-  // Multi-touch Pinch to Zoom listeners
+  // ==========================================================================
+  // HARDWARE-ACCELERATED MOBILE PINCH-TO-ZOOM GESTURE
+  // ==========================================================================
   useEffect(() => {
-    const el = scrollContainerRef.current
-    if (!el) return
+    const container = scrollContainerRef.current
+    const wrapper = canvasWrapperRef.current
+    if (!container || !wrapper) return
 
     const onTouchStart = (e: TouchEvent) => {
       if (e.touches.length === 2) {
-        initialPinchDistRef.current = Math.hypot(
+        const dist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         )
-        initialScaleRef.current = scale
+        initialPinchDistRef.current = dist
+        initialZoomRef.current = userZoom
       }
     }
 
     const onTouchMove = (e: TouchEvent) => {
-      if (e.touches.length === 2 && initialPinchDistRef.current) {
-        const currentDist = Math.hypot(
+      if (e.touches.length === 2 && initialPinchDistRef.current && wrapper) {
+        const dist = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         )
-        const ratio = currentDist / initialPinchDistRef.current
-        const newScale = Math.max(0.6, Math.min(3.0, +(initialScaleRef.current * ratio).toFixed(2)))
-        setScale(newScale)
+        const ratio = dist / initialPinchDistRef.current
+        wrapper.style.transform = `scale(${ratio})`
+        wrapper.style.transformOrigin = 'center top'
       }
     }
 
     const onTouchEnd = () => {
-      initialPinchDistRef.current = null
+      if (initialPinchDistRef.current && wrapper) {
+        const styleTransform = wrapper.style.transform
+        const match = styleTransform.match(/scale\(([^)]+)\)/)
+        const ratio = match ? parseFloat(match[1]) : 1.0
+
+        wrapper.style.transform = 'none'
+        initialPinchDistRef.current = null
+
+        if (Math.abs(ratio - 1.0) > 0.04) {
+          const newZoom = Math.max(0.5, Math.min(3.5, +(initialZoomRef.current * ratio).toFixed(2)))
+          setUserZoom(newZoom)
+        }
+      }
     }
 
-    el.addEventListener('touchstart', onTouchStart, { passive: true })
-    el.addEventListener('touchmove', onTouchMove, { passive: true })
-    el.addEventListener('touchend', onTouchEnd)
-    el.addEventListener('touchcancel', onTouchEnd)
+    container.addEventListener('touchstart', onTouchStart, { passive: true })
+    container.addEventListener('touchmove', onTouchMove, { passive: true })
+    container.addEventListener('touchend', onTouchEnd)
+    container.addEventListener('touchcancel', onTouchEnd)
 
     return () => {
-      el.removeEventListener('touchstart', onTouchStart)
-      el.removeEventListener('touchmove', onTouchMove)
-      el.removeEventListener('touchend', onTouchEnd)
-      el.removeEventListener('touchcancel', onTouchEnd)
+      container.removeEventListener('touchstart', onTouchStart)
+      container.removeEventListener('touchmove', onTouchMove)
+      container.removeEventListener('touchend', onTouchEnd)
+      container.removeEventListener('touchcancel', onTouchEnd)
     }
-  }, [scale])
+  }, [userZoom])
 
   // Keyboard navigation
   useEffect(() => {
@@ -476,7 +606,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
   return createPortal(
     <div
       ref={containerRef}
-      className="fixed inset-0 z-[9999] flex flex-col bg-[#051A13] text-[#F5EEDB] select-none overflow-hidden touch-manipulation"
+      className="fixed inset-0 z-[9999] flex flex-col bg-[#03120D] text-[#F5EEDB] select-none overflow-hidden touch-manipulation"
       style={{
         overscrollBehavior: 'contain',
       }}
@@ -484,25 +614,26 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       {/* ======================================================== */}
       {/* 1. TOP RESPONSIVE HEADER BAR                              */}
       {/* ======================================================== */}
-      <header className="flex-shrink-0 flex items-center justify-between px-3 md:px-6 py-2 bg-[#092E22] border-b border-[#1A4B3A] shadow-md z-30">
+      <header className="flex-shrink-0 flex items-center justify-between px-3 md:px-6 py-2.5 bg-gradient-to-r from-[#0C382B] via-[#092B21] to-[#0C382B] border-b border-[#E2B755]/20 shadow-md z-30 gap-2">
         {/* Left: Back Button & Title */}
         <div className="flex items-center gap-2 md:gap-3 min-w-0">
           <button
+            type="button"
             onClick={onClose}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 transition-all text-xs md:text-sm font-bold text-[#F5EEDB] border border-[#235845] shadow-xs cursor-pointer touch-target"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#E2B755] hover:bg-[#D4A33B] active:scale-95 transition-all text-xs md:text-sm font-bold text-[#0C382B] border border-[#E2B755] shadow-sm cursor-pointer touch-target flex-shrink-0"
             title="Return to previous section"
           >
-            <ArrowLeft className="w-4 h-4 text-[#E2B755]" />
+            <ArrowLeft className="w-4 h-4 stroke-[2.5]" />
             <span className="hidden sm:inline">{backButtonLabel}</span>
             <span className="sm:hidden">Back</span>
           </button>
 
           <div className="min-w-0">
-            <h1 className="text-xs sm:text-sm md:text-base font-bold text-white truncate flex items-center gap-2">
+            <h1 className="text-xs sm:text-sm md:text-base font-bold text-white truncate flex items-center gap-1.5">
               <BookOpen className="w-4 h-4 text-[#E2B755] flex-shrink-0" />
               <span className="truncate">{title}</span>
             </h1>
-            <p className="text-[10px] sm:text-xs text-[#A0C4B2] truncate">
+            <p className="text-[10px] sm:text-xs text-emerald-200/80 truncate">
               {resourceKey === 'quran-roman-urdu'
                 ? `Surah ${getSurahForQuranPage(currentPage)} • Page ${currentPage} of ${totalPages || '...'}`
                 : subtitle || `Page ${currentPage} of ${totalPages || '...'}`}
@@ -510,28 +641,61 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Controls, Zoom, Bookmarks, and Offline Status */}
-        <div className="flex items-center gap-1 sm:gap-2 flex-shrink-0">
-          {/* Zoom Controls (Desktop / Tablet) */}
-          <div className="hidden sm:flex items-center bg-[#124232] rounded-xl p-0.5 border border-[#235845]">
+        {/* Right: Fit-Mode, Zoom, Bookmarks, and Offline Status */}
+        <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+          {/* Fit Page / Fit Width Mode Switcher */}
+          <div className="flex items-center bg-[#124232] rounded-xl p-0.5 border border-[#235845]">
             <button
+              type="button"
+              onClick={handleSetFitPage}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer touch-target ${
+                fitMode === 'page' && userZoom === 1.0
+                  ? 'bg-[#E2B755] text-[#051A13] font-bold shadow-xs'
+                  : 'text-[#A0C4B2] hover:text-white'
+              }`}
+              title="Fit Full Page (Display entire page with all margins)"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Fit Page</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleSetFitWidth}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer touch-target ${
+                fitMode === 'width' && userZoom === 1.0
+                  ? 'bg-[#E2B755] text-[#051A13] font-bold shadow-xs'
+                  : 'text-[#A0C4B2] hover:text-white'
+              }`}
+              title="Fit to Width (Fills screen horizontally for easy reading)"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Fit Width</span>
+            </button>
+          </div>
+
+          {/* Zoom In / Out / Reset Controls */}
+          <div className="flex items-center bg-[#124232] rounded-xl p-0.5 border border-[#235845]">
+            <button
+              type="button"
               onClick={handleZoomOut}
-              disabled={scale <= 0.6}
+              disabled={userZoom <= 0.5}
               className="p-1.5 text-[#E2B755] hover:text-white disabled:opacity-40 transition cursor-pointer"
               title="Zoom out (-)"
             >
               <ZoomOut className="w-4 h-4" />
             </button>
             <button
-              onClick={handleFitWidth}
+              type="button"
+              onClick={handleResetZoom}
               className="px-2 py-1 text-xs font-mono font-bold text-white hover:text-[#E2B755] transition cursor-pointer"
-              title="Fit to Width (100%)"
+              title="Reset Zoom to 100%"
             >
-              {Math.round(scale * 100)}%
+              {Math.round(userZoom * 100)}%
             </button>
             <button
+              type="button"
               onClick={handleZoomIn}
-              disabled={scale >= 3.0}
+              disabled={userZoom >= 3.5}
               className="p-1.5 text-[#E2B755] hover:text-white disabled:opacity-40 transition cursor-pointer"
               title="Zoom in (+)"
             >
@@ -539,17 +703,9 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
             </button>
           </div>
 
-          {/* Quick Fit Width Button for Mobile */}
-          <button
-            onClick={handleFitWidth}
-            className="sm:hidden p-2 rounded-xl bg-[#124232] text-[#E2B755] border border-[#235845] transition cursor-pointer touch-target"
-            title="Reset Zoom to 100%"
-          >
-            <Scan className="w-4 h-4" />
-          </button>
-
           {/* Bookmarks Drawer Trigger */}
           <button
+            type="button"
             onClick={() => setIsBookmarksDrawerOpen(true)}
             className="relative p-2 rounded-xl bg-[#124232] hover:bg-[#185340] text-[#E2B755] border border-[#235845] transition cursor-pointer touch-target"
             title="View saved bookmarks"
@@ -564,6 +720,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
           {/* Add / Toggle Current Page Bookmark */}
           <button
+            type="button"
             onClick={handleOpenAddBookmark}
             className={`p-2 rounded-xl border transition cursor-pointer touch-target ${
               isCurrentPageBookmarked
@@ -579,7 +736,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
           {offlineStatus.isDownloaded ? (
             <div
               onClick={handleDeleteOffline}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#0E3B2E] text-[#55D6A0] border border-[#1D6B4F] text-xs font-semibold cursor-pointer hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-800 transition"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#0E3B2E] text-[#55D6A0] border border-[#1D6B4F] text-xs font-semibold cursor-pointer hover:bg-rose-950/40 hover:text-rose-300 hover:border-rose-800 transition touch-target"
               title="Downloaded offline. Click to manage/delete."
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-[#55D6A0]" />
@@ -592,6 +749,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
             </div>
           ) : (
             <button
+              type="button"
               onClick={handleDownloadForOffline}
               className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl bg-[#1A5340] hover:bg-[#236850] active:scale-95 text-xs font-bold text-white border border-[#31785E] transition shadow-xs cursor-pointer touch-target"
               title="Download full PDF for permanent offline reading"
@@ -603,6 +761,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
           {/* Fullscreen Button */}
           <button
+            type="button"
             onClick={toggleFullscreen}
             className="p-2 rounded-xl bg-[#124232] hover:bg-[#185340] text-[#E2B755] border border-[#235845] transition cursor-pointer"
             title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
@@ -620,6 +779,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
             <span>{downloadError}</span>
           </div>
           <button
+            type="button"
             onClick={() => setDownloadError(null)}
             className="text-red-400 hover:text-white font-bold p-1 cursor-pointer"
           >
@@ -643,6 +803,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
           <div className="flex items-center gap-1.5 flex-shrink-0">
             {onToggleBookmark && (
               <button
+                type="button"
                 onClick={() => onToggleBookmark(targetWord.id)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                   isBookmarked
@@ -657,6 +818,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
             {onToggleLearned && (
               <button
+                type="button"
                 onClick={() => onToggleLearned(targetWord.id)}
                 className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
                   isLearned
@@ -677,11 +839,10 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       {/* ======================================================== */}
       <main
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto overflow-x-auto p-2 sm:p-4 md:p-6 bg-[#03120D] relative flex items-start justify-center"
+        className="flex-1 overflow-auto bg-[#03120D] relative overscroll-contain select-none"
         style={{
           WebkitOverflowScrolling: 'touch',
-          touchAction: 'pan-y pinch-zoom',
-          overscrollBehavior: 'contain',
+          touchAction: 'pan-x pan-y',
         }}
       >
         {/* Loading Indicator */}
@@ -690,17 +851,20 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
             <div className="w-12 h-12 rounded-full border-3 border-[#1A4B3A] border-t-[#E2B755] animate-spin mb-3 shadow-lg" />
             <p className="text-sm font-bold text-white">Loading Quran PDF...</p>
             <p className="text-xs text-[#A0C4B2] mt-1">
-              {offlineStatus.isDownloaded ? 'Reading from device storage' : 'Streaming from Supabase Storage'}
+              {offlineStatus.isDownloaded
+                ? 'Reading original PDF from device storage'
+                : 'Streaming original PDF from Supabase Storage'}
             </p>
           </div>
         )}
 
         {/* Error State */}
         {errorMessage && (
-          <div className="max-w-md p-6 bg-[#0E281F] border border-red-500/30 rounded-2xl text-center shadow-2xl my-auto">
+          <div className="max-w-md p-6 bg-[#0E281F] border border-red-500/30 rounded-2xl text-center shadow-2xl m-auto my-12">
             <p className="text-red-400 font-bold mb-2">Error Loading Document</p>
             <p className="text-xs text-[#A0C4B2] mb-4">{errorMessage}</p>
             <button
+              type="button"
               onClick={() => window.location.reload()}
               className="px-4 py-2 rounded-xl bg-[#124232] text-xs font-bold text-[#E2B755] hover:bg-[#185340] border border-[#235845] cursor-pointer"
             >
@@ -709,15 +873,24 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
           </div>
         )}
 
-        {/* Canvas Render Frame */}
-        <div className="relative shadow-2xl rounded-sm overflow-hidden bg-[#07241A] border border-[#1A4B3A]/60 my-auto transition-transform duration-100 ease-out">
-          <canvas ref={canvasRef} className="block max-w-none h-auto transition-opacity duration-150" />
-          {pageRendering && !isLoading && (
-            <div className="absolute top-3 right-3 bg-[#092E22]/90 text-[#E2B755] px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-md border border-[#235845]">
-              <Loader2 className="w-3 h-3 animate-spin text-[#E2B755]" />
-              <span>Rendering...</span>
-            </div>
-          )}
+        {/* Centering Wrapper: Guarantees full page margins are visible without cropping */}
+        <div className="min-h-full min-w-full flex items-center justify-center p-2 sm:p-4 md:p-6">
+          <div
+            ref={canvasWrapperRef}
+            className="relative shadow-2xl rounded-sm overflow-hidden bg-[#07241A] border border-[#1A4B3A]/60 flex-shrink-0 transition-shadow duration-150"
+            style={{
+              width: canvasDisplaySize.width ? `${canvasDisplaySize.width}px` : 'auto',
+              height: canvasDisplaySize.height ? `${canvasDisplaySize.height}px` : 'auto',
+            }}
+          >
+            <canvas ref={canvasRef} className="block w-full h-full" />
+            {pageRendering && !isLoading && (
+              <div className="absolute top-3 right-3 bg-[#092E22]/90 text-[#E2B755] px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 shadow-md border border-[#235845] backdrop-blur-xs">
+                <Loader2 className="w-3 h-3 animate-spin text-[#E2B755]" />
+                <span>Rendering...</span>
+              </div>
+            )}
+          </div>
         </div>
       </main>
 
@@ -727,9 +900,10 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       <footer className="flex-shrink-0 flex items-center justify-between px-3 md:px-8 py-2.5 bg-[#092E22] border-t border-[#1A4B3A] shadow-2xl z-30">
         {/* Previous Page */}
         <button
+          type="button"
           onClick={handlePrevPage}
           disabled={currentPage <= 1 || isLoading}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs sm:text-sm font-bold text-white border border-[#235845] cursor-pointer touch-target"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs sm:text-sm font-bold text-white border border-[#235845] cursor-pointer touch-target flex-shrink-0"
         >
           <ChevronLeft className="w-4 h-4 text-[#E2B755]" />
           <span className="hidden sm:inline">Previous</span>
@@ -748,27 +922,29 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
               setPageInputVal(String(val))
             }}
             className="w-20 sm:w-44 h-1.5 bg-[#124232] rounded-lg appearance-none cursor-pointer accent-[#E2B755]"
-            title="Slide to browse pages"
+            title={`Slide page (1 to ${totalPages || 1})`}
           />
 
-          <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1">
-            <span className="text-xs text-[#A0C4B2] hidden sm:inline font-medium">Page</span>
+          <form onSubmit={handlePageInputSubmit} className="flex items-center gap-1.5 text-xs text-[#A0C4B2]">
+            <span>Page</span>
             <input
-              type="text"
+              type="number"
+              min={1}
+              max={totalPages || 1}
               value={pageInputVal}
               onChange={(e) => setPageInputVal(e.target.value)}
-              onBlur={() => setPageInputVal(String(currentPage))}
-              className="w-12 text-center text-xs sm:text-sm font-bold bg-[#124232] border border-[#235845] rounded-lg px-1 py-1 text-white focus:border-[#E2B755] focus:outline-none"
+              className="w-12 sm:w-16 px-1.5 py-1 text-center bg-[#124232] text-white font-mono font-bold rounded-lg border border-[#235845] focus:outline-none focus:border-[#E2B755] text-xs"
             />
-            <span className="text-xs sm:text-sm text-[#A0C4B2] font-semibold">/ {totalPages || '...'}</span>
+            <span>of {totalPages || '...'}</span>
           </form>
         </div>
 
         {/* Next Page */}
         <button
+          type="button"
           onClick={handleNextPage}
           disabled={currentPage >= totalPages || isLoading}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs sm:text-sm font-bold text-white border border-[#235845] cursor-pointer touch-target"
+          className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#124232] hover:bg-[#185340] active:scale-95 disabled:opacity-30 disabled:cursor-not-allowed transition text-xs sm:text-sm font-bold text-white border border-[#235845] cursor-pointer touch-target flex-shrink-0"
         >
           <span className="hidden sm:inline">Next</span>
           <ChevronRight className="w-4 h-4 text-[#E2B755]" />
@@ -776,86 +952,75 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       </footer>
 
       {/* ======================================================== */}
-      {/* 4. PERSONAL BOOKMARKS SLIDE-OVER DRAWER                  */}
+      {/* 4. SLIDE-OUT BOOKMARKS DRAWER                            */}
       {/* ======================================================== */}
       {isBookmarksDrawerOpen && (
         <div className="fixed inset-0 z-50 flex justify-end bg-black/60 backdrop-blur-xs animate-fade-in">
-          <div className="w-full max-w-sm bg-[#092E22] border-l border-[#1A4B3A] shadow-2xl flex flex-col h-full animate-slide-left">
-            {/* Drawer Header */}
-            <div className="p-4 border-b border-[#1A4B3A] flex items-center justify-between">
+          <div className="w-full max-w-md bg-[#092E22] text-[#F5EEDB] h-full shadow-2xl border-l border-[#1A4B3A] flex flex-col">
+            <div className="p-4 bg-[#062018] border-b border-[#1A4B3A] flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bookmark className="w-5 h-5 text-[#E2B755]" fill="currentColor" />
-                <h3 className="font-serif font-bold text-base text-white">Saved Bookmarks</h3>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-[#124232] text-[#E2B755] border border-[#235845]">
+                <h3 className="font-bold text-sm text-white">Saved Bookmarks</h3>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[#124232] text-[#E2B755]">
                   {bookmarks.length}
                 </span>
               </div>
               <button
+                type="button"
                 onClick={() => setIsBookmarksDrawerOpen(false)}
-                className="w-8 h-8 rounded-lg bg-[#124232] hover:bg-[#185340] text-white flex items-center justify-center transition cursor-pointer"
+                className="p-1.5 rounded-lg text-[#A0C4B2] hover:text-white hover:bg-[#124232] transition cursor-pointer"
               >
-                <X className="w-4 h-4" />
+                <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Bookmarks List */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
+            <div className="flex-1 overflow-y-auto p-4 space-y-2.5 no-scrollbar">
               {bookmarks.length === 0 ? (
-                <div className="py-16 text-center">
-                  <Bookmark className="w-10 h-10 text-stone-500 mx-auto mb-2 opacity-40" />
-                  <p className="text-sm font-bold text-white">No bookmarks yet</p>
-                  <p className="text-xs text-[#A0C4B2] mt-1 max-w-xs mx-auto">
-                    Click the '+' button in the top toolbar to bookmark any page with custom notes.
-                  </p>
+                <div className="text-center py-12 text-[#A0C4B2] text-xs">
+                  <Bookmark className="w-8 h-8 mx-auto mb-2 opacity-40 text-[#E2B755]" />
+                  <p className="font-bold text-white">No bookmarks saved yet</p>
+                  <p className="mt-1">Tap the &quot;+&quot; button in the top toolbar to bookmark this page.</p>
                 </div>
               ) : (
                 bookmarks.map((bm) => (
                   <div
                     key={bm.id}
-                    className={`p-3 rounded-xl border transition flex items-start justify-between gap-3 ${
-                      bm.pageNumber === currentPage
-                        ? 'bg-[#124232] border-[#E2B755] shadow-sm'
-                        : 'bg-[#07241A] hover:bg-[#0E3628] border-[#1A4B3A]'
-                    }`}
+                    className="p-3 rounded-xl bg-[#0E3527] border border-[#1A4B3A] hover:border-[#E2B755]/50 transition flex items-start justify-between gap-3 group"
                   >
                     <div
                       onClick={() => handleJumpToBookmark(bm.pageNumber)}
-                      className="min-w-0 flex-1 cursor-pointer"
+                      className="flex-1 cursor-pointer"
                     >
                       <div className="flex items-center gap-2">
                         <span className="px-2 py-0.5 rounded-md bg-[#E2B755] text-[#051A13] font-bold text-[10px]">
                           Page {bm.pageNumber}
                         </span>
-                        <h4 className="font-bold text-sm text-white truncate">{bm.title}</h4>
+                        <h4 className="font-bold text-xs text-white truncate">{bm.title}</h4>
                       </div>
                       {bm.notes && (
-                        <p className="text-xs text-[#A0C4B2] mt-1 line-clamp-2 italic">"{bm.notes}"</p>
+                        <p className="text-[11px] text-[#A0C4B2] mt-1.5 line-clamp-2 italic">
+                          &ldquo;{bm.notes}&rdquo;
+                        </p>
                       )}
-                      <p className="text-[10px] text-stone-400 mt-1">
-                        Saved on {new Date(bm.createdAt).toLocaleDateString()}
-                      </p>
                     </div>
-
                     <button
+                      type="button"
                       onClick={() => handleDeleteBookmark(bm.id, bm.pageNumber)}
-                      className="p-1.5 rounded-lg text-stone-400 hover:text-red-400 hover:bg-red-950/40 transition cursor-pointer flex-shrink-0"
+                      className="p-1 text-stone-400 hover:text-red-400 hover:bg-red-950/30 rounded-lg transition cursor-pointer opacity-70 group-hover:opacity-100"
                       title="Delete bookmark"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
                 ))
               )}
             </div>
 
-            {/* Quick Add Current Page button at bottom of drawer */}
-            <div className="p-4 border-t border-[#1A4B3A] bg-[#07241A]">
+            <div className="p-4 bg-[#062018] border-t border-[#1A4B3A]">
               <button
-                onClick={() => {
-                  setIsBookmarksDrawerOpen(false)
-                  handleOpenAddBookmark()
-                }}
-                className="w-full py-2.5 px-4 rounded-xl font-bold text-xs text-[#051A13] bg-[#E2B755] hover:brightness-105 shadow-md flex items-center justify-center gap-2 cursor-pointer transition"
+                type="button"
+                onClick={handleOpenAddBookmark}
+                className="w-full py-2.5 rounded-xl bg-[#E2B755] hover:bg-[#D4A33B] active:scale-98 text-[#051A13] font-bold text-xs flex items-center justify-center gap-2 transition shadow-md cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
                 <span>Bookmark Current Page ({currentPage})</span>
@@ -870,55 +1035,60 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       {/* ======================================================== */}
       {isAddBookmarkModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in">
-          <div className="bg-[#092E22] border border-[#1A4B3A] text-white w-full max-w-md rounded-2xl shadow-2xl p-5 space-y-4 animate-scale-up">
-            <div className="flex items-center justify-between border-b border-[#1A4B3A] pb-3">
-              <div className="flex items-center gap-2">
-                <Bookmark className="w-5 h-5 text-[#E2B755]" fill="currentColor" />
-                <h3 className="font-serif font-bold text-base">Bookmark Page {currentPage}</h3>
-              </div>
+          <div className="w-full max-w-sm bg-[#092E22] text-[#F5EEDB] rounded-2xl shadow-2xl border border-[#1A4B3A] overflow-hidden">
+            <div className="p-4 bg-[#062018] border-b border-[#1A4B3A] flex items-center justify-between">
+              <h3 className="font-bold text-sm text-white flex items-center gap-2">
+                <Bookmark className="w-4 h-4 text-[#E2B755]" />
+                <span>Bookmark Page {currentPage}</span>
+              </h3>
               <button
+                type="button"
                 onClick={() => setIsAddBookmarkModalOpen(false)}
-                className="w-8 h-8 rounded-lg bg-[#124232] text-stone-400 hover:text-white flex items-center justify-center transition cursor-pointer"
+                className="text-[#A0C4B2] hover:text-white p-1"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSaveBookmark} className="space-y-3 text-xs">
+            <form onSubmit={handleSaveBookmark} className="p-4 space-y-3.5">
               <div>
-                <label className="block text-[#A0C4B2] font-semibold mb-1">Bookmark Name / Title</label>
+                <label className="block text-[11px] font-bold text-[#A0C4B2] uppercase tracking-wider mb-1">
+                  Title
+                </label>
                 <input
                   type="text"
-                  required
                   value={bookmarkTitle}
                   onChange={(e) => setBookmarkTitle(e.target.value)}
-                  placeholder="e.g. Surah Al-Kahf Friday recitation"
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#07241A] border border-[#1A4B3A] text-white placeholder-stone-500 focus:outline-none focus:border-[#E2B755]"
+                  placeholder="e.g. Surah Al-Kahf - Friday Recitation"
+                  required
+                  className="w-full px-3 py-2 rounded-xl bg-[#124232] border border-[#235845] text-white text-xs placeholder:text-stone-400 focus:outline-none focus:border-[#E2B755]"
                 />
               </div>
 
               <div>
-                <label className="block text-[#A0C4B2] font-semibold mb-1">Personal Notes (Optional)</label>
+                <label className="block text-[11px] font-bold text-[#A0C4B2] uppercase tracking-wider mb-1">
+                  Reflection / Notes (Optional)
+                </label>
                 <textarea
-                  rows={3}
                   value={bookmarkNotes}
                   onChange={(e) => setBookmarkNotes(e.target.value)}
-                  placeholder="Reflections, Ayah references, or vocabulary reminders..."
-                  className="w-full px-3 py-2.5 rounded-xl bg-[#07241A] border border-[#1A4B3A] text-white placeholder-stone-500 focus:outline-none focus:border-[#E2B755]"
+                  placeholder="Personal reflection or note on this page..."
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-xl bg-[#124232] border border-[#235845] text-white text-xs placeholder:text-stone-400 focus:outline-none focus:border-[#E2B755] resize-none"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#1A4B3A]">
+              <div className="flex items-center justify-end gap-2 pt-2">
                 <button
                   type="button"
                   onClick={() => setIsAddBookmarkModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-[#124232] text-white hover:bg-[#185340] font-semibold transition cursor-pointer"
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#A0C4B2] hover:bg-[#124232] transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-[#E2B755] text-[#051A13] hover:brightness-105 font-bold shadow-md transition cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-[#E2B755] text-[#051A13] hover:brightness-105 font-bold text-xs shadow-md transition cursor-pointer"
                 >
                   Save Bookmark
                 </button>

@@ -743,8 +743,9 @@ Salah completion is permitted **strictly for today's local calendar date**.
   - Public metadata endpoints: `GET /api/quran/resources` and `GET /api/quran/resources/:key`.
 - **Integrated PDF.js Online Reader (`PdfJsReader.tsx`):**
   - High-performance, responsive canvas reader mounted via `createPortal(..., document.body)` powered by `pdfjs-dist` with byte-range streaming (`rangeChunkSize: 65536`) to load pages on-demand without blocking on large downloads.
-  - Native touch-manipulation and vertical scrolling: `overscrollBehavior: 'contain'`, `touchAction: 'pan-y pinch-zoom'`, and two-finger pinch-to-zoom distance tracking without layout conflicts.
-  - Mobile, tablet, and desktop responsive controls: HiDPI sharp canvas scaling, zoom in/out/100%, fit-to-width (`↔`), direct page input jump, and true fullscreen mode.
+  - Native touch-manipulation and vertical scrolling: `overscrollBehavior: 'contain'`, `touchAction: 'pan-x pan-y'`, and hardware-accelerated 60fps CSS pinch-to-zoom distance tracking with high-DPI canvas re-rendering on touch end.
+  - Ultra-Sharp High-DPI Rendering: Native Device Pixel Ratio (DPR up to 3.0) viewport scaling, high-quality image smoothing, and bundled offline `/cmaps/` and `/standard_fonts/` for crystal-clear Arabic calligraphy, tajweed harakat, and Roman Urdu translations without blurriness.
+  - Mobile, tablet, and desktop responsive controls: Instant "Fit Page" (`↕`) mode showing 100% of the page margins without scrolling, "Fit Width" (`↔`) mode for maximum text readability, smooth zoom in/out (50%–350%), direct page input jump, interactive page slider, and true fullscreen mode.
   - Personal PDF Bookmarks & Notes: Bookmark any page in the Holy Quran or 600 Words PDF with custom title and reflection notes (`GET /api/quran/bookmarks`, `POST /api/quran/bookmarks`, `DELETE /api/quran/bookmarks/:id`), slide-out bookmarks drawer, and offline IndexedDB sync.
   - Reading position persistence & auto-save: Tracks and automatically saves last reading position (`GET /api/quran/progress-state`, `PUT /api/quran/progress-state`) with debounce, surfacing a high-impact "Continue Reading (Page X)" hero button on both Tracker and Reader dashboards.
   - Permanent Offline First Resilience (IndexedDB `salah_offline_quran_db`):
