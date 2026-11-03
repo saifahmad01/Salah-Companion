@@ -97,11 +97,15 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
   const loadDashboard = useCallback(async () => {
     setIsLoadingDashboard(true)
     try {
-      const res = await salahApi.getQuranReadingDashboard()
-      if (res && res.data) {
-        setDashboardData(res.data)
-        if (res.data.lastReadingSession) {
-          const last = res.data.lastReadingSession
+      const [res, progressRes] = await Promise.allSettled([
+        salahApi.getQuranReadingDashboard(),
+        salahApi.getQuranReadingProgressState('quran-roman-urdu'),
+      ])
+
+      if (res.status === 'fulfilled' && res.value?.data) {
+        setDashboardData(res.value.data)
+        if (res.value.data.lastReadingSession) {
+          const last = res.value.data.lastReadingSession
           setReadingProgress((prev) => ({
             ...prev,
             lastSurah: last.surahName,
@@ -109,6 +113,17 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
             lastReadDate: last.date,
           }))
         }
+      }
+
+      if (progressRes.status === 'fulfilled' && progressRes.value?.data?.lastPage) {
+        setReadingProgress((prev) => ({
+          ...prev,
+          lastPage: progressRes.value.data.lastPage,
+          lastSurah: progressRes.value.data.lastSurah || prev.lastSurah,
+          lastReadDate: progressRes.value.data.lastReadAt
+            ? new Date(progressRes.value.data.lastReadAt).toLocaleDateString()
+            : prev.lastReadDate,
+        }))
       }
     } catch {
       // Offline fallback: synthesize from offline storage if server unreachable
@@ -580,7 +595,7 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
           </div>
 
           {/* Continue Reading Hero Card */}
-          {dashboardData?.lastReadingSession && (
+          {(dashboardData?.lastReadingSession || (readingProgress.lastPage && readingProgress.lastPage > 0)) && (
             <div className="bg-[#FAF8F3] rounded-2xl p-5 border border-[#E4E0D6] shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
               <div className="flex items-start gap-3.5">
                 <div className="w-11 h-11 rounded-2xl bg-[#064E3B] text-[#E2B755] flex items-center justify-center flex-shrink-0 shadow-sm mt-0.5">
@@ -591,20 +606,28 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
                     Last Reading Position
                   </span>
                   <h4 className="font-serif font-bold text-lg text-stone-900 leading-tight mt-0.5">
-                    Surah {dashboardData.lastReadingSession.surahName}
+                    Surah {dashboardData?.lastReadingSession?.surahName || readingProgress.lastSurah || 'Al-Fatihah'}
                   </h4>
                   <p className="text-xs text-stone-600 mt-1">
-                    Page {dashboardData.lastReadingSession.lastPage} • Ruku {dashboardData.lastReadingSession.lastRuku} • {dashboardData.lastReadingSession.date}
+                    Page {dashboardData?.lastReadingSession?.lastPage || readingProgress.lastPage}
+                    {dashboardData?.lastReadingSession?.lastRuku ? ` • Ruku ${dashboardData.lastReadingSession.lastRuku}` : ''}
+                    {dashboardData?.lastReadingSession?.date ? ` • ${dashboardData.lastReadingSession.date}` : ` • ${readingProgress.lastReadDate}`}
                   </p>
                 </div>
               </div>
 
               <button
                 type="button"
-                onClick={() => setActiveTab('reader')}
-                className="px-4 py-2 rounded-xl bg-[#064E3B] hover:bg-[#085a44] text-white font-bold text-xs shadow-xs transition flex items-center gap-2 cursor-pointer active:scale-95"
+                onClick={() => {
+                  const targetPage = dashboardData?.lastReadingSession?.lastPage || readingProgress.lastPage || 1
+                  setQuranReaderPage(targetPage)
+                  setIsQuranReaderOpen(true)
+                  device.hapticFeedback('medium')
+                }}
+                className="px-5 py-2.5 rounded-xl bg-[#064E3B] hover:bg-[#085a44] text-white font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer active:scale-95 touch-target"
               >
-                <span>Continue Reading</span>
+                <BookOpen className="w-4 h-4 text-[#E2B755]" />
+                <span>Continue Reading (Page {dashboardData?.lastReadingSession?.lastPage || readingProgress.lastPage || 1})</span>
                 <ArrowRight className="w-4 h-4 text-[#E2B755]" />
               </button>
             </div>
@@ -1002,12 +1025,12 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
                 onClick={() => {
                   setQuranReaderPage(readingProgress.lastPage || 1)
                   setIsQuranReaderOpen(true)
-                  device.hapticFeedback('light')
+                  device.hapticFeedback('medium')
                 }}
-                className="px-4 py-2 rounded-xl bg-[#0C382B] text-white font-bold text-xs shadow-xs hover:bg-emerald-950 transition flex items-center gap-1.5 cursor-pointer touch-target"
+                className="px-5 py-2.5 rounded-xl bg-[#0C382B] text-white font-bold text-xs shadow-md hover:bg-emerald-950 transition flex items-center gap-2 cursor-pointer touch-target active:scale-95"
               >
-                <Eye className="w-4 h-4 text-[#E2B755]" />
-                <span>Open Reader</span>
+                <BookOpen className="w-4 h-4 text-[#E2B755]" />
+                <span>Continue Reading (Page {readingProgress.lastPage || 1})</span>
               </button>
             </div>
           </div>

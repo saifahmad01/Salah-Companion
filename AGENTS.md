@@ -742,11 +742,20 @@ Salah completion is permitted **strictly for today's local calendar date**.
   - Admin endpoints: `GET /api/admin/quran/resources`, `POST /api/admin/quran/resources`, and `PATCH /api/admin/quran/resources/:id/status`.
   - Public metadata endpoints: `GET /api/quran/resources` and `GET /api/quran/resources/:key`.
 - **Integrated PDF.js Online Reader (`PdfJsReader.tsx`):**
-  - High-performance, responsive canvas reader powered by `pdfjs-dist` with byte-range streaming (`rangeChunkSize: 65536`) to load pages on-demand without blocking on large downloads.
-  - Mobile, tablet, and desktop responsive controls: HiDPI sharp canvas scaling, zoom in/out/100%, page scrub slider, direct page input jump, and true fullscreen mode.
-  - Direct vocabulary word jump: Clicking any word in the 600 Words grid jumps directly to its corresponding PDF page with an interactive word highlight header and in-reader Bookmark / Mark Learned toggles.
-  - Reading position persistence: Automatically tracks and saves last read page and surah (`offlineQuranService.saveReadingProgress`) across Quran, Hadith, and Vocabulary navigation.
-  - Offline first resilience: One-click "Save Offline" caching into IndexedDB (`salah_offline_quran_db`) with live download progress indicators.
+  - High-performance, responsive canvas reader mounted via `createPortal(..., document.body)` powered by `pdfjs-dist` with byte-range streaming (`rangeChunkSize: 65536`) to load pages on-demand without blocking on large downloads.
+  - Native touch-manipulation and vertical scrolling: `overscrollBehavior: 'contain'`, `touchAction: 'pan-y pinch-zoom'`, and two-finger pinch-to-zoom distance tracking without layout conflicts.
+  - Mobile, tablet, and desktop responsive controls: HiDPI sharp canvas scaling, zoom in/out/100%, fit-to-width (`↔`), direct page input jump, and true fullscreen mode.
+  - Personal PDF Bookmarks & Notes: Bookmark any page in the Holy Quran or 600 Words PDF with custom title and reflection notes (`GET /api/quran/bookmarks`, `POST /api/quran/bookmarks`, `DELETE /api/quran/bookmarks/:id`), slide-out bookmarks drawer, and offline IndexedDB sync.
+  - Reading position persistence & auto-save: Tracks and automatically saves last reading position (`GET /api/quran/progress-state`, `PUT /api/quran/progress-state`) with debounce, surfacing a high-impact "Continue Reading (Page X)" hero button on both Tracker and Reader dashboards.
+  - Permanent Offline First Resilience (IndexedDB `salah_offline_quran_db`):
+    - User-triggered download of Roman Urdu Quran PDF (49.08 MB) and 600 Arabic Words PDF (37.37 MB).
+    - Binary blob verification: Magic bytes (`%PDF-`) and minimum file size ($>1$ MB) validation before marking as offline ready.
+    - Zero repeat network calls once downloaded; opens directly from IndexedDB with options to update, redownload, or delete.
+    - Graceful storage quota handling using `navigator.storage.estimate()`.
+- **Mobile Mosque Finder Improvements:**
+  - Dedicated "Nearby Mosques (قریبی مساجد)" quick shortcut card on Home dashboard alongside Qibla Compass.
+  - Full-screen `createPortal` modal with `z-[9990]` for consistent display across all Android mobile screen sizes and desktop.
+  - Real-time OpenStreetMap Overpass QL with 2 km, 5 km, and 10 km radius filters and instant Google Maps fallback directions.
 - **Personal Quran Reading Tracker ("Log Today's Quran Reading"):**
 
   - Authenticated logging of reading sessions (`POST /api/quran/reading`) with reading date, Surah name and number, starting and ending page numbers (1–604), starting and ending Ruku numbers, and personal reflection notes.

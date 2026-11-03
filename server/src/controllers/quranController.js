@@ -375,3 +375,235 @@ export async function batchSyncWordProgress(req, res) {
     });
   }
 }
+
+/**
+ * GET /api/quran/bookmarks?resourceKey=...
+ * Fetch user's saved PDF page bookmarks
+ */
+export async function getPageBookmarks(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+    }
+
+    const { resourceKey } = req.query;
+    const where = { userId };
+    if (resourceKey) where.resourceKey = resourceKey;
+
+    const bookmarks = await prisma.quranPageBookmark.findMany({
+      where,
+      orderBy: { pageNumber: 'asc' },
+    });
+
+    return res.json({
+      success: true,
+      data: bookmarks,
+    });
+  } catch (err) {
+    console.error('[QuranController] Error fetching bookmarks:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to retrieve page bookmarks',
+      message: err.message,
+    });
+  }
+}
+
+/**
+ * POST /api/quran/bookmarks
+ * Add or update a page bookmark
+ */
+export async function upsertPageBookmark(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+    }
+
+    const { resourceKey, pageNumber, title, notes } = req.body;
+    if (!resourceKey || typeof pageNumber !== 'number' || pageNumber < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid fields: resourceKey and pageNumber are required',
+      });
+    }
+
+    const bookmark = await prisma.quranPageBookmark.upsert({
+      where: {
+        userId_resourceKey_pageNumber: {
+          userId,
+          resourceKey,
+          pageNumber,
+        },
+      },
+      update: {
+        title: title || `Page ${pageNumber}`,
+        notes: notes || null,
+        updatedAt: new Date(),
+      },
+      create: {
+        userId,
+        resourceKey,
+        pageNumber,
+        title: title || `Page ${pageNumber}`,
+        notes: notes || null,
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Bookmark saved successfully',
+      data: bookmark,
+    });
+  } catch (err) {
+    console.error('[QuranController] Error saving bookmark:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save bookmark',
+      message: err.message,
+    });
+  }
+}
+
+/**
+ * DELETE /api/quran/bookmarks/:id
+ * Remove a saved page bookmark
+ */
+export async function deletePageBookmark(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+    }
+
+    const { id } = req.params;
+    const existing = await prisma.quranPageBookmark.findFirst({
+      where: { id, userId },
+    });
+
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        error: 'Bookmark not found or access denied',
+      });
+    }
+
+    await prisma.quranPageBookmark.delete({
+      where: { id },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Bookmark deleted successfully',
+      id,
+    });
+  } catch (err) {
+    console.error('[QuranController] Error deleting bookmark:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to delete bookmark',
+      message: err.message,
+    });
+  }
+}
+
+/**
+ * GET /api/quran/reading-progress?resourceKey=...
+ * Fetch user's persistent reading progress state
+ */
+export async function getReadingProgressState(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+    }
+
+    const resourceKey = req.query.resourceKey || 'quran-roman-urdu';
+    const state = await prisma.quranReadingProgressState.findUnique({
+      where: {
+        userId_resourceKey: {
+          userId,
+          resourceKey,
+        },
+      },
+    });
+
+    return res.json({
+      success: true,
+      data: state || {
+        resourceKey,
+        lastPage: 1,
+        totalPages: resourceKey === 'quran-roman-urdu' ? 608 : 319,
+        lastSurah: 'Al-Fatihah',
+        lastReadAt: new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    console.error('[QuranController] Error fetching reading progress state:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to fetch reading progress state',
+      message: err.message,
+    });
+  }
+}
+
+/**
+ * POST /api/quran/reading-progress
+ * Update user's persistent reading progress state
+ */
+export async function saveReadingProgressState(req, res) {
+  try {
+    const userId = req.user?.id;
+    if (!userId) {
+      return res.status(401).json({ success: false, error: 'Unauthorized: Authentication required' });
+    }
+
+    const { resourceKey, lastPage, totalPages, lastSurah } = req.body;
+    if (!resourceKey || typeof lastPage !== 'number' || lastPage < 1) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing or invalid fields: resourceKey and lastPage are required',
+      });
+    }
+
+    const updated = await prisma.quranReadingProgressState.upsert({
+      where: {
+        userId_resourceKey: {
+          userId,
+          resourceKey,
+        },
+      },
+      update: {
+        lastPage,
+        totalPages: totalPages || 608,
+        lastSurah: lastSurah || null,
+        lastReadAt: new Date(),
+        updatedAt: new Date(),
+      },
+      create: {
+        userId,
+        resourceKey,
+        lastPage,
+        totalPages: totalPages || 608,
+        lastSurah: lastSurah || null,
+        lastReadAt: new Date(),
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: 'Reading progress updated',
+      data: updated,
+    });
+  } catch (err) {
+    console.error('[QuranController] Error saving reading progress state:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Failed to save reading progress state',
+      message: err.message,
+    });
+  }
+}
+
