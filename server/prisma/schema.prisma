@@ -215,3 +215,26 @@ model NotificationLog {
   @@index([userId, isRead])
   @@map("notification_logs")
 }
+
+// ----------------------------------------------------------------------------
+// Quran & Islamic Study PDF Resources (Supabase Storage Metadata)
+// ----------------------------------------------------------------------------
+model QuranResource {
+  id          String   @id @default(uuid())
+  resourceKey String   @unique @map("resource_key") // "quran-roman-urdu" | "vocab-600-words"
+  title       String
+  fileName    String   @map("file_name")
+  storagePath String   @map("storage_path")
+  fileSize    BigInt   @map("file_size")
+  version     Int      @default(1)
+  isActive    Boolean  @default(true) @map("is_active")
+  publicUrl   String   @map("public_url")
+  metadata    Json?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([resourceKey])
+  @@index([isActive])
+  @@map("quran_resources")
+}
+

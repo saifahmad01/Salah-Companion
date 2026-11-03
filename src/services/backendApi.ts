@@ -822,7 +822,46 @@ export const salahApi = {
       body: JSON.stringify({ updates }),
     });
   },
+
+  /**
+   * Quran & Study PDF Resources (Supabase Storage Metadata)
+   */
+  async getQuranResources(): Promise<{ success: boolean; data: QuranResourceItem[] }> {
+    return await fetchWithAuth('/quran/resources', { method: 'GET' });
+  },
+
+  async getQuranResourceByKey(key: string): Promise<{ success: boolean; data: QuranResourceItem }> {
+    return await fetchWithAuth(`/quran/resources/${encodeURIComponent(key)}`, { method: 'GET' });
+  },
+
+  async getAdminQuranResources(): Promise<{ success: boolean; data: QuranResourceItem[] }> {
+    return await fetchWithAuth('/admin/quran/resources', { method: 'GET' });
+  },
+
+  async upsertQuranResource(payload: {
+    resourceKey: string;
+    title: string;
+    fileName: string;
+    storagePath: string;
+    fileSize: number;
+    publicUrl: string;
+    metadata?: Record<string, any>;
+    isActive?: boolean;
+  }): Promise<{ success: boolean; message: string; data: QuranResourceItem }> {
+    return await fetchWithAuth('/admin/quran/resources', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async toggleQuranResourceStatus(id: string, isActive: boolean): Promise<{ success: boolean; message: string; data: QuranResourceItem }> {
+    return await fetchWithAuth(`/admin/quran/resources/${encodeURIComponent(id)}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isActive }),
+    });
+  },
 };
+
 
 export interface AdminOverviewData {
   kpis: {
@@ -989,5 +1028,21 @@ export interface VocabularyProgressData {
   totalWords: number;
   completionPercent: number;
 }
+
+export interface QuranResourceItem {
+  id: string;
+  resourceKey: string;
+  title: string;
+  fileName: string;
+  storagePath: string;
+  fileSize: number;
+  version: number;
+  isActive: boolean;
+  publicUrl: string;
+  metadata?: Record<string, any> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 
 

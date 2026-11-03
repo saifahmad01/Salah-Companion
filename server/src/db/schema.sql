@@ -119,4 +119,23 @@ CREATE TABLE IF NOT EXISTS user_word_progress (
 );
 CREATE INDEX IF NOT EXISTS idx_user_word_progress_user ON user_word_progress(user_id);
 
+-- 9. Quran & Study PDF Resources (Supabase Storage Metadata)
+CREATE TABLE IF NOT EXISTS quran_resources (
+  id TEXT PRIMARY KEY,
+  resource_key TEXT NOT NULL UNIQUE,
+  title TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  storage_path TEXT NOT NULL,
+  file_size INTEGER NOT NULL,
+  version INTEGER NOT NULL DEFAULT 1,
+  is_active INTEGER NOT NULL DEFAULT 1,
+  public_url TEXT NOT NULL,
+  metadata TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_quran_resources_key ON quran_resources(resource_key);
+CREATE INDEX IF NOT EXISTS idx_quran_resources_active ON quran_resources(is_active);
+
+
 

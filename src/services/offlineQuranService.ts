@@ -18,6 +18,12 @@ const VOCAB_PDF_KEY = 'quran_vocab_600_pdf'
 const PROGRESS_KEY = 'salah_quran_reading_progress'
 const WORD_PROGRESS_KEY = 'salah_quran_word_progress'
 
+export const SUPABASE_STORAGE_URLS = {
+  quran: 'https://ttsaxxdduezaputwakin.supabase.co/storage/v1/object/public/quran-resources/quran/roman-urdu-quran.pdf',
+  vocab: 'https://ttsaxxdduezaputwakin.supabase.co/storage/v1/object/public/quran-resources/vocabulary/600-arabic-words.pdf',
+}
+
+
 function openQuranDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
@@ -58,7 +64,7 @@ export const offlineQuranService = {
    * Download Quran PDF with progress callback and store in IndexedDB
    */
   async downloadQuranPdf(
-    url: string,
+    url = SUPABASE_STORAGE_URLS.quran,
     onProgress?: (percent: number, loadedBytes: number, totalBytes: number) => void
   ): Promise<boolean> {
     try {
@@ -176,7 +182,7 @@ export const offlineQuranService = {
    * Download 600 Words Vocabulary PDF with progress tracking
    */
   async downloadVocabPdf(
-    url = '/top_600_words_quran.pdf',
+    url = SUPABASE_STORAGE_URLS.vocab,
     onProgress?: (percent: number, loadedBytes: number, totalBytes: number) => void
   ): Promise<boolean> {
     try {
@@ -266,7 +272,7 @@ export const offlineQuranService = {
   /**
    * Helper to trigger device download of the PDF file
    */
-  async triggerFileDownload(url = '/top_600_words_quran.pdf', filename = 'Top 600 Words of the Quran.pdf') {
+  async triggerFileDownload(url = SUPABASE_STORAGE_URLS.vocab, filename = 'Top 600 Words of the Quran.pdf') {
     const blob = await this.getVocabPdfBlob()
     const objectUrl = blob ? URL.createObjectURL(blob) : url
     const a = document.createElement('a')

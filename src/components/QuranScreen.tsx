@@ -30,6 +30,7 @@ import {
 import { QURAN_SURAHS, type SurahMeta } from '../data/quranSurahs'
 import {
   offlineQuranService,
+  SUPABASE_STORAGE_URLS,
   type QuranReadingProgress,
 } from '../services/offlineQuranService'
 import {
@@ -38,7 +39,8 @@ import {
   type QuranReadingDashboardData,
 } from '../services/backendApi'
 import { device } from '../platform/device'
-import { QuranPdfModal } from './QuranPdfModal'
+import { PdfJsReader } from './PdfJsReader'
+
 
 interface QuranScreenProps {
   onBack: () => void
@@ -87,6 +89,9 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
   const [isDownloading, setIsDownloading] = useState<boolean>(false)
   const [downloadPercent, setDownloadPercent] = useState<number>(0)
   const [downloadError, setDownloadError] = useState<string | null>(null)
+  const [isQuranReaderOpen, setIsQuranReaderOpen] = useState<boolean>(false)
+  const [quranReaderPage, setQuranReaderPage] = useState<number>(1)
+
 
   // Fetch Dashboard from backend (with offline cache fallback)
   const loadDashboard = useCallback(async () => {
@@ -376,7 +381,7 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
     setDownloadPercent(0)
 
     try {
-      const pdfUrl = '/Quran Roman Urdu Hindi .pdf'
+      const pdfUrl = SUPABASE_STORAGE_URLS.quran
       await offlineQuranService.downloadQuranPdf(pdfUrl, (percent) => {
         setDownloadPercent(percent)
       })
@@ -992,15 +997,18 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
             </div>
 
             <div className="flex items-center gap-2">
-              <a
-                href="/Quran Roman Urdu Hindi .pdf"
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
+                onClick={() => {
+                  setQuranReaderPage(readingProgress.lastPage || 1)
+                  setIsQuranReaderOpen(true)
+                  device.hapticFeedback('light')
+                }}
                 className="px-4 py-2 rounded-xl bg-[#0C382B] text-white font-bold text-xs shadow-xs hover:bg-emerald-950 transition flex items-center gap-1.5 cursor-pointer touch-target"
               >
                 <Eye className="w-4 h-4 text-[#E2B755]" />
                 <span>Open Reader</span>
-              </a>
+              </button>
             </div>
           </div>
 
@@ -1035,15 +1043,16 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
                   <Eye className="w-4 h-4 text-[#E2B755]" />
                   <span>Open PDF Reader</span>
                 </button>
-                <a
-                  href="/top_600_words_quran.pdf"
-                  download="Top 600 Words of the Quran.pdf"
+                <button
+                  type="button"
+                  onClick={() => offlineQuranService.triggerFileDownload()}
                   className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer touch-target"
                 >
                   <Download className="w-4 h-4 text-stone-600" />
                   <span>Download</span>
-                </a>
+                </button>
               </div>
+
             </div>
           </div>
         </div>
@@ -1377,18 +1386,72 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
       )}
 
       {/* ======================================================== */}
-      {/* INTEGRATED FULL ORIGINAL PDF VIEWER MODAL                */}
+      {/* 1. VOCABULARY 600 WORDS FULL ORIGINAL PDF.JS READER       */}
       {/* ======================================================== */}
-      <QuranPdfModal
-        isOpen={isPdfModalOpen}
-        initialWord={pdfModalInitialWord}
-        initialPageIndex={pdfModalInitialPageIndex}
-        onClose={() => setIsPdfModalOpen(false)}
-        onCloseWithState={handleClosePdfModalWithState}
-        wordProgressMap={wordProgressMap}
-        onToggleBookmark={handleToggleBookmark}
-        onToggleLearned={handleToggleLearned}
-      />
+      {isPdfModalOpen && (
+        <PdfJsReader
+          title="Top 600 Words of the Quran"
+          subtitle="Authentic Al-Hidaya Vocabulary with Roman Urdu & English Meanings"
+          pdfUrl={SUPABASE_STORAGE_URLS.vocab}
+          resourceKey="vocab-600-words"
+          initialPage={pdfModalInitialPageIndex + 1}
+          targetWord={
+            pdfModalInitialWord
+              ? {
+                  id: pdfModalInitialWord.id,
+                  arabic: pdfModalInitialWord.arabic,
+                  transliteration: pdfModalInitialWord.transliteration,
+                  meaning: pdfModalInitialWord.meaning,
+                  reference: pdfModalInitialWord.surahAyahRef,
+                }
+              : undefined
+          }
+          isBookmarked={
+            pdfModalInitialWord
+              ? Boolean(wordProgressMap[pdfModalInitialWord.id]?.isBookmarked)
+              : false
+          }
+          isLearned={
+            pdfModalInitialWord
+              ? Boolean(wordProgressMap[pdfModalInitialWord.id]?.isLearned)
+              : false
+          }
+          onToggleBookmark={(id) => handleToggleBookmark(id)}
+          onToggleLearned={(id) => handleToggleLearned(id)}
+          backButtonLabel="Back to 600 Words"
+          onClose={() => handleClosePdfModalWithState(pdfModalInitialWord, pdfModalInitialPageIndex)}
+          onPageChange={(page) => {
+            setPdfModalInitialPageIndex(page - 1)
+          }}
+        />
+      )}
+
+      {/* ======================================================== */}
+      {/* 2. THE HOLY QURAN ORIGINAL PDF.JS READER                  */}
+      {/* ======================================================== */}
+      {isQuranReaderOpen && (
+        <PdfJsReader
+          title="The Holy Quran (Roman Urdu / Hindi)"
+          subtitle={`Page ${quranReaderPage} of 608 • Arabic Text with Roman Urdu`}
+          pdfUrl={SUPABASE_STORAGE_URLS.quran}
+          resourceKey="quran-roman-urdu"
+          initialPage={quranReaderPage}
+          backButtonLabel="Back to Quran"
+          onClose={() => setIsQuranReaderOpen(false)}
+          onPageChange={(page) => {
+            setQuranReaderPage(page)
+            offlineQuranService.saveReadingProgress({
+              lastPage: page,
+              lastSurah: readingProgress.lastSurah,
+            })
+            setReadingProgress((prev) => ({
+              ...prev,
+              lastPage: page,
+            }))
+          }}
+        />
+      )}
     </div>
   )
 }
+

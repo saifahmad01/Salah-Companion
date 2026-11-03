@@ -501,6 +501,21 @@ erDiagram
         Boolean pushSent "Default: false"
         DateTime deliveredAt
     }
+
+    QuranResource {
+        String id PK "UUID"
+        String resourceKey UK "'quran-roman-urdu' | 'vocab-600-words'"
+        String title
+        String fileName
+        String storagePath "Supabase Storage Path"
+        BigInt fileSize "Bytes"
+        Int version "Default: 1"
+        Boolean isActive "Default: true"
+        String publicUrl "Public CDN Edge URL"
+        Json metadata "Nullable"
+        DateTime createdAt
+        DateTime updatedAt
+    }
 ```
 
 ### Table Relationships & Key Constraints
@@ -718,7 +733,22 @@ Salah completion is permitted **strictly for today's local calendar date**.
 ## 14. Quran and Hadith Integration
 
 ### Quran Reader & Vocabulary Trainer
+- **Supabase Storage PDF Integration (`quran-resources` bucket):**
+  - Production master PDFs hosted in Supabase Storage edge bucket `quran-resources` with byte-range streaming (`Accept-Ranges: bytes`):
+    - `quran/roman-urdu-quran.pdf`: Full 608-page Arabic text with Roman Urdu & Hindi translation.
+    - `vocabulary/600-arabic-words.pdf`: Full 319-page Top 600 Arabic Vocabulary curriculum with English and Roman Urdu meanings.
+  - Zero local public PDFs or binary database blobs: All resources served via Supabase CDN public edge URLs.
+  - Public read access for application users; upload, update, and active toggle strictly restricted to administrators (`ADMIN` role).
+  - Admin endpoints: `GET /api/admin/quran/resources`, `POST /api/admin/quran/resources`, and `PATCH /api/admin/quran/resources/:id/status`.
+  - Public metadata endpoints: `GET /api/quran/resources` and `GET /api/quran/resources/:key`.
+- **Integrated PDF.js Online Reader (`PdfJsReader.tsx`):**
+  - High-performance, responsive canvas reader powered by `pdfjs-dist` with byte-range streaming (`rangeChunkSize: 65536`) to load pages on-demand without blocking on large downloads.
+  - Mobile, tablet, and desktop responsive controls: HiDPI sharp canvas scaling, zoom in/out/100%, page scrub slider, direct page input jump, and true fullscreen mode.
+  - Direct vocabulary word jump: Clicking any word in the 600 Words grid jumps directly to its corresponding PDF page with an interactive word highlight header and in-reader Bookmark / Mark Learned toggles.
+  - Reading position persistence: Automatically tracks and saves last read page and surah (`offlineQuranService.saveReadingProgress`) across Quran, Hadith, and Vocabulary navigation.
+  - Offline first resilience: One-click "Save Offline" caching into IndexedDB (`salah_offline_quran_db`) with live download progress indicators.
 - **Personal Quran Reading Tracker ("Log Today's Quran Reading"):**
+
   - Authenticated logging of reading sessions (`POST /api/quran/reading`) with reading date, Surah name and number, starting and ending page numbers (1–604), starting and ending Ruku numbers, and personal reflection notes.
   - Automatically unifies with daily deeds by marking the `quran` deed in `deed_logs` to maintain daily Sunnah habit streaks.
   - Comprehensive dashboard (`GET /api/quran/reading`) with 4 summary metric cards (Total Pages Read, Total Rukus Completed, Total Sessions, Today's Progress), a "Continue Reading" hero card with last position jump, and date-grouped historical recitation logs with deletion capability (`DELETE /api/quran/reading/:id`).

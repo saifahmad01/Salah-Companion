@@ -15,8 +15,14 @@ import {
   Send,
   CheckCircle2,
   AlertCircle,
+  BookOpen,
+  Copy,
+  Check,
+  ExternalLink,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
-import { adminApi, type AdminOverviewData, type AdminUserData } from '../services/backendApi';
+import { adminApi, salahApi, type AdminOverviewData, type AdminUserData, type QuranResourceItem } from '../services/backendApi';
 import { useAuth } from '../context/AuthContext';
 import { SignOutConfirmationModal } from '../components/SignOutConfirmationModal';
 
@@ -25,11 +31,13 @@ export const AdminDashboard: React.FC = () => {
   const { user: currentUser, logout, banner, setBanner } = useAuth();
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'broadcast'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'broadcast' | 'resources'>('overview');
   const [overview, setOverview] = useState<AdminOverviewData | null>(null);
   const [users, setUsers] = useState<AdminUserData[]>([]);
+  const [quranResources, setQuranResources] = useState<QuranResourceItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [copiedUrlKey, setCopiedUrlKey] = useState<string | null>(null);
 
   // User management filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -75,9 +83,33 @@ export const AdminDashboard: React.FC = () => {
     }
   };
 
+  const fetchQuranResources = async () => {
+    try {
+      const res = await salahApi.getAdminQuranResources();
+      if (res?.data) {
+        setQuranResources(res.data);
+      }
+    } catch (err: any) {
+      setBanner({ type: 'error', message: err.message || 'Failed to fetch Quran PDF resources.' });
+    }
+  };
+
+  const handleToggleResourceStatus = async (id: string, currentStatus: boolean) => {
+    try {
+      const res = await salahApi.toggleQuranResourceStatus(id, !currentStatus);
+      if (res?.success) {
+        setBanner({ type: 'success', message: res.message || 'Resource status updated successfully' });
+        await fetchQuranResources();
+      }
+    } catch (err: any) {
+      setBanner({ type: 'error', message: err.message || 'Failed to update resource status' });
+    }
+  };
+
+
   const loadData = async () => {
     setLoading(true);
-    await Promise.all([fetchOverview(), fetchUsers()]);
+    await Promise.all([fetchOverview(), fetchUsers(), fetchQuranResources()]);
     setLoading(false);
   };
 
@@ -93,7 +125,7 @@ export const AdminDashboard: React.FC = () => {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([fetchOverview(), fetchUsers()]);
+    await Promise.all([fetchOverview(), fetchUsers(), fetchQuranResources()]);
     setRefreshing(false);
   };
 
@@ -247,7 +279,19 @@ export const AdminDashboard: React.FC = () => {
           <Bell className="w-4 h-4" />
           <span>Push Notifications</span>
         </button>
+        <button
+          onClick={() => setActiveTab('resources')}
+          className={`py-3 px-4 text-xs font-semibold flex items-center gap-2 border-b-2 transition cursor-pointer ${
+            activeTab === 'resources'
+              ? 'border-amber-400 text-amber-300 bg-emerald-900/20'
+              : 'border-transparent text-emerald-200/70 hover:text-white'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" />
+          <span>Quran Resources</span>
+        </button>
       </nav>
+
 
       {/* Main Content Area */}
       <main className="flex-1 p-4 sm:p-8 max-w-7xl mx-auto w-full space-y-6">
@@ -519,7 +563,7 @@ export const AdminDashboard: React.FC = () => {
               </div>
             )}
           </div>
-        ) : (
+        ) : activeTab === 'broadcast' ? (
           /* Push Notifications & Broadcast Screen */
           <div className="bg-[#0A3326] border border-emerald-800/40 rounded-2xl p-6 shadow-sm max-w-2xl mx-auto space-y-5">
             <div>
@@ -578,7 +622,143 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </form>
           </div>
+        ) : (
+          /* ======================================================== */
+          /* QURAN PDF RESOURCES TAB (SUPABASE STORAGE INTEGRATION)    */
+          /* ======================================================== */
+          <div className="space-y-6">
+            <div className="bg-[#08281D] rounded-2xl border border-emerald-900/60 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+              <div>
+                <h3 className="font-serif font-bold text-lg text-white flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-amber-400" />
+                  <span>Quran & Vocabulary PDF Storage</span>
+                </h3>
+                <p className="text-xs text-emerald-200/70 mt-1">
+                  Master PDF resources hosted on Supabase Storage bucket <code className="bg-emerald-950 px-2 py-0.5 rounded text-amber-300 font-mono">quran-resources</code> with byte-range streaming.
+                </p>
+              </div>
+              <button
+                onClick={fetchQuranResources}
+                className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-emerald-900/50 hover:bg-emerald-900 border border-emerald-700/60 text-xs font-semibold text-emerald-100 transition cursor-pointer self-start sm:self-auto"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
+                <span>Refresh Resources</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {quranResources.map((res) => {
+                const sizeMb = (res.fileSize / (1024 * 1024)).toFixed(2);
+                const isCopied = copiedUrlKey === res.resourceKey;
+
+                return (
+                  <div
+                    key={res.id}
+                    className="bg-[#08281D] rounded-2xl border border-emerald-900/60 p-5 sm:p-6 shadow-sm flex flex-col justify-between space-y-4"
+                  >
+                    <div>
+                      {/* Header */}
+                      <div className="flex items-start justify-between gap-3 mb-3">
+                        <div>
+                          <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-950 text-amber-400 border border-emerald-800">
+                            {res.resourceKey}
+                          </span>
+                          <h4 className="font-bold text-base text-white mt-1.5">{res.title}</h4>
+                        </div>
+                        <span
+                          className={`text-xs font-bold px-2.5 py-1 rounded-full border ${
+                            res.isActive
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                          }`}
+                        >
+                          {res.isActive ? 'Active' : 'Inactive'}
+                        </span>
+                      </div>
+
+                      {/* Metadata Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 py-3 border-y border-emerald-900/40 text-xs">
+                        <div>
+                          <span className="text-[10px] text-emerald-400/70 uppercase">File Name</span>
+                          <p className="font-mono text-emerald-100 truncate mt-0.5">{res.fileName}</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-emerald-400/70 uppercase">Storage Size</span>
+                          <p className="font-bold text-amber-300 mt-0.5">{sizeMb} MB</p>
+                        </div>
+                        <div>
+                          <span className="text-[10px] text-emerald-400/70 uppercase">Version</span>
+                          <p className="font-semibold text-emerald-100 mt-0.5">v{res.version}</p>
+                        </div>
+                        <div className="col-span-2 sm:col-span-3 mt-1">
+                          <span className="text-[10px] text-emerald-400/70 uppercase">Bucket Path</span>
+                          <p className="font-mono text-xs text-emerald-300 truncate mt-0.5">
+                            quran-resources/{res.storagePath}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Public Supabase CDN URL Box */}
+                      <div className="mt-3 bg-[#061e16] p-2.5 rounded-xl border border-emerald-900/80 flex items-center justify-between gap-2">
+                        <span className="font-mono text-[11px] text-emerald-200/70 truncate">{res.publicUrl}</span>
+                        <div className="flex items-center gap-1.5 flex-shrink-0">
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(res.publicUrl);
+                              setCopiedUrlKey(res.resourceKey);
+                              setTimeout(() => setCopiedUrlKey(null), 2000);
+                            }}
+                            className="p-1.5 rounded-lg bg-emerald-900/60 hover:bg-emerald-800 text-emerald-200 hover:text-white transition cursor-pointer"
+                            title="Copy Supabase Public URL"
+                          >
+                            {isCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                          </button>
+                          <a
+                            href={res.publicUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg bg-emerald-900/60 hover:bg-emerald-800 text-amber-300 hover:text-amber-200 transition"
+                            title="Test Link in Browser"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Action Controls */}
+                    <div className="pt-2 flex items-center justify-between border-t border-emerald-900/40">
+                      <span className="text-xs text-emerald-300/80">
+                        Status: <strong className="text-white">{res.isActive ? 'Publicly Available' : 'Hidden'}</strong>
+                      </span>
+                      <button
+                        onClick={() => handleToggleResourceStatus(res.id, res.isActive)}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                          res.isActive
+                            ? 'bg-amber-950/60 text-amber-300 border border-amber-700/60 hover:bg-amber-900/80'
+                            : 'bg-emerald-900 text-emerald-200 border border-emerald-700 hover:bg-emerald-800'
+                        }`}
+                      >
+                        {res.isActive ? (
+                          <>
+                            <ToggleRight className="w-4 h-4 text-emerald-400" />
+                            <span>Set Inactive</span>
+                          </>
+                        ) : (
+                          <>
+                            <ToggleLeft className="w-4 h-4 text-amber-400" />
+                            <span>Set Active</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         )}
+
         <SignOutConfirmationModal
           isOpen={isSignOutModalOpen}
           onClose={() => setIsSignOutModalOpen(false)}
