@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { createPortal } from 'react-dom'
 import {
   X,
   ChevronLeft,
@@ -85,6 +86,16 @@ export const QuranPdfModal: React.FC<QuranPdfModalProps> = ({
   useEffect(() => {
     offlineQuranService.isVocabPdfDownloaded().then(setIsDownloaded)
   }, [])
+
+  // Lock body scroll while full-page reader modal is active
+  useEffect(() => {
+    if (!isOpen) return
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = prevOverflow
+    }
+  }, [isOpen])
 
   // Find all words on current page
   const wordsOnCurrentPage = useMemo(() => {
@@ -274,8 +285,8 @@ export const QuranPdfModal: React.FC<QuranPdfModalProps> = ({
   // Image source for current page
   const currentImgSrc = `/images/quran_pages/page_${String(currentPageIndex).padStart(3, '0')}.webp`
 
-  return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-[#07130F] text-white animate-fade-in select-none overflow-hidden">
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex flex-col bg-[#07130F] text-white animate-fade-in select-none overflow-hidden">
       {/* ======================================================== */}
       {/* TOP ACTION BAR                                            */}
       {/* ======================================================== */}
@@ -415,6 +426,17 @@ export const QuranPdfModal: React.FC<QuranPdfModalProps> = ({
               <span>{isDownloading ? `${downloadPercent}%` : 'Download PDF'}</span>
             </button>
           )}
+
+          {/* Quick Exit X Button */}
+          <button
+            type="button"
+            onClick={() => handleBackTo600Words(true)}
+            title="Exit Reader (Return to 600 Words)"
+            aria-label="Exit Reader"
+            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition cursor-pointer ml-1"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       </div>
 
@@ -671,6 +693,7 @@ export const QuranPdfModal: React.FC<QuranPdfModalProps> = ({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
