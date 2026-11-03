@@ -1119,3 +1119,106 @@ export async function updatePrayerLog(req, res, next) {
     next(err);
   }
 }
+
+/**
+ * POST /api/prayers/qada
+ * Record completion of a missed prayer as Qada
+ * Preserves the original prayer date, records qadaCompletedAt timestamp, and returns inspirational Hadith
+ */
+export async function recordQadaPrayer(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const { prayerName, date, notes } = req.body;
+
+    if (!prayerName || !date) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: prayerName and date.',
+      });
+    }
+
+    if (!isValidDateKey(date)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid date format. Expected YYYY-MM-DD.',
+      });
+    }
+
+    const normalizedPrayer = normalizePrayerName(prayerName);
+    const userTimezone = await resolveUserTimezone(userId, req, prisma);
+    const reqNow = getRequestNow(req);
+    const todayStr = getLocalDateKey(reqNow, userTimezone);
+
+    // Qada cannot be made for future dates
+    if (date > todayStr) {
+      return res.status(400).json({
+        success: false,
+        error: 'Cannot record Qada for a future date.',
+      });
+    }
+
+    // Upsert prayer record as Qada
+    const updated = await prisma.prayerLog.upsert({
+      where: {
+        userId_prayerName_date: {
+          userId,
+          prayerName: normalizedPrayer,
+          date,
+        },
+      },
+      create: {
+        userId,
+        prayerName: normalizedPrayer,
+        date,
+        status: 'qada',
+        qadaCompletedAt: reqNow,
+        notes: notes ? String(notes).trim() : 'Offered as Qada.',
+        loggedAt: reqNow,
+      },
+      update: {
+        status: 'qada',
+        qadaCompletedAt: reqNow,
+        notes: notes ? String(notes).trim() : undefined,
+        loggedAt: reqNow,
+      },
+    });
+
+    const hadithInfo = getHadithByStatus('qada');
+
+    return res.status(200).json({
+      success: true,
+      message: `Successfully recorded Qada for ${normalizedPrayer} (${date}). May Allah accept your prayer.`,
+      data: {
+        log: updated,
+        hadith: hadithInfo.hadith,
+      },
+    });
+  } catch (err) {
+    next(err);
+  }
+}
+
+/**
+ * GET /api/prayers/qada/pending
+ * Retrieve all overdue missed prayers awaiting Qada for the authenticated user
+ */
+export async function getPendingQadaPrayers(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const missedPrayers = await prisma.prayerLog.findMany({
+      where: {
+        userId,
+        status: 'missed',
+      },
+      orderBy: [{ date: 'desc' }, { prayerName: 'asc' }],
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: missedPrayers.length,
+      data: missedPrayers,
+    });
+  } catch (err) {
+    next(err);
+  }
+}

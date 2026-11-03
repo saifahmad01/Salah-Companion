@@ -115,6 +115,37 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
   const [backendData, setBackendData] = useState<BackendProgressSummary | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [refreshing, setRefreshing] = useState<boolean>(false)
+  const [pendingQadaList, setPendingQadaList] = useState<Array<{ id: string; prayerName: string; date: string; notes?: string }>>([])
+  const [qadaLoadingId, setQadaLoadingId] = useState<string | null>(null)
+  const [qadaSuccessMessage, setQadaSuccessMessage] = useState<string | null>(null)
+
+  const fetchPendingQada = useCallback(async () => {
+    try {
+      const res = await salahApi.getPendingQadaPrayers()
+      if (res && res.success && Array.isArray(res.data)) {
+        setPendingQadaList(res.data)
+      }
+    } catch (e) {
+      console.warn('[ProgressScreen] Error fetching pending Qada:', e)
+    }
+  }, [])
+
+  const handlePerformQada = async (prayerName: string, date: string, id: string) => {
+    try {
+      setQadaLoadingId(id)
+      setQadaSuccessMessage(null)
+      const res = await salahApi.recordQadaPrayer({ prayerName, date })
+      if (res && res.success) {
+        setQadaSuccessMessage(res.message || `Qada recorded for ${prayerName} (${date}).`)
+        await Promise.all([fetchProgress(true), fetchPendingQada()])
+      }
+    } catch (err: any) {
+      console.error('[ProgressScreen] Error recording Qada:', err)
+      alert(err.message || 'Failed to record Qada.')
+    } finally {
+      setQadaLoadingId(null)
+    }
+  }
 
   // Local fallback stats
   const localStats = useMemo(() => {
@@ -683,6 +714,86 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
               </span>
             </div>
           </div>
+        </div>
+
+        {/* QADA RECOVERY & ACTION SECTION */}
+        <div className="w-full rounded-[24px] bg-white border border-[#EDE8DC] p-4 sm:p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-purple-100 text-purple-700 flex items-center justify-center">
+                <RotateCcw className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-[14px] font-bold text-[#14261E]">
+                  Qada Management & Recovery (قضا کی ادائیگی)
+                </h3>
+                <p className="text-[11px] text-stone-500">
+                  Perform and record missed prayers to fulfill your spiritual obligations.
+                </p>
+              </div>
+            </div>
+            {pendingQadaList.length > 0 && (
+              <span className="px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs font-bold border border-purple-200">
+                {pendingQadaList.length} Awaiting Qada
+              </span>
+            )}
+          </div>
+
+          {qadaSuccessMessage && (
+            <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
+              <span>{qadaSuccessMessage}</span>
+              <button
+                type="button"
+                onClick={() => setQadaSuccessMessage(null)}
+                className="text-emerald-600 hover:text-emerald-900 font-bold ml-2 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {pendingQadaList.length === 0 ? (
+            <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/60 text-center text-xs text-stone-600">
+              <span className="text-base block mb-1">✨ Alhamdulillah!</span>
+              No unfulfilled missed prayers currently recorded. Keep up your punctual habit!
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+              {pendingQadaList.slice(0, 10).map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between p-3 rounded-2xl bg-[#FAF5FF] border border-[#E9D5FF] gap-3"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-xs text-purple-950 capitalize">{item.prayerName}</span>
+                      <span className="text-[10.5px] text-purple-700 font-mono bg-purple-100/70 px-1.5 py-0.5 rounded">
+                        {item.date}
+                      </span>
+                    </div>
+                    {item.notes && (
+                      <p className="text-[10px] text-stone-500 truncate mt-0.5">{item.notes}</p>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={qadaLoadingId === item.id}
+                    onClick={() => handlePerformQada(item.prayerName, item.date, item.id)}
+                    className="flex-shrink-0 px-3 py-1.5 rounded-xl bg-purple-700 hover:bg-purple-800 active:scale-95 text-white text-xs font-bold transition shadow-xs cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <RotateCcw className={`w-3 h-3 ${qadaLoadingId === item.id ? 'animate-spin' : ''}`} />
+                    <span>{qadaLoadingId === item.id ? 'Recording...' : 'Mark as Qada'}</span>
+                  </button>
+                </div>
+              ))}
+              {pendingQadaList.length > 10 && (
+                <p className="text-[10.5px] text-stone-400 text-center pt-1">
+                  Showing top 10 of {pendingQadaList.length} pending Qada prayers.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* ROW 3: Prayer Completion Trends & Calendar Grid */}
