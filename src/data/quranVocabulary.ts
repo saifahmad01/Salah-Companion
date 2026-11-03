@@ -4,12 +4,16 @@ export interface QuranWord {
   arabic: string;
   transliteration: string;
   meaning: string;
+  meaningUrdu?: string;
+  meaningEnglish?: string;
   partOfSpeech: string;
   category: string;
   difficulty: 'Beginner' | 'Intermediate' | 'Advanced';
+  repeats?: string | number;
   surahAyahRef: string;
   verseArabic: string;
   verseEnglish: string;
+  verseRomanUrdu?: string;
 }
 
 export interface UserWordProgress {

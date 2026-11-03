@@ -59,3 +59,8 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Large local PDFs
+Top 600 Words of the Quran.pdf
+*.pdf
+!public/**/*.pdf

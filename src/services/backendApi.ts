@@ -776,6 +776,52 @@ export const salahApi = {
   async getHealth(): Promise<{ success: boolean; status: string; service?: string; database?: any }> {
     return await fetchWithAuth('/health', { method: 'GET' });
   },
+
+  /**
+   * ============================================================================
+   * Personal Quran Reading Tracker & Vocabulary Progress
+   * ============================================================================
+   */
+  async logQuranReading(payload: {
+    date?: string;
+    surahName: string;
+    startPage: number;
+    endPage: number;
+    startRuku: number;
+    endRuku: number;
+    notes?: string;
+  }): Promise<{ success: boolean; data: QuranReadingSession; message?: string }> {
+    return await fetchWithAuth('/quran/reading', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async getQuranReadingDashboard(): Promise<{ success: boolean; data: QuranReadingDashboardData }> {
+    return await fetchWithAuth('/quran/reading', { method: 'GET' });
+  },
+
+  async deleteQuranReadingSession(id: string): Promise<{ success: boolean; message: string }> {
+    return await fetchWithAuth(`/quran/reading/${id}`, { method: 'DELETE' });
+  },
+
+  async getQuranVocabularyProgress(): Promise<{ success: boolean; data: VocabularyProgressData }> {
+    return await fetchWithAuth('/quran/vocabulary/progress', { method: 'GET' });
+  },
+
+  async updateQuranWordProgress(wordId: number, payload: { isLearned?: boolean; isBookmarked?: boolean }): Promise<{ success: boolean; data: any }> {
+    return await fetchWithAuth(`/quran/vocabulary/progress/${wordId}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async batchSyncQuranWordProgress(updates: Array<{ wordId: number; isLearned?: boolean; isBookmarked?: boolean }>): Promise<{ success: boolean; count: number }> {
+    return await fetchWithAuth('/quran/vocabulary/progress/batch', {
+      method: 'POST',
+      body: JSON.stringify({ updates }),
+    });
+  },
 };
 
 export interface AdminOverviewData {
@@ -858,6 +904,15 @@ export const adminApi = {
   },
 };
 
+export const quranApi = {
+  logQuranReading: salahApi.logQuranReading,
+  getQuranReadingDashboard: salahApi.getQuranReadingDashboard,
+  deleteQuranReadingSession: salahApi.deleteQuranReadingSession,
+  getQuranVocabularyProgress: salahApi.getQuranVocabularyProgress,
+  updateQuranWordProgress: salahApi.updateQuranWordProgress,
+  batchSyncQuranWordProgress: salahApi.batchSyncQuranWordProgress,
+};
+
 export interface NotificationPreferences {
   userId?: string;
   prayerStartEnabled: boolean;
@@ -889,4 +944,50 @@ export interface NotificationHistoryItem {
   pushSent: boolean;
   deliveredAt: string;
 }
+
+export interface QuranReadingSession {
+  id: string;
+  userId: string;
+  date: string;
+  surahName: string;
+  startPage: number;
+  endPage: number;
+  startRuku: number;
+  endRuku: number;
+  pagesRead: number;
+  rukusRead: number;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface QuranReadingDashboardData {
+  stats: {
+    totalPagesRead: number;
+    totalRukusRead: number;
+    totalSessions: number;
+    todayPagesRead: number;
+    todayRukusRead: number;
+  };
+  lastReadingSession: {
+    id: string;
+    date: string;
+    surahName: string;
+    lastPage: number;
+    lastRuku: number;
+    pagesRead: number;
+    notes?: string | null;
+  } | null;
+  history: QuranReadingSession[];
+  historyGrouped: Record<string, QuranReadingSession[]>;
+}
+
+export interface VocabularyProgressData {
+  progressMap: Record<number, { isLearned: boolean; isBookmarked: boolean; reviewCount: number; lastReviewed?: string }>;
+  learnedCount: number;
+  bookmarkedCount: number;
+  totalWords: number;
+  completionPercent: number;
+}
+
 

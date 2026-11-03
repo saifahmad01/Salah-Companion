@@ -1287,6 +1287,7 @@ export const AppDashboard = () => {
             ) : (
             <HadithScreen
               onBack={() => setActiveTab('home')}
+              onBackToQuran={() => setQuranViewMode('quran')}
               onOpenFullHadith={handleOpenHadithWithData}
               gregorianDateStr={gregorianDateStr}
               hijriDateStr={hijriDateStr}

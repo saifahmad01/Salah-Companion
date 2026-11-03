@@ -16,6 +16,7 @@ import { HadithLearningModule } from './HadithLearningModule'
 
 interface HadithScreenProps {
   onBack: () => void
+  onBackToQuran?: () => void
   onOpenFullHadith: (hadithData?: DailyHadith) => void
   gregorianDateStr: string
   hijriDateStr: string
@@ -25,6 +26,7 @@ interface HadithScreenProps {
 
 export const HadithScreen: React.FC<HadithScreenProps> = ({
   onBack,
+  onBackToQuran,
   onOpenFullHadith,
   gregorianDateStr,
   hijriDateStr,
@@ -67,14 +69,26 @@ export const HadithScreen: React.FC<HadithScreenProps> = ({
 
         {/* Top Navigation Row */}
         <div className="relative z-10 flex items-center justify-between pt-1 pb-2">
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Back to home"
-            className="w-9 h-9 rounded-full bg-white/90 hover:bg-white border border-[#E4E0D6] shadow-xs flex items-center justify-center text-[#1C2C24] active:scale-95 transition cursor-pointer"
-          >
-            <ChevronLeft className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onBackToQuran || onBack}
+              aria-label={onBackToQuran ? 'Back to Quran' : 'Back to home'}
+              className="w-9 h-9 rounded-full bg-white/90 hover:bg-white border border-[#E4E0D6] shadow-xs flex items-center justify-center text-[#1C2C24] active:scale-95 transition cursor-pointer"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            {onBackToQuran && (
+              <button
+                type="button"
+                onClick={onBackToQuran}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#064E3B] text-white text-xs font-semibold shadow-xs hover:bg-[#085a44] transition active:scale-95 cursor-pointer"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-[#E2B755]" />
+                <span>Back to Quran</span>
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <button
               type="button"

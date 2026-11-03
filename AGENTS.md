@@ -364,6 +364,8 @@ The database is managed via Prisma schema (`server/prisma/schema.prisma`) target
 erDiagram
     User ||--o{ PrayerLog : "logs"
     User ||--o{ DeedLog : "completes"
+    User ||--o{ QuranReadingLog : "records"
+    User ||--o{ UserWordProgress : "studies"
     User ||--o| NotificationPreference : "configures"
     User ||--o{ PushSubscription : "registers"
     User ||--o{ NotificationLog : "receives"
@@ -427,6 +429,34 @@ erDiagram
         String title "Nullable"
         Boolean completed "Default: true"
         DateTime createdAt
+    }
+
+    QuranReadingLog {
+        String id PK "UUID"
+        String userId FK "Cascade delete"
+        String date "YYYY-MM-DD"
+        String surahName "Name of Surah"
+        Int startPage "1..604"
+        Int endPage "1..604"
+        Int startRuku "Starting Ruku"
+        Int endRuku "Ending Ruku"
+        Int pagesRead "Derived: endPage - startPage + 1"
+        Int rukusRead "Derived: endRuku - startRuku + 1"
+        String notes "Nullable"
+        DateTime createdAt
+        DateTime updatedAt
+    }
+
+    UserWordProgress {
+        String id PK "UUID"
+        String userId FK "Cascade delete"
+        Int wordId "1..600"
+        Boolean isLearned "Default: false"
+        Boolean isBookmarked "Default: false"
+        Int reviewCount "Default: 0"
+        DateTime lastReviewedAt "Nullable"
+        DateTime createdAt
+        DateTime updatedAt
     }
 
     NotificationPreference {
@@ -688,9 +718,19 @@ Salah completion is permitted **strictly for today's local calendar date**.
 ## 14. Quran and Hadith Integration
 
 ### Quran Reader & Vocabulary Trainer
+- **Personal Quran Reading Tracker ("Log Today's Quran Reading"):**
+  - Authenticated logging of reading sessions (`POST /api/quran/reading`) with reading date, Surah name and number, starting and ending page numbers (1–604), starting and ending Ruku numbers, and personal reflection notes.
+  - Automatically unifies with daily deeds by marking the `quran` deed in `deed_logs` to maintain daily Sunnah habit streaks.
+  - Comprehensive dashboard (`GET /api/quran/reading`) with 4 summary metric cards (Total Pages Read, Total Rukus Completed, Total Sessions, Today's Progress), a "Continue Reading" hero card with last position jump, and date-grouped historical recitation logs with deletion capability (`DELETE /api/quran/reading/:id`).
+- **600 Essential Arabic Quran Vocabulary Words (Al Hidaya Curriculum):**
+  - Fully authenticated extracted dataset from the author's verified master curriculum slides (`Top 600 Words of the Quran.pdf`), accounting for ~82% of all repeated Quranic vocabulary.
+  - Includes authentic Arabic calligraphy and script, phonetic English transliterations, English meanings, Roman Urdu meanings (`meaningUrdu`), repeat frequencies in the Holy Quran, grammatical classifications, Surah:Ayah references, and full contextual verse translations in Arabic, English, and Roman Urdu.
+  - User-specific learning and bookmark tracking (`GET /api/quran/vocabulary/progress`, `PUT /api/quran/vocabulary/progress/:wordId`, and `POST /api/quran/vocabulary/progress/batch`) with offline IndexedDB synchronization and real-time completion percentages (`X / 600 Words Learned`).
+- **Seamless Quran ↔ Hadith Navigation:**
+  - Clear bi-directional switching between Quran and Hadith modules.
+  - When opening Hadith from Quran, a prominent "← Back to Quran" pill is displayed and the hardware back navigation returns to the Quran view while strictly preserving reading tab state, last-read page, and scroll offset.
 - **Offline Roman Urdu/Hindi PDF:** The complete 138 MB Quran PDF (`Quran Roman Urdu Hindi .pdf`) is served on-demand and stored in the browser's IndexedDB (`salah_offline_quran_db`) via chunked streaming readers (`offlineQuranService.ts`).
 - **Workbox Bypass:** Vite PWA configuration strictly excludes `**/*.pdf` from service worker precaching to preserve mobile bandwidth and storage.
-- **600 Essential Words:** Verified dataset (`src/data/quranVocabulary600.json`) categorized into 11 spiritual domains across 3 difficulty tiers (Beginner, Intermediate, Advanced) with Arabic text, transliteration, English and Hindi meanings, Surah references, and bookmarking.
 
 ### Dual Hadith Architecture
 1. **Status-Tailored Hadiths (`server/src/services/hadithService.js`):**

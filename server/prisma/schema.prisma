@@ -39,6 +39,8 @@ model User {
   // Relations
   prayerLogs              PrayerLog[]
   deedLogs                DeedLog[]
+  quranReadingLogs        QuranReadingLog[]
+  wordProgress            UserWordProgress[]
 
   @@index([email])
   @@index([verificationTokenHash])
@@ -85,6 +87,49 @@ model DeedLog {
   @@unique([userId, deedType, date])
   @@index([userId, date])
   @@map("deed_logs")
+}
+
+// ----------------------------------------------------------------------------
+// Personal Quran Reading Log Model
+// ----------------------------------------------------------------------------
+model QuranReadingLog {
+  id           String   @id @default(uuid())
+  userId       String   @map("user_id")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date         String   // "YYYY-MM-DD"
+  surahName    String   @map("surah_name")
+  startPage    Int      @map("start_page")
+  endPage      Int      @map("end_page")
+  startRuku    Int      @map("start_ruku")
+  endRuku      Int      @map("end_ruku")
+  pagesRead    Int      @map("pages_read") // (endPage - startPage + 1)
+  rukusRead    Int      @map("rukus_read") // (endRuku - startRuku + 1)
+  notes        String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, date])
+  @@map("quran_reading_logs")
+}
+
+// ----------------------------------------------------------------------------
+// User Quranic Vocabulary Progress (Top 600 Words)
+// ----------------------------------------------------------------------------
+model UserWordProgress {
+  id           String    @id @default(uuid())
+  userId       String    @map("user_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  wordId       Int       @map("word_id") // 1 to 600
+  isLearned    Boolean   @default(false) @map("is_learned")
+  isBookmarked Boolean   @default(false) @map("is_bookmarked")
+  reviewCount  Int       @default(0) @map("review_count")
+  lastReviewed DateTime? @map("last_reviewed")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@unique([userId, wordId])
+  @@index([userId])
+  @@map("user_word_progress")
 }
 
 // ----------------------------------------------------------------------------
