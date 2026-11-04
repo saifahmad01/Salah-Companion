@@ -92,10 +92,58 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false)
 
-  // Fit Mode: 'page' (shows 100% of the page without scrolling) vs 'width' (fills screen horizontally)
-  const [fitMode, setFitMode] = useState<'page' | 'width'>('page')
+  // Fit Mode: 'width' (fills screen horizontally with balanced margins) vs 'page' (shows 100% of the page without scrolling)
+  // On mobile portrait, 'width' mode provides the ideal readable book experience with balanced margins
+  // On desktop / landscape, 'page' mode fits the complete page within viewport height
+  const [fitMode, setFitMode] = useState<'page' | 'width'>(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 768 && window.innerHeight >= window.innerWidth ? 'width' : 'page'
+    }
+    return 'width'
+  })
   // User zoom multiplier (1.0 = 100%, 1.25 = 125%, 1.5 = 150%, 2.0 = 200%)
   const [userZoom, setUserZoom] = useState<number>(1.0)
+
+  // Smooth drag-to-pan handlers for desktop / mouse panning when zoomed
+  const isDraggingRef = useRef<boolean>(false)
+  const dragStartPosRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number }>({
+    x: 0,
+    y: 0,
+    scrollLeft: 0,
+    scrollTop: 0,
+  })
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return
+    if (!scrollContainerRef.current) return
+    const container = scrollContainerRef.current
+    if (
+      canvasDisplaySize.width > container.clientWidth ||
+      canvasDisplaySize.height > container.clientHeight ||
+      userZoom > 1.0
+    ) {
+      isDraggingRef.current = true
+      dragStartPosRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        scrollLeft: container.scrollLeft,
+        scrollTop: container.scrollTop,
+      }
+    }
+  }
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingRef.current || !scrollContainerRef.current) return
+    e.preventDefault()
+    const dx = e.clientX - dragStartPosRef.current.x
+    const dy = e.clientY - dragStartPosRef.current.y
+    scrollContainerRef.current.scrollLeft = dragStartPosRef.current.scrollLeft - dx
+    scrollContainerRef.current.scrollTop = dragStartPosRef.current.scrollTop - dy
+  }
+
+  const handleMouseUp = () => {
+    isDraggingRef.current = false
+  }
   // Display dimensions for canvas CSS styling
   const [canvasDisplaySize, setCanvasDisplaySize] = useState<{ width: number; height: number }>({
     width: 0,
@@ -246,12 +294,17 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
         const containerWidth = container.clientWidth || window.innerWidth || 800
         const containerHeight = container.clientHeight || window.innerHeight || 600
 
-        // Responsive padding around page
-        const paddingX = window.innerWidth < 640 ? 12 : 24
-        const paddingY = window.innerWidth < 640 ? 12 : 24
+        // Balanced, comfortable margins on left and right:
+        // Very small phones (<360px): 12px each side (24px total)
+        // Standard mobile (<640px): 16px each side (32px total)
+        // Tablet/Desktop (>=640px): 24px each side (48px total)
+        const isNarrow = window.innerWidth < 360
+        const isMobile = window.innerWidth < 640
+        const horizontalMargin = isNarrow ? 12 : isMobile ? 16 : 24
+        const verticalMargin = isMobile ? 12 : 20
 
-        const availWidth = Math.max(280, containerWidth - paddingX)
-        const availHeight = Math.max(300, containerHeight - paddingY)
+        const availWidth = Math.max(240, containerWidth - horizontalMargin * 2)
+        const availHeight = Math.max(240, containerHeight - verticalMargin * 2)
 
         const unscaledViewport = page.getViewport({ scale: 1.0 })
 
@@ -263,7 +316,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
           const scaleY = availHeight / unscaledViewport.height
           baseScale = Math.min(scaleX, scaleY)
         } else {
-          // Fit to width: page width matches container width, smooth vertical scroll
+          // Fit to width: page width matches availWidth exactly, allowing comfortable reading with balanced side margins
           baseScale = availWidth / unscaledViewport.width
         }
 
@@ -272,14 +325,14 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
         // Device pixel ratio for high-DPI retina rendering (up to 3.0 for ultra-sharp mobile displays)
         const pixelRatio = window.devicePixelRatio || 1
-        const outputScale = Math.max(1, Math.min(3.0, pixelRatio))
+        const outputScale = Math.max(1.5, Math.min(3.0, pixelRatio))
 
         // Viewport scaled for the high-resolution hardware bitmap
         const renderViewport = page.getViewport({ scale: effectiveScale * outputScale })
 
-        // CSS display layout dimensions (independent of device pixel ratio)
-        const displayWidth = Math.floor(renderViewport.width / outputScale)
-        const displayHeight = Math.floor(renderViewport.height / outputScale)
+        // CSS display layout dimensions (strictly maintains page aspect ratio)
+        const displayWidth = Math.round(unscaledViewport.width * effectiveScale)
+        const displayHeight = Math.round(unscaledViewport.height * effectiveScale)
 
         // Set hardware canvas dimensions
         canvas.width = Math.floor(renderViewport.width)
@@ -349,12 +402,14 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
         if (pdfDoc && currentPage > 0) {
           renderPage(currentPage)
         }
-      }, 180)
+      }, 150)
     }
     window.addEventListener('resize', handleResize)
+    window.addEventListener('orientationchange', handleResize)
     return () => {
       clearTimeout(timer)
       window.removeEventListener('resize', handleResize)
+      window.removeEventListener('orientationchange', handleResize)
     }
   }, [pdfDoc, currentPage, renderPage])
 
@@ -472,6 +527,10 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
   const handleResetZoom = () => {
     setUserZoom(1.0)
+  }
+
+  const handleSetZoom = (zoom: number) => {
+    setUserZoom(zoom)
   }
 
   // Fullscreen toggle
@@ -722,6 +781,7 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
         onZoomIn={handleZoomIn}
         onZoomOut={handleZoomOut}
         onResetZoom={handleResetZoom}
+        onSetZoom={handleSetZoom}
         onOpenBookmarksDrawer={() => setIsBookmarksDrawerOpen(true)}
         onOpenAddBookmark={handleOpenAddBookmark}
         onDownloadOffline={handleDownloadForOffline}
@@ -797,7 +857,15 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       {/* ======================================================== */}
       <main
         ref={scrollContainerRef}
-        className="flex-1 overflow-auto bg-[#03120D] relative overscroll-contain select-none"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        className={`flex-1 overflow-auto bg-[#03120D] relative overscroll-contain select-none ${
+          userZoom > 1.0 || (canvasDisplaySize.width > (scrollContainerRef.current?.clientWidth || 0))
+            ? 'cursor-grab active:cursor-grabbing'
+            : ''
+        }`}
         style={{
           WebkitOverflowScrolling: 'touch',
           touchAction: 'pan-x pan-y',
@@ -832,13 +900,26 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
         )}
 
         {/* Centering Wrapper: Guarantees full page margins are visible without cropping */}
-        <div className="min-h-full min-w-full flex items-center justify-center p-2 sm:p-4 md:p-6">
+        <div
+          className="min-h-full min-w-full flex items-center justify-center"
+          style={{
+            padding: `${window.innerWidth < 640 ? 12 : 20}px ${
+              window.innerWidth < 360 ? 12 : window.innerWidth < 640 ? 16 : 24
+            }px`,
+            boxSizing: 'border-box',
+            width:
+              canvasDisplaySize.width > (scrollContainerRef.current?.clientWidth || 0)
+                ? 'max-content'
+                : '100%',
+          }}
+        >
           <div
             ref={canvasWrapperRef}
             className="relative shadow-2xl rounded-sm overflow-hidden bg-[#07241A] border border-[#1A4B3A]/60 flex-shrink-0 transition-shadow duration-150"
             style={{
               width: canvasDisplaySize.width ? `${canvasDisplaySize.width}px` : 'auto',
               height: canvasDisplaySize.height ? `${canvasDisplaySize.height}px` : 'auto',
+              margin: 'auto',
             }}
           >
             <canvas ref={canvasRef} className="block w-full h-full" />
