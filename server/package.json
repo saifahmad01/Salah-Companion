@@ -7,7 +7,7 @@
   "scripts": {
     "build": "prisma generate",
     "postinstall": "prisma generate",
-    "start": "node src/server.js",
+    "start": "node scripts/applyProductionMigrations.js && node src/server.js",
     "dev": "node --watch src/server.js",
     "db:setup": "node scripts/initSupabaseTables.js",
     "db:migrate:data": "node scripts/migrateSqliteToSupabase.js",
@@ -15,9 +15,10 @@
     "db:studio": "prisma studio --schema=prisma/schema.sqlite.prisma",
     "db:clean": "node scripts/dbManager.js clear-test",
     "db:manage": "node scripts/dbManager.js",
-    "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/emailOtpAuth.test.js && node tests/passwordAuth.test.js && node tests/exitConfirmation.test.js && node tests/notificationService.test.js && node tests/weeklyPrayer.test.js && node tests/timingEnforcement.test.js && node tests/qiblaAndJumuah.test.js && node tests/salahAutomation.test.js && node tests/appVersion.test.js",
+    "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/emailOtpAuth.test.js && node tests/passwordAuth.test.js && node tests/exitConfirmation.test.js && node tests/notificationService.test.js && node tests/weeklyPrayer.test.js && node tests/timingEnforcement.test.js && node tests/qiblaAndJumuah.test.js && node tests/salahAutomation.test.js && node tests/appVersion.test.js && node tests/historicalCorrection.test.js",
     "test:timing": "node tests/timingEnforcement.test.js",
     "test:qibla": "node tests/qiblaAndJumuah.test.js",
+    "test:correction": "node tests/historicalCorrection.test.js",
     "db:migrate": "node scripts/applyProductionMigrations.js",
     "db:migrate:deploy": "node scripts/applyProductionMigrations.js"
   },

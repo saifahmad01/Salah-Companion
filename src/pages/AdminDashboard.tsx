@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { AdminCorrectionRequestsView } from '../components/admin/AdminCorrectionRequestsView';
 import {
   Users,
   Smartphone,
@@ -26,6 +27,7 @@ import {
   X,
   Edit3,
   History,
+  ShieldAlert,
 } from 'lucide-react';
 import {
   adminApi,
@@ -71,7 +73,7 @@ export const AdminDashboard: React.FC = () => {
   const [salahAnalytics, setSalahAnalytics] = useState<AdminSalahAnalyticsData | null>(null);
   const [adminPrayers, setAdminPrayers] = useState<AdminPrayerLogItem[]>([]);
   const [prayerCorrections, setPrayerCorrections] = useState<AdminPrayerCorrectionItem[]>([]);
-  const [salahViewMode, setSalahViewMode] = useState<'records' | 'corrections'>('records');
+  const [salahViewMode, setSalahViewMode] = useState<'records' | 'corrections' | 'requests'>('records');
   const [salahSearch, setSalahSearch] = useState('');
   const [salahPrayerFilter, setSalahPrayerFilter] = useState('');
   const [salahStatusFilter, setSalahStatusFilter] = useState('');
@@ -214,7 +216,7 @@ export const AdminDashboard: React.FC = () => {
     } else if (activeTab === 'salah') {
       if (salahViewMode === 'records') {
         fetchAdminPrayers();
-      } else {
+      } else if (salahViewMode === 'corrections') {
         fetchPrayerCorrections();
       }
     }
@@ -444,8 +446,8 @@ export const AdminDashboard: React.FC = () => {
         >
           <BookOpen className="w-4 h-4" />
           <span>Quran Resources</span>
-        </button>
-
+        </button>
+
         <button
           onClick={() => setActiveTab('releases')}
           className={`py-3 px-4 text-xs font-semibold flex items-center gap-2 border-b-2 transition cursor-pointer whitespace-nowrap ${
@@ -866,10 +868,26 @@ export const AdminDashboard: React.FC = () => {
                   <History className="w-3.5 h-3.5" />
                   <span>Audit Trail</span>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSalahViewMode('requests');
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                    salahViewMode === 'requests'
+                      ? 'bg-amber-400 text-[#072118] shadow-xs'
+                      : 'text-emerald-300/70 hover:text-white'
+                  }`}
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>Correction Requests</span>
+                </button>
               </div>
             </div>
 
-            {salahViewMode === 'records' ? (
+            {salahViewMode === 'requests' ? (
+              <AdminCorrectionRequestsView />
+            ) : salahViewMode === 'records' ? (
               <>
                 {/* Search & Filters Bar */}
                 <form onSubmit={handleSalahFilterSubmit} className="flex flex-wrap items-center gap-2.5 text-xs">

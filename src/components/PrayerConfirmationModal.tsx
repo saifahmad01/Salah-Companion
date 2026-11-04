@@ -87,8 +87,10 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
 
   if (!isOpen || !prayer) return null
 
-  const prayerKey = prayer.id.toLowerCase()
+  const rawKey = prayer.id ? String(prayer.id).toLowerCase().trim() : 'fajr'
+  const prayerKey = (rawKey === 'juma' || rawKey === 'jumuah' || rawKey === "jumu'ah" || rawKey === 'jummah') ? 'dhuhr' : rawKey
   const hadith = VERIFIED_PRAYER_HADITHS[prayerKey] || VERIFIED_PRAYER_HADITHS.fajr
+  const prayerDisplayName = prayer.name || prayerKey.charAt(0).toUpperCase() + prayerKey.slice(1)
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape' && !isSubmitting && !isExecutingRef.current) {
@@ -200,7 +202,7 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
             </div>
             <div className="min-w-0">
               <h3 id="confirm-prayer-title" className="text-[17px] font-bold text-[#14261E] leading-tight truncate">
-                {isCorrection ? `Update ${prayer.name} Salah` : `Confirm ${prayer.name} Salah`}
+                {isCorrection ? `Update ${prayerDisplayName} Salah` : `Confirm ${prayerDisplayName} Salah`}
               </h3>
               <p className="text-[11px] text-[#55675D] truncate">
                 {isCorrection
@@ -270,8 +272,8 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
           <div className="flex items-center justify-between">
             <p className="text-xs sm:text-[13px] font-bold text-[#14261E]">
               {isCorrection
-                ? `Confirm correction for ${prayer.name}?`
-                : `Have you completed your ${prayer.name} Salah?`}
+                ? `Confirm correction for ${prayerDisplayName}?`
+                : `Have you completed your ${prayerDisplayName} Salah?`}
             </p>
             {formattedDateStr && (
               <span className="text-[10.5px] font-medium text-stone-500 flex items-center gap-1">

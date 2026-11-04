@@ -191,6 +191,27 @@ CREATE TABLE IF NOT EXISTS admin_prayer_corrections (
 CREATE INDEX IF NOT EXISTS idx_admin_corrections_user ON admin_prayer_corrections(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_admin_corrections_admin ON admin_prayer_corrections(admin_id);
 
+CREATE TABLE IF NOT EXISTS salah_correction_requests (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  prayer_log_id TEXT,
+  prayer_name TEXT NOT NULL,
+  prayer_date TEXT NOT NULL,
+  previous_status TEXT NOT NULL DEFAULT 'missed',
+  requested_status TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  notes TEXT,
+  status TEXT NOT NULL DEFAULT 'PENDING_APPROVAL',
+  reviewed_by TEXT,
+  reviewed_at TEXT,
+  rejection_reason TEXT,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (prayer_log_id) REFERENCES prayer_logs(id) ON DELETE SET NULL,
+  FOREIGN KEY (reviewed_by) REFERENCES users(id) ON DELETE SET NULL
+);
 
-
-
+CREATE INDEX IF NOT EXISTS idx_salah_corrections_user ON salah_correction_requests(user_id, status);
+CREATE INDEX IF NOT EXISTS idx_salah_corrections_status ON salah_correction_requests(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_salah_corrections_prayer_date ON salah_correction_requests(prayer_date);

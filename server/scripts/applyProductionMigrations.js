@@ -76,6 +76,30 @@ CREATE TABLE IF NOT EXISTS "user_word_progress" (
   UNIQUE("user_id", "word_id")
 );
 CREATE INDEX IF NOT EXISTS "user_word_progress_user_id_idx" ON "user_word_progress"("user_id");
+
+-- 5. Ensure salah_correction_requests table exists
+CREATE TABLE IF NOT EXISTS "salah_correction_requests" (
+  "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  "user_id" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+  "prayer_log_id" TEXT REFERENCES "prayer_logs"("id") ON DELETE SET NULL,
+  "prayer_name" TEXT NOT NULL,
+  "prayer_date" TEXT NOT NULL,
+  "previous_status" TEXT NOT NULL DEFAULT 'missed',
+  "requested_status" TEXT NOT NULL,
+  "reason" TEXT NOT NULL,
+  "notes" TEXT,
+  "status" TEXT NOT NULL DEFAULT 'PENDING_APPROVAL',
+  "reviewed_by" TEXT REFERENCES "users"("id") ON DELETE SET NULL,
+  "reviewed_at" TIMESTAMPTZ,
+  "rejection_reason" TEXT,
+  "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS "idx_salah_corrections_user" ON "salah_correction_requests"("user_id", "status");
+CREATE INDEX IF NOT EXISTS "idx_salah_corrections_status" ON "salah_correction_requests"("status", "created_at");
+CREATE INDEX IF NOT EXISTS "idx_salah_corrections_prayer_date" ON "salah_correction_requests"("prayer_date");
+
 `;
 
 export async function applyProductionMigrations() {

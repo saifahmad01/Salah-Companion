@@ -8,10 +8,13 @@ import {
   Clock,
   RotateCcw,
   X,
+  ShieldAlert,
 } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { PrayerItem, PrayerStatus } from '../types'
 import { salahApi, authStorage } from '../services/backendApi'
+import { HistoricalCorrectionModal } from './HistoricalCorrectionModal'
+import { MyCorrectionRequestsModal } from './MyCorrectionRequestsModal'
 import {
   getIsoWeekDays,
   computeWeeklyStats,
@@ -64,6 +67,13 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
     prayerName: string
     status: string
   } | null>(null)
+  const [isCorrectionRequestsOpen, setIsCorrectionRequestsOpen] = useState(false)
+  const [correctionTargetPrayer, setCorrectionTargetPrayer] = useState<{
+    prayerId: string
+    prayerName: string
+    prayerDate: string
+    currentStatus: string
+  } | null>(null)
 
   const hasToken = !!authStorage.getToken()
   const { data: remoteWeeklyData, isLoading: isWeeklyLoading } = useQuery({
@@ -87,7 +97,7 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
         let dayCompleted = 0
         const localDayRecords = allPrayerRecords?.[day.date]
 
-        const mergedPrayers = day.prayers.map((p) => {
+        const mergedPrayers = (day.prayers || []).map((p) => {
           let status = p.status
           let isCompleted = p.isCompleted
 
@@ -465,6 +475,15 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
               </div>
 
               <div className="flex items-center gap-1.5 self-end sm:self-auto flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsCorrectionRequestsOpen(true)}
+                  className="text-[10px] font-semibold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-0.5 rounded-full transition active:scale-95 cursor-pointer flex items-center gap-1 shadow-2xs"
+                  title="View my Salah correction requests"
+                >
+                  <Clock className="w-3 h-3 text-amber-600" />
+                  <span>My Requests</span>
+                </button>
                 {!displayWeek.isCurrentWeek && (
                   <button
                     type="button"
@@ -866,6 +885,28 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
         </div>
       </div>
 
+      {/* Historical Correction Modal */}
+      {correctionTargetPrayer && (
+        <HistoricalCorrectionModal
+          isOpen={true}
+          onClose={() => setCorrectionTargetPrayer(null)}
+          prayerId={correctionTargetPrayer.prayerId}
+          prayerName={correctionTargetPrayer.prayerName}
+          prayerDate={correctionTargetPrayer.prayerDate}
+          currentStatus={correctionTargetPrayer.currentStatus}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ['my-correction-requests'] })
+            setIsCorrectionRequestsOpen(true)
+          }}
+        />
+      )}
+
+      {/* My Correction Requests Modal */}
+      <MyCorrectionRequestsModal
+        isOpen={isCorrectionRequestsOpen}
+        onClose={() => setIsCorrectionRequestsOpen(false)}
+      />
+
       {/* Interactive Weekly Prayer Status Dialog */}
       {selectedModalPrayer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs animate-fade-in">
@@ -915,11 +956,29 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
               return (
                 <>
                   {isPastDate && (
-                    <div className="p-2.5 rounded-xl bg-stone-100 border border-stone-200 text-stone-800 text-xs flex items-center gap-2 mb-2">
-                      <span className="text-sm">📜</span>
-                      <p className="text-[11px] leading-tight">
-                        Historical record (Read-Only). Past prayers cannot be modified through normal tracking.
-                      </p>
+                    <div className="space-y-2 mb-2">
+                      <div className="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/90 text-amber-950 text-xs flex items-center gap-2">
+                        <span className="text-sm">📜</span>
+                        <p className="text-[11px] leading-tight text-amber-900">
+                          Historical record (Read-Only). Changes to past dates require administrator verification.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCorrectionTargetPrayer({
+                            prayerId: selectedModalPrayer.prayerId,
+                            prayerName: selectedModalPrayer.prayerName,
+                            prayerDate: selectedModalPrayer.date,
+                            currentStatus: selectedModalPrayer.status,
+                          })
+                          setSelectedModalPrayer(null)
+                        }}
+                        className="w-full p-2.5 rounded-xl bg-[#0C4535] hover:bg-[#093529] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-xs transition cursor-pointer"
+                      >
+                        <ShieldAlert className="w-4 h-4 text-amber-400" />
+                        <span>Request Admin Correction (درستگی کی درخواست)</span>
+                      </button>
                     </div>
                   )}
 
