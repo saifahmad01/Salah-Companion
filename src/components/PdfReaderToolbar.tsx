@@ -180,15 +180,30 @@ export const PdfReaderToolbar: React.FC<PdfReaderToolbarProps> = ({
             </kbd>
           </button>
 
-          {/* 2. Bookmarks Trigger Button (Always directly accessible) */}
+          {/* 2a. Bookmark / Unbookmark Current Page */}
+          <button
+            type="button"
+            onClick={onOpenAddBookmark}
+            className={`flex items-center justify-center min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px] p-2 sm:p-2.5 rounded-xl border active:scale-95 transition cursor-pointer touch-target flex-shrink-0 ${
+              isCurrentPageBookmarked
+                ? 'bg-[#E2B755] text-[#051A13] border-[#E2B755] shadow-xs'
+                : 'bg-[#124232] hover:bg-[#185340] text-[#E2B755] border-[#235845]'
+            }`}
+            title={isCurrentPageBookmarked ? 'Page is bookmarked (Click to view or remove)' : 'Bookmark this page'}
+            aria-label="Bookmark page"
+          >
+            <Bookmark className="w-4 h-4" fill={isCurrentPageBookmarked ? 'currentColor' : 'none'} />
+          </button>
+
+          {/* 2b. Bookmarks Drawer Trigger Button */}
           <button
             type="button"
             onClick={onOpenBookmarksDrawer}
             className="relative flex items-center justify-center min-h-[40px] min-w-[40px] sm:min-h-[44px] sm:min-w-[44px] p-2 sm:p-2.5 rounded-xl bg-[#124232] hover:bg-[#185340] text-[#E2B755] border border-[#235845] active:scale-95 transition cursor-pointer touch-target flex-shrink-0"
-            title="View saved bookmarks"
-            aria-label="Bookmarks"
+            title="View saved bookmarks drawer"
+            aria-label="Bookmarks list"
           >
-            <Bookmark className="w-4 h-4" fill={isCurrentPageBookmarked ? 'currentColor' : 'none'} />
+            <Bookmark className="w-4 h-4 text-[#A0C4B2]" />
             {bookmarksCount > 0 && (
               <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-[#E2B755] text-[#051A13] text-[9.5px] font-bold flex items-center justify-center shadow-xs">
                 {bookmarksCount}
