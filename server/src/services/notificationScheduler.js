@@ -266,15 +266,23 @@ export function startNotificationScheduler() {
 
   console.log('[Scheduler] Salah Prayer Notification scheduler initialized (checking every 30s)');
 
-  // Run initial check immediately on server start (safely checks without duplicate hazard)
+  // Run initial check and 5-hour cleanup immediately on server start
   checkAndSendDueNotifications().catch((err) => {
     console.error('[Scheduler] Initial notification check failed:', err);
   });
+  cleanupExpiredCorrectionNotifications().catch(() => {});
 
+  let cycleCounter = 0;
   schedulerInterval = setInterval(() => {
+    cycleCounter++;
     checkAndSendDueNotifications().catch((err) => {
       console.error('[Scheduler] Error in periodic notification check:', err);
     });
+
+    // Run 5-hour correction notification cleanup every 5 minutes (every 10 cycles of 30s)
+    if (cycleCounter % 10 === 0) {
+      cleanupExpiredCorrectionNotifications().catch(() => {});
+    }
   }, CHECK_INTERVAL_MS);
 }
 
@@ -286,5 +294,46 @@ export function stopNotificationScheduler() {
     clearInterval(schedulerInterval);
     schedulerInterval = null;
     console.log('[Scheduler] Notification scheduler stopped.');
+  }
+}
+
+let isCleaningUpCorrections = false;
+
+/**
+ * Automatically cleans up resolved correction notifications and inbox messages after 5 hours
+ * Rules:
+ * - Approved and Rejected notifications are deleted after 5 hours
+ * - Pending requests are NEVER deleted
+ * - Historical records and admin audit trails remain completely intact
+ */
+export async function cleanupExpiredCorrectionNotifications() {
+  if (isCleaningUpCorrections) return;
+  isCleaningUpCorrections = true;
+
+  try {
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000);
+
+    // 1. Delete notification_logs for prayer_corrections older than 5 hours
+    const deleteNotifStmt = db.prepare(`
+      DELETE FROM notification_logs
+      WHERE (category = 'prayer_correction' OR reminder_type LIKE 'ADMIN_CORRECTION_%')
+        AND delivered_at < ?
+    `);
+    await deleteNotifStmt.run(fiveHoursAgo.toISOString());
+
+    // 2. Mark resolved requests older than 5 hours as user_dismissed
+    const dismissRequestsStmt = db.prepare(`
+      UPDATE salah_correction_requests
+      SET user_dismissed_at = ?
+      WHERE status IN ('APPROVED', 'REJECTED')
+        AND reviewed_at IS NOT NULL
+        AND reviewed_at < ?
+        AND user_dismissed_at IS NULL
+    `);
+    await dismissRequestsStmt.run(new Date().toISOString(), fiveHoursAgo.toISOString());
+  } catch (err) {
+    // Non-fatal if table or column is still preparing
+  } finally {
+    isCleaningUpCorrections = false;
   }
 }

@@ -2,6 +2,11 @@ import assert from 'node:assert/strict';
 import jwt from 'jsonwebtoken';
 import { config } from '../src/config/env.js';
 import { prisma } from '../src/db/prisma.js';
+import { db } from '../src/db/connection.js';
+import { cleanupExpiredCorrectionNotifications } from '../src/services/notificationScheduler.js';
+
+// Import server to ensure HTTP listener is running
+import '../src/server.js';
 
 const BASE_URL = process.env.TEST_API_URL || `http://localhost:${config.port || 8080}`;
 const JWT_SECRET = config.jwtSecret;
@@ -190,7 +195,6 @@ async function runTests() {
     // Test 7: Admin rejects a request with mandatory reason
     // ------------------------------------------------------------------------
     console.log('7. Testing admin rejection workflow...');
-    // Create another request for Asr
     const asrReqRes = await fetch(`${BASE_URL}/api/prayers/corrections/request`, {
       method: 'POST',
       headers: {
@@ -239,28 +243,186 @@ async function runTests() {
     assert.equal(asrLog, null, 'Rejected request must leave prayer_logs untouched');
     console.log('✓ Test 7 Passed: Admin rejection required reason and left prayer_logs untouched.');
 
-    console.log('\n🎉 ALL 7 HISTORICAL CORRECTION INTEGRATION TESTS PASSED SUCCESSFULLY!\n');
+    // ------------------------------------------------------------------------
+    // Test 8: User cannot delete pending correction request
+    // ------------------------------------------------------------------------
+    console.log('8. Testing that pending requests cannot be deleted by user...');
+    // Create a pending Maghrib request
+    const maghribReqRes = await fetch(`${BASE_URL}/api/prayers/corrections/request`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${userToken}`,
+      },
+      body: JSON.stringify({
+        prayerName: 'maghrib',
+        prayerDate: pastDate,
+        requestedStatus: 'on_time',
+        reason: 'Awaiting admin review test',
+      }),
+    });
+    const maghribData = await maghribReqRes.json();
+    const maghribId = maghribData.data.id;
+
+    // Attempt to delete pending request
+    const deletePendingRes = await fetch(`${BASE_URL}/api/prayers/corrections/${maghribId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    assert.equal(deletePendingRes.status, 400, 'Pending requests must return 400 on delete attempt');
+    const deletePendingData = await deletePendingRes.json();
+    assert.equal(deletePendingData.success, false);
+    console.log('✓ Test 8 Passed: Pending request cannot be deleted while awaiting review.');
+
+    // ------------------------------------------------------------------------
+    // Test 9: User manual deletion of approved/rejected request message
+    // ------------------------------------------------------------------------
+    console.log('9. Testing user manual deletion of approved request notification message...');
+    // Delete the approved Dhuhr request (requestId from Test 2 & 6)
+    const deleteApprovedRes = await fetch(`${BASE_URL}/api/prayers/corrections/${requestId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    const deleteApprovedData = await deleteApprovedRes.json();
+    assert.equal(deleteApprovedRes.status, 200, 'Deleting approved message must return 200 OK');
+    assert.equal(deleteApprovedData.success, true);
+
+    // Verify userDismissedAt is set in salah_correction_requests
+    const dismissedRequest = await prisma.salahCorrectionRequest.findUnique({
+      where: { id: requestId },
+    });
+    assert.notEqual(dismissedRequest, null, 'Database record must remain intact');
+    assert.notEqual(dismissedRequest.userDismissedAt, null, 'userDismissedAt must be populated');
+
+    // Verify prayer_logs remains INTACT
+    const preservedLog = await prisma.prayerLog.findFirst({
+      where: { userId: user.id, date: pastDate, prayerName: 'Dhuhr' },
+    });
+    assert.notEqual(preservedLog, null, 'Prayer log record must NOT be deleted');
+    assert.equal(preservedLog.status, 'on_time');
+
+    // Verify admin audit record remains INTACT
+    const preservedAudit = await prisma.adminPrayerCorrection.findFirst({
+      where: { userId: user.id, date: pastDate, prayerName: 'Dhuhr' },
+    });
+    assert.notEqual(preservedAudit, null, 'Admin audit history must NOT be deleted');
+
+    // Verify getMyCorrectionRequests now omits the deleted message
+    const afterDeleteMyReqRes = await fetch(`${BASE_URL}/api/prayers/corrections/my`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    const afterDeleteData = await afterDeleteMyReqRes.json();
+    const matchingItem = afterDeleteData.data.requests.find((r) => r.id === requestId);
+    assert.equal(matchingItem, undefined, 'Dismissed request must not appear in user list');
+    console.log('✓ Test 9 Passed: Manual delete soft-deleted user message while preserving prayer_logs and admin audit trail.');
+
+    // ------------------------------------------------------------------------
+    // Test 10: Automatic 5-hour cutoff for resolved requests in getMyCorrectionRequests
+    // ------------------------------------------------------------------------
+    console.log('10. Testing automatic 5-hour cutoff for resolved requests...');
+    // Create an Isha request and simulate it being approved 6 hours ago
+    const ishaRequest = await prisma.salahCorrectionRequest.create({
+      data: {
+        userId: user.id,
+        prayerName: 'Isha',
+        prayerDate: pastDate,
+        requestedStatus: 'on_time',
+        status: 'APPROVED',
+        reason: '5-hour cutoff test',
+        previousStatus: 'none',
+        reviewedAt: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
+        reviewedBy: admin.id,
+        userDismissedAt: null,
+      },
+    });
+
+    const cutoffCheckRes = await fetch(`${BASE_URL}/api/prayers/corrections/my`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+    });
+    const cutoffCheckData = await cutoffCheckRes.json();
+    const oldResolvedItem = cutoffCheckData.data.requests.find((r) => r.id === ishaRequest.id);
+    assert.equal(oldResolvedItem, undefined, 'Approved request older than 5 hours must be excluded from user list');
+
+    // Confirm that the pending Maghrib request is STILL included despite any age
+    const pendingStillIncluded = cutoffCheckData.data.requests.find((r) => r.id === maghribId);
+    assert.notEqual(pendingStillIncluded, undefined, 'Pending request must NEVER be excluded');
+    console.log('✓ Test 10 Passed: Resolved requests older than 5 hours are automatically hidden; pending requests remain visible.');
+
+    // ------------------------------------------------------------------------
+    // Test 11: Background cleanup scheduler job
+    // ------------------------------------------------------------------------
+    console.log('11. Testing background scheduler cleanup job...');
+    // Create notification_log for prayer correction older than 5 hours
+    const oldDeliveredAt = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString();
+    await db.prepare(`
+      INSERT INTO notification_logs (user_id, prayer_name, date, reminder_type, category, title, body, delivered_at)
+      VALUES (?, 'Isha', ?, 'ADMIN_CORRECTION_EXPIRED_TEST', 'prayer_correction', 'Approved', 'Your correction was approved', ?)
+    `).run(user.id, pastDate, oldDeliveredAt);
+
+    // Run the scheduler cleanup
+    await cleanupExpiredCorrectionNotifications();
+
+    // Verify the old notification log was deleted
+    const oldNotifCheck = await db.prepare(`
+      SELECT * FROM notification_logs
+      WHERE user_id = ? AND reminder_type = 'ADMIN_CORRECTION_EXPIRED_TEST'
+    `).all(user.id);
+    assert.equal(oldNotifCheck.length, 0, 'Notification logs older than 5 hours must be purged');
+
+    // Verify recent notification logs (< 5 hours old) are safely preserved
+    const recentNotifCheck = await db.prepare(`
+      SELECT * FROM notification_logs
+      WHERE user_id = ? AND category = 'prayer_correction'
+    `).all(user.id);
+    assert.equal(recentNotifCheck.length >= 1, true, 'Recent notifications under 5 hours must be preserved');
+
+    // Verify ishaRequest received user_dismissed_at
+    const updatedIshaRequest = await prisma.salahCorrectionRequest.findUnique({
+      where: { id: ishaRequest.id },
+    });
+    assert.notEqual(updatedIshaRequest.userDismissedAt, null, 'Old approved request must have user_dismissed_at set by scheduler');
+
+    // Verify maghrib pending request has userDismissedAt = null (never modified)
+    const intactMaghribRequest = await prisma.salahCorrectionRequest.findUnique({
+      where: { id: maghribId },
+    });
+    assert.equal(intactMaghribRequest.userDismissedAt, null, 'Pending request must remain untouched');
+    console.log('✓ Test 11 Passed: Background scheduler purges old notifications and marks resolved requests without touching pending ones.');
+
+    console.log('\n🎉 ALL 11 HISTORICAL CORRECTION & CLEANUP INTEGRATION TESTS PASSED SUCCESSFULLY!\n');
   } finally {
-    // Clean up test data
-    await prisma.salahCorrectionRequest.deleteMany({
-      where: { userId: { in: [user.id, admin.id] } },
-    });
-    await prisma.adminPrayerCorrection.deleteMany({
-      where: { userId: { in: [user.id, admin.id] } },
-    });
-    await prisma.prayerLog.deleteMany({
-      where: { userId: { in: [user.id, admin.id] } },
-    });
-    await prisma.notificationLog.deleteMany({
-      where: { userId: { in: [user.id, admin.id] } },
-    });
-    await prisma.user.deleteMany({
-      where: { id: { in: [user.id, admin.id] } },
-    });
+    // Clean up test data safely
+    try {
+      await prisma.salahCorrectionRequest.deleteMany({
+        where: { userId: { in: [user.id, admin.id] } },
+      });
+    } catch {}
+    try {
+      await prisma.adminPrayerCorrection.deleteMany({
+        where: { userId: { in: [user.id, admin.id] } },
+      });
+    } catch {}
+    try {
+      await prisma.prayerLog.deleteMany({
+        where: { userId: { in: [user.id, admin.id] } },
+      });
+    } catch {}
+    try {
+      await prisma.notificationLog.deleteMany({
+        where: { userId: { in: [user.id, admin.id] } },
+      });
+    } catch {}
+    try {
+      await prisma.user.deleteMany({
+        where: { id: { in: [user.id, admin.id] } },
+      });
+    } catch {}
   }
 }
 
-runTests().catch((err) => {
+runTests().then(() => {
+  process.exit(0);
+}).catch((err) => {
   console.error('Test execution failed:', err);
   process.exit(1);
 });

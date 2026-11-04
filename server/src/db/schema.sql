@@ -205,6 +205,7 @@ CREATE TABLE IF NOT EXISTS salah_correction_requests (
   reviewed_by TEXT,
   reviewed_at TEXT,
   rejection_reason TEXT,
+  user_dismissed_at TEXT,
   created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,

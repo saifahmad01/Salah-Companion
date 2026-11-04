@@ -333,10 +333,12 @@ model SalahCorrectionRequest {
   reviewer        User?       @relation("CorrectionRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
   reviewedAt      DateTime?   @map("reviewed_at")
   rejectionReason String?     @map("rejection_reason")
+  userDismissedAt DateTime?   @map("user_dismissed_at")
   createdAt       DateTime    @default(now()) @map("created_at")
   updatedAt       DateTime    @updatedAt @map("updated_at")
 
   @@index([userId, status])
+  @@index([userId, userDismissedAt])
   @@index([status, createdAt])
   @@index([prayerDate])
   @@map("salah_correction_requests")

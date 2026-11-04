@@ -100,6 +100,9 @@ CREATE INDEX IF NOT EXISTS "idx_salah_corrections_user" ON "salah_correction_req
 CREATE INDEX IF NOT EXISTS "idx_salah_corrections_status" ON "salah_correction_requests"("status", "created_at");
 CREATE INDEX IF NOT EXISTS "idx_salah_corrections_prayer_date" ON "salah_correction_requests"("prayer_date");
 
+-- 8. Add user_dismissed_at for clean user notification dismissal while preserving audit history
+ALTER TABLE "salah_correction_requests" ADD COLUMN IF NOT EXISTS "user_dismissed_at" TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS "idx_salah_corrections_user_dismissed" ON "salah_correction_requests"("user_id", "user_dismissed_at");
 `;
 
 export async function applyProductionMigrations() {
