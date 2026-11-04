@@ -1,5 +1,5 @@
-import React from 'react'
-import { X, CheckCircle2, AlertCircle, Loader2, BookOpen } from 'lucide-react'
+import React, { useRef } from 'react'
+import { X, CheckCircle2, AlertCircle, Loader2, BookOpen, Calendar, Clock, RotateCcw } from 'lucide-react'
 import type { PrayerItem, PrayerStatus } from '../types'
 
 /**
@@ -58,6 +58,7 @@ interface PrayerConfirmationModalProps {
   onConfirm: () => Promise<void>
   prayer: PrayerItem | null
   targetStatus?: PrayerStatus
+  prayerDate?: string
   isSubmitting?: boolean
   isCorrection?: boolean
   error?: string | null
@@ -69,15 +70,18 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
   onConfirm,
   prayer,
   targetStatus = 'ON_TIME',
+  prayerDate,
   isSubmitting = false,
   isCorrection = false,
   error = null,
 }) => {
   const [mountedAt, setMountedAt] = React.useState(() => Date.now())
+  const isExecutingRef = useRef(false)
 
   React.useEffect(() => {
     if (isOpen) {
       setMountedAt(Date.now())
+      isExecutingRef.current = false
     }
   }, [isOpen])
 
@@ -87,18 +91,95 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
   const hadith = VERIFIED_PRAYER_HADITHS[prayerKey] || VERIFIED_PRAYER_HADITHS.fajr
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape' && !isSubmitting) {
+    if (e.key === 'Escape' && !isSubmitting && !isExecutingRef.current) {
       onClose()
     }
   }
+
+  const handleSafeConfirm = async () => {
+    if (isSubmitting || isExecutingRef.current) return
+    isExecutingRef.current = true
+    try {
+      await onConfirm()
+    } finally {
+      isExecutingRef.current = false
+    }
+  }
+
+  // Format date display
+  const formattedDateStr = React.useMemo(() => {
+    if (!prayerDate) return null
+    try {
+      const [y, m, d] = prayerDate.split('-').map(Number)
+      const dateObj = new Date(y, m - 1, d)
+      const isToday = new Date().toDateString() === dateObj.toDateString()
+      const formatted = dateObj.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      })
+      return isToday ? `Today (${formatted})` : formatted
+    } catch {
+      return prayerDate
+    }
+  }, [prayerDate])
+
+  // Dynamic status badges and contextual messages
+  const statusConfig = React.useMemo(() => {
+    switch (targetStatus) {
+      case 'ON_TIME':
+        return {
+          label: 'ON TIME',
+          urdu: 'وقت پر',
+          badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300',
+          dotColor: 'bg-emerald-600',
+          explanation: isCorrection
+            ? "Updating this record as performed on-time within its preferred window."
+            : "Confirms fulfillment within the preferred prayer window with focus and dedication.",
+        }
+      case 'LATE':
+        return {
+          label: 'LATE',
+          urdu: 'تاخیر سے',
+          badgeClass: 'bg-amber-100 text-amber-800 border-amber-300',
+          dotColor: 'bg-amber-600',
+          explanation: isCorrection
+            ? "Updating this record as performed towards the end of its window."
+            : "Confirms fulfillment towards the end of the window before the next prayer started.",
+        }
+      case 'QADA':
+        return {
+          label: 'QADA',
+          urdu: 'قضا ادا کی',
+          badgeClass: 'bg-purple-100 text-purple-800 border-purple-300',
+          dotColor: 'bg-purple-600',
+          explanation: "Fulfilling an elapsed prayer obligation with sincere repentance and intention.",
+        }
+      case 'MISSED':
+        return {
+          label: 'MISSED',
+          urdu: 'قضا ہو گئی',
+          badgeClass: 'bg-rose-100 text-rose-800 border-rose-300',
+          dotColor: 'bg-rose-600',
+          explanation: "Marking this prayer as missed to keep your habit tracker honest. You can make it up as Qada.",
+        }
+      default:
+        return {
+          label: targetStatus,
+          urdu: '',
+          badgeClass: 'bg-stone-100 text-stone-800 border-stone-300',
+          dotColor: 'bg-stone-600',
+          explanation: 'Recording Salah fulfillment for this prayer.',
+        }
+    }
+  }, [targetStatus, isCorrection])
 
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center p-3 sm:p-4 bg-black/60 backdrop-blur-xs transition-opacity animate-fade-in select-none touch-manipulation"
       onKeyDown={handleKeyDown}
       onClick={(e) => {
-        if (e.target === e.currentTarget && !isSubmitting) {
-          // Prevent ghost clicks on mobile touchscreens from dismissing dialog immediately
+        if (e.target === e.currentTarget && !isSubmitting && !isExecutingRef.current) {
           if (Date.now() - mountedAt < 250) return
           onClose()
         }
@@ -108,32 +189,32 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
       aria-labelledby="confirm-prayer-title"
     >
       <div
-        className="relative w-full max-w-[440px] max-h-[90vh] overflow-y-auto bg-[#FAF8F3] rounded-[24px] sm:rounded-[28px] shadow-2xl border border-stone-200/90 p-5 pb-7 sm:p-6 sm:pb-6 animate-scale-up pointer-events-auto"
+        className="relative w-full max-w-[440px] max-h-[92vh] overflow-y-auto bg-[#FAF8F3] rounded-[24px] sm:rounded-[28px] shadow-2xl border border-stone-200/90 p-5 pb-6 sm:p-6 sm:pb-6 animate-scale-up pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between pb-3.5 border-b border-[#E9E4D8]">
+        <div className="flex items-center justify-between pb-3 border-b border-[#E9E4D8]">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-[#0C4535]">
+            <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-[#0C4535] flex-shrink-0">
               <CheckCircle2 className="w-4.5 h-4.5" />
             </div>
-            <div>
-              <h3 id="confirm-prayer-title" className="text-[17px] font-bold text-[#14261E] leading-tight">
+            <div className="min-w-0">
+              <h3 id="confirm-prayer-title" className="text-[17px] font-bold text-[#14261E] leading-tight truncate">
                 {isCorrection ? `Update ${prayer.name} Salah` : `Confirm ${prayer.name} Salah`}
               </h3>
-              <p className="text-[11px] text-[#55675D]">
+              <p className="text-[11px] text-[#55675D] truncate">
                 {isCorrection
-                  ? "Correcting today's prayer completion record"
-                  : 'A verified reminder about the importance of prayer'}
+                  ? "Updating your prayer completion record"
+                  : 'A verified reminder on fulfilling your prayer'}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isExecutingRef.current}
             aria-label="Cancel confirmation"
-            className="w-8 h-8 rounded-full bg-stone-200/60 hover:bg-stone-300 flex items-center justify-center text-stone-700 transition cursor-pointer disabled:opacity-50"
+            className="w-8 h-8 rounded-full bg-stone-200/60 hover:bg-stone-300 flex items-center justify-center text-stone-700 transition cursor-pointer disabled:opacity-50 flex-shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -143,15 +224,15 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
         {error && (
           <div className="mt-3.5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-2 animate-fade-in">
             <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
-            <div>
+            <div className="min-w-0">
               <p className="font-bold">Completion Ineligible</p>
-              <p className="text-[11px] text-rose-800 leading-tight mt-0.5">{error}</p>
+              <p className="text-[11px] text-rose-800 leading-tight mt-0.5 break-words">{error}</p>
             </div>
           </div>
         )}
 
         {/* Authentic Islamic Hadith Card */}
-        <div className="mt-4 p-4 rounded-2xl bg-gradient-to-b from-[#F7F4EB] to-[#EFECE1] border border-[#E0D9C7] shadow-2xs">
+        <div className="mt-3.5 p-4 rounded-2xl bg-gradient-to-b from-[#F7F4EB] to-[#EFECE1] border border-[#E0D9C7] shadow-2xs">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#0E543F] uppercase tracking-wider">
               <BookOpen className="w-3.5 h-3.5" />
@@ -162,8 +243,8 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
             </span>
           </div>
 
-          {/* Arabic Text */}
-          <div className="my-2.5 p-3 rounded-xl bg-white/70 border border-[#E5DFCE] text-right font-serif text-[16px] sm:text-[17px] leading-loose text-[#0D382B] dir-rtl">
+          {/* Arabic Text with Proper RTL typography */}
+          <div className="my-2 p-3 rounded-xl bg-white/70 border border-[#E5DFCE] text-right font-serif text-[16px] sm:text-[17px] leading-loose text-[#0D382B] dir-rtl select-text">
             {hadith.arabic}
           </div>
 
@@ -173,32 +254,46 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
           </p>
 
           {/* Source & Citation Reference */}
-          <div className="mt-3 pt-2.5 border-t border-[#DFD8C5] flex items-center justify-between text-[10.5px] text-[#697A70]">
-            <span className="font-semibold text-[#8E5B36] font-mono">
+          <div className="mt-3 pt-2 border-t border-[#DFD8C5] flex items-center justify-between text-[10.5px] text-[#697A70]">
+            <span className="font-semibold text-[#8E5B36] font-mono truncate max-w-[65%]">
               Source: {hadith.source}
             </span>
-            <span className="text-[10px] text-[#55675D]">
-              Scheduled: {prayer.time}
+            <span className="text-[10px] text-[#55675D] flex items-center gap-1 flex-shrink-0">
+              <Clock className="w-3 h-3" />
+              <span>{prayer.time}</span>
             </span>
           </div>
         </div>
 
-        {/* Confirmation Question */}
-        <div className="mt-4 p-3 rounded-xl bg-white border border-[#E8E2D5] text-center shadow-2xs">
-          <p className="text-sm font-bold text-[#14261E]">
-            {isCorrection
-              ? `Confirm correction for ${prayer.name} Salah?`
-              : `Have you completed your ${prayer.name} Salah?`}
-          </p>
-          <div className="mt-1 flex items-center justify-center gap-1.5">
-            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#EBF5EF] text-[#0E543F]">
-              Status: {targetStatus.replace('_', ' ')}
+        {/* Confirmation Question & Status Badge */}
+        <div className="mt-3.5 p-3.5 rounded-2xl bg-white border border-[#E8E2D5] shadow-2xs space-y-2">
+          <div className="flex items-center justify-between">
+            <p className="text-xs sm:text-[13px] font-bold text-[#14261E]">
+              {isCorrection
+                ? `Confirm correction for ${prayer.name}?`
+                : `Have you completed your ${prayer.name} Salah?`}
+            </p>
+            {formattedDateStr && (
+              <span className="text-[10.5px] font-medium text-stone-500 flex items-center gap-1">
+                <Calendar className="w-3 h-3" />
+                <span>{formattedDateStr}</span>
+              </span>
+            )}
+          </div>
+
+          {/* Dynamic Status Pill */}
+          <div className="flex items-center gap-2">
+            <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${statusConfig.badgeClass}`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotColor}`} />
+              <span>STATUS: {statusConfig.label}</span>
+              {statusConfig.urdu && (
+                <span className="font-serif text-[11px] font-normal opacity-80">({statusConfig.urdu})</span>
+              )}
             </span>
           </div>
-          <p className="text-[11px] text-[#55675D] mt-1">
-            {isCorrection
-              ? "Updating your record will correct today's tracking status and progress calculations."
-              : 'Recording Salah complete confirms your fulfillment for today’s active date.'}
+
+          <p className="text-[11px] text-[#55675D] leading-snug">
+            {statusConfig.explanation}
           </p>
         </div>
 
@@ -207,15 +302,15 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
           <button
             type="button"
             onClick={onClose}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isExecutingRef.current}
             className="flex-1 py-2.5 px-3 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 text-stone-700 font-semibold text-xs transition cursor-pointer active:scale-98 disabled:opacity-50 text-center touch-manipulation"
           >
             Cancel
           </button>
           <button
             type="button"
-            onClick={onConfirm}
-            disabled={isSubmitting}
+            onClick={handleSafeConfirm}
+            disabled={isSubmitting || isExecutingRef.current}
             className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#0C4535] to-[#0E543F] hover:from-[#083327] hover:to-[#0C4535] text-white font-bold text-xs transition shadow-sm cursor-pointer active:scale-98 flex items-center justify-center gap-1.5 disabled:opacity-60 touch-manipulation"
           >
             {isSubmitting ? (
@@ -225,7 +320,11 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
               </>
             ) : (
               <>
-                <CheckCircle2 className="w-3.5 h-3.5" />
+                {targetStatus === 'QADA' ? (
+                  <RotateCcw className="w-3.5 h-3.5" />
+                ) : (
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                )}
                 <span>{isCorrection ? 'Confirm Correction' : 'Confirm Salah'}</span>
               </>
             )}

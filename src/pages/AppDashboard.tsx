@@ -433,17 +433,24 @@ export const AppDashboard = () => {
       // 1. If user is authenticated, sync with backend Express API first
       if (currentUser) {
         try {
-          await salahApi.upsertPrayerLog({
-            prayerName: prayer.id,
-            date: dateKey,
-            status: mappedStatus as any,
-            isCorrection: true,
-            latitude: city.lat,
-            longitude: city.lng,
-            calculationMethod,
-            madhab,
-            jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
-          })
+          if (mappedStatus === 'qada' && dateKey < todayDateKey) {
+            await salahApi.recordQadaPrayer({
+              prayerName: prayer.id,
+              date: dateKey,
+            })
+          } else {
+            await salahApi.upsertPrayerLog({
+              prayerName: prayer.id,
+              date: dateKey,
+              status: mappedStatus as any,
+              isCorrection: true,
+              latitude: city.lat,
+              longitude: city.lng,
+              calculationMethod,
+              madhab,
+              jumuahTime: localStorage.getItem('salah_jumuah_time') || undefined,
+            })
+          }
         } catch (apiErr: any) {
           console.error('[handleConfirmPrayer] API sync failed:', apiErr)
           setIsConfirmSubmitting(false)
@@ -1485,6 +1492,7 @@ export const AppDashboard = () => {
           onConfirm={handleConfirmPrayer}
           prayer={pendingConfirmation?.prayer || null}
           targetStatus={pendingConfirmation?.status || 'ON_TIME'}
+          prayerDate={pendingConfirmation?.dateKey || todayDateKey}
           isCorrection={pendingConfirmation?.isCorrection}
           isSubmitting={isConfirmSubmitting}
           error={confirmError}

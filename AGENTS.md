@@ -997,6 +997,7 @@ Salah completion is permitted **strictly for today's local calendar date**.
 - **Domain:** `https://salah-companion-z3i4.onrender.com`.
 - **Start Command:** `npm start` (which runs `node src/server.js`).
 - **Build Command:** `npm run build` (which runs `prisma generate`).
+- **Migration Command:** `npm run db:migrate` (executes `server/scripts/applyProductionMigrations.js` ensuring `is_admin_override`, `qada_completed_at`, `quran_reading_logs`, and `user_word_progress` are migrated to Supabase PostgreSQL). Schema invariants are also automatically verified on server startup via `server/src/db/connection.js`.
 
 ### 3. Database: Supabase PostgreSQL
 - **Host:** AWS US-East / Pooler.

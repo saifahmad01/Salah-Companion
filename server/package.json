@@ -17,7 +17,9 @@
     "db:manage": "node scripts/dbManager.js",
     "test": "node tests/transliterateUrdu.test.js && node tests/hadithApi.test.js && node tests/googleAuth.test.js && node tests/emailOtpAuth.test.js && node tests/passwordAuth.test.js && node tests/exitConfirmation.test.js && node tests/notificationService.test.js && node tests/weeklyPrayer.test.js && node tests/timingEnforcement.test.js && node tests/qiblaAndJumuah.test.js && node tests/salahAutomation.test.js",
     "test:timing": "node tests/timingEnforcement.test.js",
-    "test:qibla": "node tests/qiblaAndJumuah.test.js"
+    "test:qibla": "node tests/qiblaAndJumuah.test.js",
+    "db:migrate": "node scripts/applyProductionMigrations.js",
+    "db:migrate:deploy": "node scripts/applyProductionMigrations.js"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
