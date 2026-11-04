@@ -11,21 +11,23 @@ interface AdminRouteProps {
 export const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
   const { user, loading, setBanner } = useAuth();
   const location = useLocation();
-  const hasToken = !!authStorage.getToken();
+  const token = authStorage.getToken();
+  const isExpired = authStorage.isTokenExpired(token);
 
-  if (!hasToken) {
+  if (!token || isExpired) {
+    if (token && isExpired) {
+      authStorage.clearToken();
+    }
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (loading) {
+  if (loading && !user) {
     return <DashboardSkeleton />;
   }
 
-  if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
-  }
+  const effectiveUser = user || authStorage.getCachedUser();
 
-  if (user.role !== 'ADMIN') {
+  if (effectiveUser && effectiveUser.role !== 'ADMIN') {
     setBanner({
       type: 'error',
       message: 'Access denied: Your account does not have administrative privileges.',
@@ -33,5 +35,9 @@ export const AdminRoute: React.FC<AdminRouteProps> = ({ children }) => {
     return <Navigate to="/app" replace />;
   }
 
-  return children;
+  if (effectiveUser && effectiveUser.role === 'ADMIN') {
+    return children;
+  }
+
+  return <DashboardSkeleton />;
 };

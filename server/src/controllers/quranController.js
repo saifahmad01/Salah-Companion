@@ -478,25 +478,41 @@ export async function deletePageBookmark(req, res) {
     }
 
     const { id } = req.params;
-    const existing = await prisma.quranPageBookmark.findFirst({
-      where: { id, userId },
-    });
+    const { resourceKey, pageNumber } = req.query;
 
-    if (!existing) {
-      return res.status(404).json({
-        success: false,
-        error: 'Bookmark not found or access denied',
+    let bookmark = null;
+    if (id && id !== 'undefined' && !id.startsWith('local_') && id !== 'by-page') {
+      bookmark = await prisma.quranPageBookmark.findFirst({
+        where: { id, userId },
+      });
+    }
+
+    if (!bookmark && resourceKey && pageNumber) {
+      bookmark = await prisma.quranPageBookmark.findFirst({
+        where: {
+          userId,
+          resourceKey,
+          pageNumber: parseInt(pageNumber, 10),
+        },
+      });
+    }
+
+    if (!bookmark) {
+      return res.json({
+        success: true,
+        message: 'Bookmark already removed or not found',
+        id: id || 'removed',
       });
     }
 
     await prisma.quranPageBookmark.delete({
-      where: { id },
+      where: { id: bookmark.id },
     });
 
     return res.json({
       success: true,
       message: 'Bookmark deleted successfully',
-      id,
+      id: bookmark.id,
     });
   } catch (err) {
     console.error('[QuranController] Error deleting bookmark:', err);
