@@ -1,0 +1,18 @@
+{
+  "version": "1.0.0",
+  "buildNumber": 100,
+  "releaseDate": "2026-11-04",
+  "releaseNotes": [
+    "Automated missed Salah tracking with astronomical sunset & sunrise deadlines",
+    "Qada recovery management: 1-click fulfillment of elapsed prayers with authentic Hadith forgiveness reminders",
+    "High-DPI offline Quran PDF reader with 30 Para navigation, quick jump, and page bookmarks",
+    "Top 600 Arabic Vocabulary flashcards with review tracking and search",
+    "Great Circle Qibla compass with EMA sensor smoothing and Kaaba alignment haptics",
+    "OpenStreetMap Overpass nearby Mosque finder with distance routing",
+    "Production Web Push and Capacitor native prayer start & 30-minute reminder alarms"
+  ],
+  "apkDownloadUrl": null,
+  "minSupportedVersion": "1.0.0",
+  "isMandatoryUpdate": false,
+  "updatedAt": "2026-11-04T00:00:00.000Z"
+}

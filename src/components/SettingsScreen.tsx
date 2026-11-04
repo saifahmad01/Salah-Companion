@@ -21,6 +21,7 @@ import {
   BellRing,
   Compass,
 } from 'lucide-react'
+import { AppInstallationSection } from './AppInstallationSection'
 import type { UserProfile, NotificationPreferences } from '../services/backendApi'
 
 interface SettingsScreenProps {
@@ -798,6 +799,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Section: App & Installation */}
+            <AppInstallationSection />
 
             {/* Section 5: About */}
             <div className="w-full rounded-[24px] bg-white border border-[#EDE8DC] p-4 shadow-xs">

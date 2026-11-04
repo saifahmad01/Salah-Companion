@@ -711,6 +711,13 @@ Base URL: `http://localhost:8080/api` (Dev) | `https://salah-companion-z3i4.onre
 | `POST` | `/api/admin/prayers/correct` | Admin Only | Correct or delete a prayer record for any user with mandatory reason & audit logging. |
 | `GET` | `/api/admin/prayers/corrections` | Admin Only | Paginated audit trail of all administrative corrections (`admin_prayer_corrections`). |
 | `GET` | `/api/admin/analytics/salah` | Admin Only | Aggregated KPIs: completion rates, quality breakdown, notification delivery rates, recent corrections. |
+| `GET` | `/api/admin/app/version` | Admin Only | Retrieve application release metadata including release notes and APK download URL. |
+| `POST` | `/api/admin/app/version` | Admin Only | Publish or update application release info (semver, release notes, and HTTPS APK download link). |
+
+### Application Release & Version Endpoints (`/api/app`)
+| Method | Path | Auth Required | Description |
+| :--- | :--- | :--- | :--- |
+| `GET` | `/api/app/version` | Public | Fetch current version, release date, release notes, and official signed APK URL. |
 
 ---
 

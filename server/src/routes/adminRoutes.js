@@ -7,6 +7,10 @@ import {
   broadcastNotification,
 } from '../controllers/adminController.js';
 import {
+  getAppReleaseInfo,
+  updateAppReleaseInfo,
+} from '../controllers/appController.js';
+import {
   getAdminQuranResources,
   upsertQuranResource,
   toggleResourceStatus,
@@ -54,3 +58,9 @@ adminRouter.get('/quran/resources', getAdminQuranResources);
 adminRouter.post('/quran/resources', upsertQuranResource);
 adminRouter.patch('/quran/resources/:id/status', toggleResourceStatus);
 
+
+// ============================================================================
+// Application Version & Release Management
+// ============================================================================
+adminRouter.get('/app/version', getAppReleaseInfo);
+adminRouter.post('/app/version', updateAppReleaseInfo);
