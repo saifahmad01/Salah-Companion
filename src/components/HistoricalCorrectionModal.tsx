@@ -5,22 +5,41 @@ import { salahApi, type SalahCorrectionRequestItem } from '../services/backendAp
 interface HistoricalCorrectionModalProps {
   isOpen: boolean
   onClose: () => void
-  prayerId: string
-  prayerName: string
-  prayerDate: string
-  currentStatus: string
+  prayerId?: string
+  prayerName?: string
+  prayerDate?: string
+  currentStatus?: string
   onSuccess?: (request: SalahCorrectionRequestItem) => void
 }
+
+const PRAYERS_LIST = [
+  { id: 'fajr', name: 'Fajr' },
+  { id: 'dhuhr', name: 'Dhuhr' },
+  { id: 'asr', name: 'Asr' },
+  { id: 'maghrib', name: 'Maghrib' },
+  { id: 'isha', name: 'Isha' },
+]
 
 export const HistoricalCorrectionModal: React.FC<HistoricalCorrectionModalProps> = ({
   isOpen,
   onClose,
-  prayerId,
-  prayerName,
-  prayerDate,
-  currentStatus,
+  prayerId: initialPrayerId,
+  prayerName: initialPrayerName,
+  prayerDate: initialPrayerDate,
+  currentStatus = 'none',
   onSuccess,
 }) => {
+  const yesterdayDateKey = React.useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 1)
+    const y = d.getFullYear()
+    const m = String(d.getMonth() + 1).padStart(2, '0')
+    const day = String(d.getDate()).padStart(2, '0')
+    return `${y}-${m}-${day}`
+  }, [])
+
+  const [targetDate, setTargetDate] = useState(initialPrayerDate || yesterdayDateKey)
+  const [targetPrayerId, setTargetPrayerId] = useState(initialPrayerId || 'fajr')
   const [requestedStatus, setRequestedStatus] = useState<'on_time' | 'late' | 'qada' | 'missed'>('on_time')
   const [reason, setReason] = useState('')
   const [notes, setNotes] = useState('')
@@ -28,11 +47,22 @@ export const HistoricalCorrectionModal: React.FC<HistoricalCorrectionModalProps>
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
+  // Keep state synced if props change
+  React.useEffect(() => {
+    if (initialPrayerDate) setTargetDate(initialPrayerDate)
+    if (initialPrayerId) setTargetPrayerId(initialPrayerId)
+  }, [initialPrayerDate, initialPrayerId])
+
   if (!isOpen) return null
+
+  const resolvedPrayerName =
+    initialPrayerName ||
+    PRAYERS_LIST.find((p) => p.id === targetPrayerId)?.name ||
+    targetPrayerId.charAt(0).toUpperCase() + targetPrayerId.slice(1)
 
   const formattedDate = (() => {
     try {
-      const [y, m, d] = prayerDate.split('-').map(Number)
+      const [y, m, d] = targetDate.split('-').map(Number)
       return new Date(y, m - 1, d).toLocaleDateString('en-US', {
         weekday: 'short',
         month: 'short',
@@ -40,7 +70,7 @@ export const HistoricalCorrectionModal: React.FC<HistoricalCorrectionModalProps>
         year: 'numeric',
       })
     } catch {
-      return prayerDate
+      return targetDate
     }
   })()
 
@@ -54,11 +84,16 @@ export const HistoricalCorrectionModal: React.FC<HistoricalCorrectionModalProps>
       return
     }
 
+    if (!targetDate) {
+      setErrorMessage('Please select a valid past calendar date.')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const res = await salahApi.submitCorrectionRequest({
-        prayerName: prayerId,
-        prayerDate,
+        prayerName: targetPrayerId,
+        prayerDate: targetDate,
         requestedStatus,
         reason: trimmedReason,
         notes: notes.trim() || undefined,
@@ -140,20 +175,56 @@ export const HistoricalCorrectionModal: React.FC<HistoricalCorrectionModalProps>
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="mt-4 space-y-3.5">
-          {/* Target Prayer Summary */}
-          <div className="p-3 bg-stone-100/80 rounded-xl border border-stone-200/80 grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <span className="text-[10.5px] text-stone-500 block uppercase font-semibold">Prayer & Date</span>
-              <span className="font-bold text-stone-800">{prayerName}</span>
-              <span className="text-[11px] text-stone-600 block">{formattedDate}</span>
+          {/* Target Prayer Selection or Summary */}
+          {initialPrayerDate && initialPrayerId ? (
+            <div className="p-3 bg-stone-100/80 rounded-xl border border-stone-200/80 grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <span className="text-[10.5px] text-stone-500 block uppercase font-semibold">Prayer & Date</span>
+                <span className="font-bold text-stone-800">{resolvedPrayerName} Salah</span>
+                <span className="text-[11px] text-stone-600 block">{formattedDate}</span>
+              </div>
+              <div>
+                <span className="text-[10.5px] text-stone-500 block uppercase font-semibold">Current Recorded Status</span>
+                <span className="inline-block px-2 py-0.5 mt-0.5 text-[10px] font-bold rounded-md bg-stone-200 text-stone-800 uppercase">
+                  {currentStatus.replace('_', ' ')}
+                </span>
+              </div>
             </div>
-            <div>
-              <span className="text-[10.5px] text-stone-500 block uppercase font-semibold">Current Recorded Status</span>
-              <span className="inline-block px-2 py-0.5 mt-0.5 text-[10px] font-bold rounded-md bg-stone-200 text-stone-800 uppercase">
-                {currentStatus.replace('_', ' ')}
-              </span>
+          ) : (
+            <div className="grid grid-cols-2 gap-2.5">
+              <div>
+                <label className="block text-xs font-bold text-stone-800 mb-1">
+                  Past Date <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="date"
+                    required
+                    max={yesterdayDateKey}
+                    value={targetDate}
+                    onChange={(e) => setTargetDate(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-[#0C4535]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-stone-800 mb-1">
+                  Prayer <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={targetPrayerId}
+                  onChange={(e) => setTargetPrayerId(e.target.value)}
+                  className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-[#0C4535]"
+                >
+                  {PRAYERS_LIST.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} Salah
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Requested Status */}
           <div>
@@ -182,7 +253,7 @@ export const HistoricalCorrectionModal: React.FC<HistoricalCorrectionModalProps>
               rows={2}
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="e.g. Offered prayer at masjid but forgot to record it on time"
+              placeholder="e.g. Offered prayer at masjid with congregation but forgot to record it on time"
               className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-[#0C4535] placeholder:text-stone-400"
             />
           </div>
@@ -196,7 +267,7 @@ export const HistoricalCorrectionModal: React.FC<HistoricalCorrectionModalProps>
               type="text"
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Congregation at local masjid"
+              placeholder="e.g. Jamaat at 1:30 PM"
               className="w-full px-3 py-2 text-xs bg-white rounded-xl border border-stone-300 focus:outline-none focus:ring-2 focus:ring-[#0C4535] placeholder:text-stone-400"
             />
           </div>

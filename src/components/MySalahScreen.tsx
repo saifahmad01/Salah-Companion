@@ -590,11 +590,9 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                           !prayer.isCompleted
                         const isCompletedPrayer = prayer.isCompleted
 
-                        // Disable modifying past days, future days, or prayers whose start time has not arrived today
-                        const isMatrixDisabled =
-                          isPastDay ||
-                          isFutureDay ||
-                          isUpcomingToday
+                        // Future days and upcoming prayers today are non-interactive.
+                        // Past days are interactive: clicking on any past prayer allows the user to request an admin-verified correction.
+                        const isMatrixDisabled = isFutureDay || isUpcomingToday
 
                         if (status === 'on_time') {
                           pillClasses = 'bg-[#0E543F] text-white border-[#0B4433] shadow-2xs'
@@ -613,7 +611,7 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                         }
 
                         const tooltip = isPastDay
-                          ? `${prayer.name} (${day.day}): ${status ? status.replace('_', ' ').toUpperCase() : 'Not offered'} • Historical record (Read-Only)`
+                          ? `${prayer.name} (${day.day}): ${status ? status.replace('_', ' ').toUpperCase() : 'Not recorded'} • Click to request admin correction`
                           : isFutureDay
                           ? `${prayer.name} (${day.day}): Future date - prayer time has not started yet (Read-Only)`
                           : isUpcomingToday
@@ -629,6 +627,15 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                             disabled={isMatrixDisabled}
                             onClick={() => {
                               if (isMatrixDisabled) return
+                              if (isPastDay) {
+                                setCorrectionTargetPrayer({
+                                  prayerId: prayer.id as any,
+                                  prayerName: prayer.name,
+                                  prayerDate: day.date,
+                                  currentStatus: prayer.status || 'none',
+                                })
+                                return
+                              }
                               setSelectedModalPrayer({
                                 date: day.date,
                                 dayName: `${day.fullDay || day.day}, ${day.date}`,
@@ -640,6 +647,8 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                             className={`w-5.5 h-5 sm:w-6.5 sm:h-5.5 rounded-md text-[9px] sm:text-[9.5px] font-bold flex items-center justify-center border transition-all ${
                               isMatrixDisabled
                                 ? 'opacity-70 cursor-not-allowed select-none ' + pillClasses
+                                : isPastDay
+                                ? `cursor-pointer active:scale-95 hover:ring-2 hover:ring-amber-500/70 hover:scale-105 ${pillClasses}`
                                 : `active:scale-90 cursor-pointer hover:ring-1 hover:ring-emerald-500 ${pillClasses}`
                             }`}
                             title={tooltip}
@@ -687,6 +696,21 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
                 <span className="w-2 h-2 rounded-full bg-[#D2E2D8]"></span>
                 <span>Pending</span>
               </div>
+            </div>
+
+            {/* Historical Correction Quick Tip */}
+            <div className="mt-3 pt-2.5 border-t border-[#ECE7DC] flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-[11px] text-[#55675D]">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs">💡</span>
+                <span>Need to adjust past prayer records? <strong>Click any past prayer badge</strong> above or tap <strong>My Requests</strong>.</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCorrectionRequestsOpen(true)}
+                className="text-[#0E543F] font-bold hover:underline cursor-pointer flex-shrink-0 self-start sm:self-auto"
+              >
+                View Requests →
+              </button>
             </div>
           </div>
 
