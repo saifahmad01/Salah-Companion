@@ -66,8 +66,9 @@ export const AuthCallbackPage: React.FC = () => {
             })
           }
 
-          // If running on native and landed here via web, attempt to open app via custom scheme
-          if (!platform.isNative() && (token || authStatus)) {
+          // If on web and deep link explicitly requested native app handoff
+          const isNativeAppHandOff = new URLSearchParams(window.location.search).get('native_handoff') === '1'
+          if (!platform.isNative() && isNativeAppHandOff && (token || authStatus)) {
             const hasLaunchedApp = sessionStorage.getItem('salah_app_launched')
             if (!hasLaunchedApp) {
               sessionStorage.setItem('salah_app_launched', '1')

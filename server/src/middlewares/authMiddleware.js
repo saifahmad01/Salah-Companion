@@ -60,14 +60,15 @@ export async function protectRoute(req, res, next) {
   try {
     let token;
 
-    // 1. Extract token from HttpOnly cookie first, then Bearer Authorization header
-    if (req.cookies && req.cookies.auth_token) {
-      token = req.cookies.auth_token;
-    } else if (req.headers.authorization && req.headers.authorization.startsWith('Bearer ')) {
-      token = req.headers.authorization.split(' ')[1];
-    }
+    // 1. Extract token candidates: Authorization header is primary, cookie is fallback
+    const headerToken = req.headers.authorization && req.headers.authorization.startsWith('Bearer ')
+      ? req.headers.authorization.split(' ')[1]
+      : null;
+    const cookieToken = req.cookies && req.cookies.auth_token ? req.cookies.auth_token : null;
 
-    if (!token) {
+    const candidates = [headerToken, cookieToken].filter(Boolean);
+
+    if (candidates.length === 0) {
       return res.status(401).json({
         success: false,
         error: 'Access denied. You must be logged in to access this resource.',
@@ -75,26 +76,33 @@ export async function protectRoute(req, res, next) {
       });
     }
 
-    // 2. Verify JWT signature and expiration
-    let decoded;
-    try {
-      decoded = jwt.verify(token, JWT_SECRET);
-    } catch (jwtErr) {
-      if (jwtErr.name === 'TokenExpiredError') {
+    // 2. Verify JWT signature and expiration, prioritizing Bearer header
+    let decoded = null;
+    let lastError = null;
+
+    for (const cand of candidates) {
+      try {
+        decoded = jwt.verify(cand, JWT_SECRET);
+        token = cand;
+        break;
+      } catch (jwtErr) {
+        lastError = jwtErr;
+      }
+    }
+
+    if (!decoded) {
+      if (lastError && lastError.name === 'TokenExpiredError') {
         return res.status(401).json({
           success: false,
           error: 'Your session has expired. Please log in again.',
           code: 'TOKEN_EXPIRED',
         });
       }
-      if (jwtErr.name === 'JsonWebTokenError') {
-        return res.status(401).json({
-          success: false,
-          error: 'Invalid authentication token. Please log in again.',
-          code: 'TOKEN_INVALID',
-        });
-      }
-      throw jwtErr;
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid authentication token. Please log in again.',
+        code: 'TOKEN_INVALID',
+      });
     }
 
     // 3. Verify user still exists in the database

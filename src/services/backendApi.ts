@@ -41,7 +41,10 @@ function parseJwtPayload(token: string): any | null {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     const base64Url = parts[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    let base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    while (base64.length % 4) {
+      base64 += '=';
+    }
     const jsonPayload = decodeURIComponent(
       atob(base64)
         .split('')
@@ -57,7 +60,30 @@ function parseJwtPayload(token: string): any | null {
 // Token and profile persistence helpers for 0ms frontend-first session restoration & uncompromised refresh stability
 export const authStorage = {
   getToken(): string | null {
-    return localStorage.getItem(TOKEN_KEY);
+    if (typeof window !== 'undefined') {
+      try {
+        const search = window.location.search;
+        const hash = window.location.hash;
+        if (search || hash) {
+          const params = new URLSearchParams(search);
+          const hashParams = new URLSearchParams(hash.startsWith('#') ? hash.slice(1) : hash);
+          const urlToken =
+            params.get('token') ||
+            hashParams.get('token') ||
+            params.get('access_token') ||
+            hashParams.get('access_token');
+          if (urlToken && !this.isTokenExpired(urlToken)) {
+            this.setToken(urlToken);
+            return urlToken;
+          }
+        }
+      } catch {}
+    }
+    try {
+      return localStorage.getItem(TOKEN_KEY);
+    } catch {
+      return null;
+    }
   },
   setToken(token: string): void {
     localStorage.setItem(TOKEN_KEY, token);

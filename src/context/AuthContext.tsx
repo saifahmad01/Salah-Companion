@@ -234,7 +234,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     } finally {
       if (!platform.isNative()) {
-        const targetPath = window.location.pathname.startsWith('/app') ? '/app' : '/login'
+        const isAuthSuccess = Boolean(authStorage.getToken() && !authStorage.isTokenExpired())
+        const targetPath = isAuthSuccess ? '/app' : '/login'
         window.history.replaceState({}, document.title, targetPath)
       }
       setLoading(false)
