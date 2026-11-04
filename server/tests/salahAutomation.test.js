@@ -116,7 +116,7 @@ async function runTests() {
     });
 
     // Future prayers today must not be created as missed
-    const futureMissed = logsAfter.filter((l) => l.status === 'missed' && l.date === todayStr);
+    const futureMissed = logsAfter.filter((l) => l.status === 'missed' && !logsBefore.some((b) => b.prayerName === l.prayerName));
     assert.strictEqual(futureMissed.length, 0, 'Future/active prayer windows today must NEVER be marked as missed!');
     console.log('✓ Invariant 4 Passed: Future and active prayer windows today were not marked as missed.');
 

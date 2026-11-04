@@ -62,6 +62,17 @@ if (isPostgresUrl) {
   });
 
   console.log('[Database] PostgreSQL Connection Pool initialized for Supabase/Production.');
+
+  // Asynchronously ensure critical columns and tables exist (idempotent safeguard)
+  pool.query(`
+    ALTER TABLE "prayer_logs" ADD COLUMN IF NOT EXISTS "is_admin_override" BOOLEAN NOT NULL DEFAULT false;
+    ALTER TABLE "prayer_logs" ADD COLUMN IF NOT EXISTS "qada_completed_at" TIMESTAMPTZ;
+    CREATE INDEX IF NOT EXISTS "idx_prayer_logs_user_status" ON "prayer_logs"("user_id", "status");
+  `).then(() => {
+    console.log('[PostgreSQL] Verified prayer_logs schema invariants (is_admin_override, qada_completed_at).');
+  }).catch((err) => {
+    console.warn('[PostgreSQL] Schema invariant check notice:', err.message);
+  });
 } else {
   // ============================================================================
   // Local SQLite Fallback (Used during offline unit tests or local development)

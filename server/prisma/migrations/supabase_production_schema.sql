@@ -89,6 +89,8 @@ CREATE TABLE IF NOT EXISTS prayer_logs (
   prayer_end_time TEXT,
   logged_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   notes TEXT,
+  is_admin_override BOOLEAN NOT NULL DEFAULT false,
+  qada_completed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE(user_id, prayer_name, date)
@@ -96,6 +98,7 @@ CREATE TABLE IF NOT EXISTS prayer_logs (
 
 CREATE INDEX IF NOT EXISTS idx_prayer_logs_user_date ON prayer_logs(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_prayer_logs_status ON prayer_logs(status);
+CREATE INDEX IF NOT EXISTS idx_prayer_logs_user_status ON prayer_logs(user_id, status);
 
 DROP TRIGGER IF EXISTS set_timestamp_prayer_logs ON prayer_logs;
 CREATE TRIGGER set_timestamp_prayer_logs
@@ -188,3 +191,42 @@ CREATE TABLE IF NOT EXISTS notification_logs (
 
 CREATE INDEX IF NOT EXISTS idx_notif_logs_user_date ON notification_logs(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_notif_logs_user_unread ON notification_logs(user_id, is_read);
+
+-- ----------------------------------------------------------------------------
+-- 8. Personal Quran Reading Logs
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS quran_reading_logs (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  date TEXT NOT NULL,
+  surah_name TEXT NOT NULL,
+  start_page INTEGER NOT NULL,
+  end_page INTEGER NOT NULL,
+  start_ruku INTEGER NOT NULL,
+  end_ruku INTEGER NOT NULL,
+  pages_read INTEGER NOT NULL,
+  rukus_read INTEGER NOT NULL,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_quran_reading_logs_user_date ON quran_reading_logs(user_id, date);
+
+-- ----------------------------------------------------------------------------
+-- 9. User Quranic Vocabulary Progress (Top 600 Words)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS user_word_progress (
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  word_id INTEGER NOT NULL,
+  is_learned BOOLEAN NOT NULL DEFAULT false,
+  is_bookmarked BOOLEAN NOT NULL DEFAULT false,
+  review_count INTEGER NOT NULL DEFAULT 0,
+  last_reviewed TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(user_id, word_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_word_progress_user ON user_word_progress(user_id);
