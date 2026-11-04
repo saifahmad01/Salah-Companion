@@ -172,6 +172,7 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
           }
         })
         setWordProgressMap(newMap)
+        offlineQuranService.saveWordProgressMap(newMap)
       }
     } catch {}
   }, [wordProgressMap])

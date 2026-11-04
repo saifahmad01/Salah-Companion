@@ -35,25 +35,86 @@ const FALLBACK_BASE_URL = 'https://salah-companion-z3i4.onrender.com/api';
 const TOKEN_KEY = 'salah_auth_token';
 const USER_KEY = 'salah_user_profile';
 
-// Token and profile persistence helpers for 0ms frontend-first session restoration
+// Safely parses JWT payload client-side without external dependencies
+function parseJwtPayload(token: string): any | null {
+  try {
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return null;
+  }
+}
+
+// Token and profile persistence helpers for 0ms frontend-first session restoration & uncompromised refresh stability
 export const authStorage = {
   getToken(): string | null {
     return localStorage.getItem(TOKEN_KEY);
   },
   setToken(token: string): void {
     localStorage.setItem(TOKEN_KEY, token);
+    // If no cached user exists yet, synthesize baseline user immediately from token payload
+    if (!localStorage.getItem(USER_KEY)) {
+      const u = this.getUserFromToken(token);
+      if (u) {
+        this.setCachedUser(u);
+      }
+    }
   },
   clearToken(): void {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
   },
+  isTokenExpired(token?: string | null): boolean {
+    const t = token || this.getToken();
+    if (!t) return true;
+    const payload = parseJwtPayload(t);
+    if (!payload || !payload.exp) return false;
+    // 10 second clock drift leeway
+    return Date.now() >= (payload.exp * 1000 - 10000);
+  },
+  getUserFromToken(token?: string | null): UserProfile | null {
+    const t = token || this.getToken();
+    if (!t) return null;
+    const payload = parseJwtPayload(t);
+    if (!payload || !payload.id) return null;
+    return {
+      id: payload.id,
+      name: payload.name || (payload.email ? payload.email.split('@')[0] : 'User'),
+      email: payload.email || '',
+      role: payload.role || 'USER',
+      isEmailVerified: true,
+      prayerCalculationMethod: payload.prayerCalculationMethod || 'Islamic University, Karachi',
+      latitude: payload.latitude ?? null,
+      longitude: payload.longitude ?? null,
+      createdAt: payload.createdAt || new Date().toISOString(),
+      updatedAt: payload.updatedAt || new Date().toISOString(),
+    };
+  },
   getCachedUser(): UserProfile | null {
-    try {
-      const raw = localStorage.getItem(USER_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
+    const token = this.getToken();
+    if (!token || this.isTokenExpired(token)) {
+      if (token && this.isTokenExpired(token)) {
+        this.clearToken();
+      }
       return null;
     }
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      if (raw) {
+        return JSON.parse(raw);
+      }
+    } catch {}
+    // If token is valid but cached profile wasn't stored, restore from token
+    return this.getUserFromToken(token);
   },
   setCachedUser(user: UserProfile): void {
     try {
@@ -962,8 +1023,19 @@ export const salahApi = {
     });
   },
 
-  async deleteQuranPageBookmark(id: string): Promise<{ success: boolean; id: string }> {
-    return await fetchWithAuth(`/quran/bookmarks/${encodeURIComponent(id)}`, {
+  async deleteQuranPageBookmark(
+    idOrParams: string | { id?: string; resourceKey?: string; pageNumber?: number }
+  ): Promise<{ success: boolean; id: string }> {
+    if (typeof idOrParams === 'string') {
+      return await fetchWithAuth(`/quran/bookmarks/${encodeURIComponent(idOrParams)}`, {
+        method: 'DELETE',
+      });
+    }
+    const query = new URLSearchParams();
+    if (idOrParams.resourceKey) query.set('resourceKey', idOrParams.resourceKey);
+    if (typeof idOrParams.pageNumber === 'number') query.set('pageNumber', String(idOrParams.pageNumber));
+    const targetId = idOrParams.id || 'by-page';
+    return await fetchWithAuth(`/quran/bookmarks/${encodeURIComponent(targetId)}?${query.toString()}`, {
       method: 'DELETE',
     });
   },

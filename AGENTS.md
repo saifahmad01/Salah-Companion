@@ -67,7 +67,7 @@ The platform serves Muslims worldwide—with dedicated localization for Indian c
 - **Dual-Source Hadith Architecture:**
   1. *Status-Tailored Hadiths:* Curated authentic Hadiths delivered immediately upon prayer logging to encourage punctuality or repentance.
   2. *Official HadithAPI & CDN Module:* Paginated study of classical books with Arabic, English, Urdu, and auto-generated Roman Urdu transliteration.
-- **Offline Quran Reader & 600-Word Vocabulary:** Large-file IndexedDB chunked streaming for the complete 138 MB Roman Urdu/Hindi Quran PDF, alongside 600 essential Quranic vocabulary words with categorization, bookmarks, and learned tracking.
+- **Offline Quran Reader & 600-Word Vocabulary:** Large-file IndexedDB chunked streaming for the complete 138 MB Roman Urdu/Hindi Quran PDF, alongside 600 essential Quranic vocabulary words with categorization, bookmarks, and learned tracking. Synchronized database & offline cached page bookmarks (`quran_page_bookmarks`) across both Quran and 600 Words readers with deduplication, jump-to-page drawer, and instant add/remove controls.
 - **Sensor-Driven Qibla Compass:** Great Circle Azimuth geodesic calculations to the Holy Kaaba in Makkah (21.422487° N, 39.826206° E) with Exponential Moving Average (EMA) heading smoothing and alignment haptics.
 - **Nearby Mosque Finder:** Real-time OpenStreetMap Overpass QL geospatial queries to discover active Masjids within configurable radii (2 km, 5 km, 10 km) with direction routing.
 - **Comprehensive Islamic Calendar:** Hijri calendar converter, White Days (*Ayyam al-Beed* 13th–15th) highlighting, major Islamic holidays, and fasting schedules.

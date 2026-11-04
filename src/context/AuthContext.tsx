@@ -71,18 +71,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         authStorage.setCachedUser(res.user)
         return res.user
       }
-      return null
+      return authStorage.getCachedUser()
     } catch (err: any) {
       // Only clear token if server explicitly returned 401 Unauthorized or 403 Forbidden
       const status = err?.status || err?.response?.status
       if (status === 401 || status === 403) {
         authStorage.clearToken()
         setUser(null)
+        return null
       } else {
         // Cold start, slow network, or offline: preserve cached user session
         console.warn('[AuthContext] Backend unreachable during refreshUser, preserving cached user session.')
+        const cached = authStorage.getCachedUser()
+        if (cached) {
+          setUser(cached)
+        }
+        return cached
       }
-      return null
     }
   }
 

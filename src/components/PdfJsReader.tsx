@@ -169,7 +169,9 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
   }, [targetWord])
 
   // Personal Page Bookmarks state
-  const [bookmarks, setBookmarks] = useState<QuranPageBookmarkItem[]>([])
+  const [bookmarks, setBookmarks] = useState<QuranPageBookmarkItem[]>(() =>
+    offlineQuranService.getLocalBookmarks(resourceKey)
+  )
   const [isBookmarksDrawerOpen, setIsBookmarksDrawerOpen] = useState<boolean>(false)
   const [isAddBookmarkModalOpen, setIsAddBookmarkModalOpen] = useState<boolean>(false)
   const [bookmarkTitle, setBookmarkTitle] = useState<string>('')
@@ -182,6 +184,9 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
   // Load offline download status and bookmarks on mount
   useEffect(() => {
     let mounted = true
+    // Immediate synchronous restore from offline cache
+    setBookmarks(offlineQuranService.getLocalBookmarks(resourceKey))
+
     const initData = async () => {
       const status =
         resourceKey === 'quran-roman-urdu'
@@ -190,7 +195,9 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
       if (mounted) setOfflineStatus(status)
 
       const bms = await offlineQuranService.fetchBookmarks(resourceKey)
-      if (mounted) setBookmarks(bms)
+      if (mounted && Array.isArray(bms)) {
+        setBookmarks(bms)
+      }
     }
     initData()
     return () => {
@@ -631,8 +638,9 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
 
   const handleDeleteBookmark = async (bookmarkId: string, pageNum: number) => {
     try {
+      // Optimistically remove immediately from UI
+      setBookmarks((prev) => prev.filter((b) => b.id !== bookmarkId && b.pageNumber !== pageNum))
       await offlineQuranService.deleteBookmark(resourceKey, bookmarkId, pageNum)
-      setBookmarks((prev) => prev.filter((b) => b.id !== bookmarkId))
     } catch (err) {
       console.error('Failed to delete bookmark:', err)
     }
@@ -1154,20 +1162,39 @@ export const PdfJsReader: React.FC<PdfJsReaderProps> = ({
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsAddBookmarkModalOpen(false)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#A0C4B2] hover:bg-[#124232] transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-[#E2B755] text-[#051A13] hover:brightness-105 font-bold text-xs shadow-md transition cursor-pointer"
-                >
-                  Save Bookmark
-                </button>
+              <div className="flex items-center justify-between gap-2 pt-2">
+                {bookmarks.some((b) => b.pageNumber === currentPage) ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const existing = bookmarks.find((b) => b.pageNumber === currentPage)
+                      if (existing) {
+                        await handleDeleteBookmark(existing.id, existing.pageNumber)
+                      }
+                      setIsAddBookmarkModalOpen(false)
+                    }}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-rose-300 hover:bg-rose-950/60 border border-rose-800/60 transition cursor-pointer"
+                  >
+                    Remove
+                  </button>
+                ) : (
+                  <div />
+                )}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddBookmarkModalOpen(false)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold text-[#A0C4B2] hover:bg-[#124232] transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 rounded-xl bg-[#E2B755] text-[#051A13] hover:brightness-105 font-bold text-xs shadow-md transition cursor-pointer"
+                  >
+                    Save Bookmark
+                  </button>
+                </div>
               </div>
             </form>
           </div>

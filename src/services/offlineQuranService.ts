@@ -1,5 +1,5 @@
 import { storage } from '../platform/storage'
-import { salahApi, type QuranPageBookmarkItem, type QuranReadingProgressStateItem } from './backendApi'
+import { salahApi, authStorage, type QuranPageBookmarkItem, type QuranReadingProgressStateItem } from './backendApi'
 import type { UserWordProgress } from '../data/quranVocabulary'
 
 export interface QuranReadingProgress {
@@ -517,23 +517,56 @@ export const offlineQuranService = {
   // 4. PERSONAL PDF PAGE BOOKMARKS & OFFLINE CACHE
   // ==========================================================================
 
+  getBookmarkStorageKey(resourceKey: string): string {
+    const user = authStorage.getCachedUser() || authStorage.getUserFromToken()
+    const userPrefix = user?.id ? `${user.id}_` : ''
+    return `salah_pdf_bookmarks_${userPrefix}${resourceKey}`
+  },
+
   getLocalBookmarks(resourceKey: string): QuranPageBookmarkItem[] {
-    const key = `salah_pdf_bookmarks_${resourceKey}`
-    return storage.getItem<QuranPageBookmarkItem[]>(key) || []
+    const key = this.getBookmarkStorageKey(resourceKey)
+    let list = storage.getItem<QuranPageBookmarkItem[]>(key)
+    // Legacy migration fallback if user-scoped key is empty
+    if ((!list || list.length === 0) && key !== `salah_pdf_bookmarks_${resourceKey}`) {
+      const legacy = storage.getItem<QuranPageBookmarkItem[]>(`salah_pdf_bookmarks_${resourceKey}`)
+      if (legacy && legacy.length > 0) {
+        list = legacy
+        storage.setItem(key, legacy)
+      }
+    }
+    const safeList = Array.isArray(list) ? list : []
+    const seen = new Set<number>()
+    const deduped: QuranPageBookmarkItem[] = []
+    for (const b of safeList) {
+      if (!seen.has(b.pageNumber)) {
+        seen.add(b.pageNumber)
+        deduped.push(b)
+      }
+    }
+    return deduped.sort((a, b) => a.pageNumber - b.pageNumber)
   },
 
   saveLocalBookmarks(resourceKey: string, bookmarks: QuranPageBookmarkItem[]): void {
-    const key = `salah_pdf_bookmarks_${resourceKey}`
-    storage.setItem(key, bookmarks)
+    const key = this.getBookmarkStorageKey(resourceKey)
+    const seen = new Set<number>()
+    const deduped: QuranPageBookmarkItem[] = []
+    for (const b of bookmarks) {
+      if (!seen.has(b.pageNumber)) {
+        seen.add(b.pageNumber)
+        deduped.push(b)
+      }
+    }
+    deduped.sort((a, b) => a.pageNumber - b.pageNumber)
+    storage.setItem(key, deduped)
   },
 
   async fetchBookmarks(resourceKey: string): Promise<QuranPageBookmarkItem[]> {
     const local = this.getLocalBookmarks(resourceKey)
     try {
       const res = await salahApi.getQuranPageBookmarks(resourceKey)
-      if (res?.data) {
+      if (res?.data && Array.isArray(res.data)) {
         this.saveLocalBookmarks(resourceKey, res.data)
-        return res.data
+        return this.getLocalBookmarks(resourceKey)
       }
     } catch {
       // Offline fallback
@@ -548,32 +581,35 @@ export const offlineQuranService = {
     notes?: string
   }): Promise<QuranPageBookmarkItem> {
     const local = this.getLocalBookmarks(payload.resourceKey)
+    const existing = local.find((b) => b.pageNumber === payload.pageNumber)
+    const user = authStorage.getCachedUser() || authStorage.getUserFromToken()
     const tempItem: QuranPageBookmarkItem = {
-      id: `local_${Date.now()}`,
-      userId: 'current',
+      id: existing?.id && !existing.id.startsWith('local_') ? existing.id : `local_${Date.now()}`,
+      userId: user?.id || 'current',
       resourceKey: payload.resourceKey,
       pageNumber: payload.pageNumber,
       title: payload.title,
       notes: payload.notes || null,
-      createdAt: new Date().toISOString(),
+      createdAt: existing?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
 
-    // Upsert locally
+    // Upsert locally immediately for 0ms reactivity
     const filtered = local.filter((b) => b.pageNumber !== payload.pageNumber)
     filtered.push(tempItem)
-    filtered.sort((a, b) => a.pageNumber - b.pageNumber)
     this.saveLocalBookmarks(payload.resourceKey, filtered)
 
     try {
       const res = await salahApi.saveQuranPageBookmark(payload)
       if (res?.data) {
-        const updated = filtered.map((b) => (b.pageNumber === payload.pageNumber ? res.data : b))
-        this.saveLocalBookmarks(payload.resourceKey, updated)
+        const reUpdated = this.getLocalBookmarks(payload.resourceKey).map((b) =>
+          b.pageNumber === payload.pageNumber ? res.data : b
+        )
+        this.saveLocalBookmarks(payload.resourceKey, reUpdated)
         return res.data
       }
-    } catch {
-      // Will sync later
+    } catch (err) {
+      console.warn('[OfflineQuran] Server unreachable, saved bookmark locally in cache:', err)
     }
     return tempItem
   },
@@ -583,18 +619,25 @@ export const offlineQuranService = {
     const updated = local.filter((b) => b.id !== bookmarkId && b.pageNumber !== pageNumber)
     this.saveLocalBookmarks(resourceKey, updated)
 
-    if (!bookmarkId.startsWith('local_')) {
-      try {
-        await salahApi.deleteQuranPageBookmark(bookmarkId)
-      } catch {
-        // Ignored if offline
-      }
+    try {
+      await salahApi.deleteQuranPageBookmark({
+        id: bookmarkId.startsWith('local_') ? undefined : bookmarkId,
+        resourceKey,
+        pageNumber,
+      })
+    } catch (err) {
+      console.warn('[OfflineQuran] Server unreachable for deleteBookmark:', err)
     }
   },
 
   // ==========================================================================
   // 5. 600 VOCABULARY WORDS PROGRESS
   // ==========================================================================
+
+  saveWordProgressMap(map: Record<number, UserWordProgress>): void {
+    storage.setItem(WORD_PROGRESS_KEY, map)
+  },
+
 
   getWordProgressMap(): Record<number, UserWordProgress> {
     return storage.getItem<Record<number, UserWordProgress>>(WORD_PROGRESS_KEY) || {}
