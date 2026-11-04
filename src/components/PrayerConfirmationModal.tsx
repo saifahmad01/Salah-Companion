@@ -75,6 +75,11 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
   isCorrection = false,
   error = null,
 }) => {
+  // --------------------------------------------------------------------------
+  // RULES OF HOOKS COMPLIANCE:
+  // All hooks must execute unconditionally in the exact same order on every render.
+  // Never place return statements before any hook declaration!
+  // --------------------------------------------------------------------------
   const [mountedAt, setMountedAt] = React.useState(() => Date.now())
   const isExecutingRef = useRef(false)
 
@@ -85,30 +90,7 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
     }
   }, [isOpen])
 
-  if (!isOpen || !prayer) return null
-
-  const rawKey = prayer.id ? String(prayer.id).toLowerCase().trim() : 'fajr'
-  const prayerKey = (rawKey === 'juma' || rawKey === 'jumuah' || rawKey === "jumu'ah" || rawKey === 'jummah') ? 'dhuhr' : rawKey
-  const hadith = VERIFIED_PRAYER_HADITHS[prayerKey] || VERIFIED_PRAYER_HADITHS.fajr
-  const prayerDisplayName = prayer.name || prayerKey.charAt(0).toUpperCase() + prayerKey.slice(1)
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape' && !isSubmitting && !isExecutingRef.current) {
-      onClose()
-    }
-  }
-
-  const handleSafeConfirm = async () => {
-    if (isSubmitting || isExecutingRef.current) return
-    isExecutingRef.current = true
-    try {
-      await onConfirm()
-    } finally {
-      isExecutingRef.current = false
-    }
-  }
-
-  // Format date display
+  // Format date display (Hook #4)
   const formattedDateStr = React.useMemo(() => {
     if (!prayerDate) return null
     try {
@@ -126,7 +108,7 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
     }
   }, [prayerDate])
 
-  // Dynamic status badges and contextual messages
+  // Dynamic status badges and contextual messages (Hook #5)
   const statusConfig = React.useMemo(() => {
     switch (targetStatus) {
       case 'ON_TIME':
@@ -175,6 +157,31 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
         }
     }
   }, [targetStatus, isCorrection])
+
+  // All React Hooks have executed unconditionally.
+  // Safe early exit if the modal is closed or prayer is null.
+  if (!isOpen || !prayer) return null
+
+  const rawKey = prayer.id ? String(prayer.id).toLowerCase().trim() : 'fajr'
+  const prayerKey = (rawKey === 'juma' || rawKey === 'jumuah' || rawKey === "jumu'ah" || rawKey === 'jummah') ? 'dhuhr' : rawKey
+  const hadith = VERIFIED_PRAYER_HADITHS[prayerKey] || VERIFIED_PRAYER_HADITHS.fajr
+  const prayerDisplayName = prayer.name || prayerKey.charAt(0).toUpperCase() + prayerKey.slice(1)
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && !isSubmitting && !isExecutingRef.current) {
+      onClose()
+    }
+  }
+
+  const handleSafeConfirm = async () => {
+    if (isSubmitting || isExecutingRef.current) return
+    isExecutingRef.current = true
+    try {
+      await onConfirm()
+    } finally {
+      isExecutingRef.current = false
+    }
+  }
 
   return (
     <div
@@ -240,72 +247,77 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
               <BookOpen className="w-3.5 h-3.5" />
               <span>Authentic Hadith Reminder</span>
             </div>
-            <span className="text-[9.5px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 border border-emerald-200">
+            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300/60 px-2 py-0.5 rounded-full uppercase tracking-wider">
               {hadith.grade}
             </span>
           </div>
 
-          {/* Arabic Text with Proper RTL typography */}
-          <div className="my-2 p-3 rounded-xl bg-white/70 border border-[#E5DFCE] text-right font-serif text-[16px] sm:text-[17px] leading-loose text-[#0D382B] dir-rtl select-text">
-            {hadith.arabic}
+          {/* Arabic Text with traditional typography */}
+          <div className="my-2.5 p-3 rounded-xl bg-[#FAF8F3]/90 border border-[#E6E0D2] text-right">
+            <p className="font-arabic text-[19px] sm:text-[21px] text-[#12281E] leading-[2] sm:leading-[2.1] dir-rtl font-medium select-text">
+              {hadith.arabic}
+            </p>
           </div>
 
           {/* English Translation */}
-          <p className="text-xs sm:text-[12.5px] text-[#2D3F36] italic leading-relaxed font-sans">
+          <p className="text-xs sm:text-[13px] text-[#243E31] italic leading-relaxed font-serif mt-2 select-text">
             {hadith.english}
           </p>
 
-          {/* Source & Citation Reference */}
-          <div className="mt-3 pt-2 border-t border-[#DFD8C5] flex items-center justify-between text-[10.5px] text-[#697A70]">
-            <span className="font-semibold text-[#8E5B36] font-mono truncate max-w-[65%]">
+          {/* Citation & Context Footer */}
+          <div className="mt-3 pt-2.5 border-t border-[#DFD8C4] flex items-center justify-between text-[11px] text-[#715B2D]">
+            <span className="font-semibold truncate max-w-[240px]">
               Source: {hadith.source}
             </span>
-            <span className="text-[10px] text-[#55675D] flex items-center gap-1 flex-shrink-0">
-              <Clock className="w-3 h-3" />
-              <span>{prayer.time}</span>
-            </span>
+            {prayer.time && (
+              <span className="font-mono text-[#52655A] text-[10.5px] flex items-center gap-1 flex-shrink-0">
+                <Clock className="w-3 h-3" />
+                Scheduled: {prayer.time}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Confirmation Question & Status Badge */}
-        <div className="mt-3.5 p-3.5 rounded-2xl bg-white border border-[#E8E2D5] shadow-2xs space-y-2">
-          <div className="flex items-center justify-between">
-            <p className="text-xs sm:text-[13px] font-bold text-[#14261E]">
-              {isCorrection
-                ? `Confirm correction for ${prayerDisplayName}?`
-                : `Have you completed your ${prayerDisplayName} Salah?`}
-            </p>
-            {formattedDateStr && (
-              <span className="text-[10.5px] font-medium text-stone-500 flex items-center gap-1">
-                <Calendar className="w-3 h-3" />
-                <span>{formattedDateStr}</span>
+        {/* Status Confirmation Prompt */}
+        <div className="mt-3.5 p-3.5 rounded-2xl bg-white border border-stone-200 shadow-2xs text-center space-y-2">
+          <p className="text-sm font-bold text-[#14261E]">
+            {isCorrection
+              ? `Confirm correction for ${prayerDisplayName}?`
+              : `Have you completed your ${prayerDisplayName} Salah?`}
+          </p>
+
+          {/* Target Status Pill */}
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border text-xs font-bold shadow-2xs tracking-wide">
+            <span className={`w-2 h-2 rounded-full ${statusConfig.dotColor} animate-pulse`} />
+            <span className={statusConfig.badgeClass.split(' ')[1] || 'text-stone-800'}>
+              STATUS: {statusConfig.label}
+            </span>
+            {statusConfig.urdu && (
+              <span className="font-arabic text-[13px] text-stone-600 font-normal mr-0.5">
+                ({statusConfig.urdu})
               </span>
             )}
           </div>
 
-          {/* Dynamic Status Pill */}
-          <div className="flex items-center gap-2">
-            <span className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${statusConfig.badgeClass}`}>
-              <span className={`w-1.5 h-1.5 rounded-full ${statusConfig.dotColor}`} />
-              <span>STATUS: {statusConfig.label}</span>
-              {statusConfig.urdu && (
-                <span className="font-serif text-[11px] font-normal opacity-80">({statusConfig.urdu})</span>
-              )}
-            </span>
-          </div>
-
-          <p className="text-[11px] text-[#55675D] leading-snug">
+          <p className="text-[11.5px] text-[#4E6256] leading-relaxed max-w-xs mx-auto">
             {statusConfig.explanation}
           </p>
+
+          {formattedDateStr && (
+            <div className="flex items-center justify-center gap-1.5 text-[11px] text-stone-500 font-mono pt-1">
+              <Calendar className="w-3 h-3" />
+              <span>Record date: {formattedDateStr}</span>
+            </div>
+          )}
         </div>
 
-        {/* Action Buttons: Cancel vs Confirm Salah */}
-        <div className="mt-4 flex items-center gap-2.5">
+        {/* Action Buttons */}
+        <div className="mt-4 grid grid-cols-2 gap-2.5">
           <button
             type="button"
             onClick={onClose}
             disabled={isSubmitting || isExecutingRef.current}
-            className="flex-1 py-2.5 px-3 rounded-xl border border-stone-300 bg-white hover:bg-stone-100 text-stone-700 font-semibold text-xs transition cursor-pointer active:scale-98 disabled:opacity-50 text-center touch-manipulation"
+            className="w-full py-2.5 px-4 rounded-xl text-xs font-semibold bg-stone-200/80 hover:bg-stone-300 text-stone-800 transition cursor-pointer disabled:opacity-50"
           >
             Cancel
           </button>
@@ -313,21 +325,22 @@ export const PrayerConfirmationModal: React.FC<PrayerConfirmationModalProps> = (
             type="button"
             onClick={handleSafeConfirm}
             disabled={isSubmitting || isExecutingRef.current}
-            className="flex-1 py-2.5 px-3 rounded-xl bg-gradient-to-r from-[#0C4535] to-[#0E543F] hover:from-[#083327] hover:to-[#0C4535] text-white font-bold text-xs transition shadow-sm cursor-pointer active:scale-98 flex items-center justify-center gap-1.5 disabled:opacity-60 touch-manipulation"
+            className="w-full py-2.5 px-4 rounded-xl text-xs font-bold bg-[#0C4535] hover:bg-[#093529] text-white shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 active:scale-[0.98]"
           >
             {isSubmitting ? (
               <>
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>{isCorrection ? 'Updating...' : 'Verifying...'}</span>
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <span>Recording...</span>
+              </>
+            ) : isCorrection ? (
+              <>
+                <RotateCcw className="w-4 h-4" />
+                <span>Update Salah</span>
               </>
             ) : (
               <>
-                {targetStatus === 'QADA' ? (
-                  <RotateCcw className="w-3.5 h-3.5" />
-                ) : (
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                )}
-                <span>{isCorrection ? 'Confirm Correction' : 'Confirm Salah'}</span>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Confirm Salah</span>
               </>
             )}
           </button>
