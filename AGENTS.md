@@ -662,6 +662,8 @@ Base URL: `http://localhost:8080/api` (Dev) | `https://salah-companion-z3i4.onre
 | `GET` | `/api/prayers/analytics`| Verified User | Breakdown percentages, on-time rate, and active streaks. |
 | `PATCH`| `/api/prayers/log/:id` | Verified User | Update existing prayer status or personal notes. |
 | `DELETE`| `/api/prayers/log/:id` | Verified User | Undo/delete a prayer logged today. Historical records are read-only. |
+| `POST` | `/api/prayers/corrections/request` | Verified User | Submit historical Salah correction request (strictly for past dates). Stored as `PENDING_APPROVAL` without altering historical `prayer_logs`. |
+| `GET`  | `/api/prayers/corrections/my` | Verified User | Fetch current authenticated user's submitted historical correction requests with approval statuses and rejection reasons. |
 
 ### Progress Summary (`/api/progress`)
 | Method | Path | Auth Required | Description |
@@ -710,6 +712,9 @@ Base URL: `http://localhost:8080/api` (Dev) | `https://salah-companion-z3i4.onre
 | `GET` | `/api/admin/prayers` | Admin Only | Search and filter user prayer logs by user, prayer, status, and date range. |
 | `POST` | `/api/admin/prayers/correct` | Admin Only | Correct or delete a prayer record for any user with mandatory reason & audit logging. |
 | `GET` | `/api/admin/prayers/corrections` | Admin Only | Paginated audit trail of all administrative corrections (`admin_prayer_corrections`). |
+| `GET` | `/api/admin/prayers/correction-requests` | Admin Only | Search and filter user historical correction requests by status (`PENDING_APPROVAL`, `APPROVED`, `REJECTED`, `ALL`) and user/date. |
+| `POST` | `/api/admin/prayers/correction-requests/:id/approve` | Admin Only | Atomically approves request, updates historical `prayer_logs` with `is_admin_override=true`, logs audit in `admin_prayer_corrections`, and sends notification. |
+| `POST` | `/api/admin/prayers/correction-requests/:id/reject` | Admin Only | Rejects request with mandatory rejection reason; leaves historical `prayer_logs` completely unchanged. |
 | `GET` | `/api/admin/analytics/salah` | Admin Only | Aggregated KPIs: completion rates, quality breakdown, notification delivery rates, recent corrections. |
 | `GET` | `/api/admin/app/version` | Admin Only | Retrieve application release metadata including release notes and APK download URL. |
 | `POST` | `/api/admin/app/version` | Admin Only | Publish or update application release info (semver, release notes, and HTTPS APK download link). |

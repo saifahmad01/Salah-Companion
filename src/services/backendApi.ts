@@ -954,6 +954,46 @@ export const salahApi = {
   async getAppReleaseInfo(): Promise<{ success: boolean; data: any }> {
     return await fetchWithAuth('/app/version', { method: 'GET' });
   },
+
+  /**
+   * Submit a historical Salah correction request for admin review (strictly for past dates)
+   */
+  async submitCorrectionRequest(payload: {
+    prayerName: string;
+    prayerDate: string;
+    requestedStatus: string;
+    reason: string;
+    notes?: string;
+  }): Promise<{ success: boolean; message: string; data: SalahCorrectionRequestItem }> {
+    return await fetchWithAuth('/prayers/corrections/request', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /**
+   * Fetch current user's submitted correction requests
+   */
+  async getMyCorrectionRequests(params: {
+    status?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{
+    success: boolean;
+    data: {
+      requests: SalahCorrectionRequestItem[];
+      total: number;
+      page: number;
+      totalPages: number;
+    };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params.status) searchParams.set('status', params.status);
+    if (params.page) searchParams.set('page', params.page.toString());
+    if (params.limit) searchParams.set('limit', params.limit.toString());
+    const query = searchParams.toString() ? '?' + searchParams.toString() : '';
+    return await fetchWithAuth('/prayers/corrections/my' + query, { method: 'GET' });
+  },
 };
 
 
@@ -1105,6 +1145,61 @@ export const adminApi = {
 
   async getAdminSalahAnalytics(): Promise<{ success: boolean; analytics: AdminSalahAnalyticsData }> {
     return await fetchWithAuth('/admin/analytics/salah', { method: 'GET' });
+  },
+
+  async getCorrectionRequests(params: {
+    status?: string;
+    q?: string;
+    prayerDate?: string;
+    prayerName?: string;
+    page?: number;
+    limit?: number;
+  } = {}): Promise<{
+    success: boolean;
+    data: {
+      requests: SalahCorrectionRequestItem[];
+      total: number;
+      page: number;
+      totalPages: number;
+      summary: {
+        pending: number;
+        approved: number;
+        rejected: number;
+        totalAll: number;
+      };
+    };
+  }> {
+    const searchParams = new URLSearchParams();
+    if (params.status) searchParams.set('status', params.status);
+    if (params.q) searchParams.set('q', params.q);
+    if (params.prayerDate) searchParams.set('prayerDate', params.prayerDate);
+    if (params.prayerName) searchParams.set('prayerName', params.prayerName);
+    if (params.page) searchParams.set('page', params.page.toString());
+    if (params.limit) searchParams.set('limit', params.limit.toString());
+    const query = searchParams.toString() ? '?' + searchParams.toString() : '';
+    return await fetchWithAuth('/admin/prayers/correction-requests' + query, { method: 'GET' });
+  },
+
+  async approveCorrectionRequest(id: string, payload: { adminNotes?: string } = {}): Promise<{
+    success: boolean;
+    message: string;
+    data: any;
+  }> {
+    return await fetchWithAuth('/admin/prayers/correction-requests/' + id + '/approve', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async rejectCorrectionRequest(id: string, payload: { rejectionReason: string }): Promise<{
+    success: boolean;
+    message: string;
+    data: any;
+  }> {
+    return await fetchWithAuth('/admin/prayers/correction-requests/' + id + '/reject', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
   },
 };
 
@@ -1287,3 +1382,32 @@ export interface QuranReadingProgressStateItem {
 
 
 
+
+export interface SalahCorrectionRequestItem {
+  id: string;
+  userId: string;
+  prayerLogId?: string | null;
+  prayerName: string;
+  prayerDate: string;
+  previousStatus: string;
+  requestedStatus: string;
+  reason: string;
+  notes?: string | null;
+  status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED';
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
+  rejectionReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  user?: {
+    id: string;
+    name: string;
+    email: string;
+    avatarUrl?: string | null;
+  };
+  reviewer?: {
+    id: string;
+    name: string;
+    email: string;
+  } | null;
+}

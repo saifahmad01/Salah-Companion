@@ -68,6 +68,25 @@ if (isPostgresUrl) {
     ALTER TABLE "prayer_logs" ADD COLUMN IF NOT EXISTS "is_admin_override" BOOLEAN NOT NULL DEFAULT false;
     ALTER TABLE "prayer_logs" ADD COLUMN IF NOT EXISTS "qada_completed_at" TIMESTAMPTZ;
     CREATE INDEX IF NOT EXISTS "idx_prayer_logs_user_status" ON "prayer_logs"("user_id", "status");
+    CREATE TABLE IF NOT EXISTS "salah_correction_requests" (
+      "id" TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      "user_id" TEXT NOT NULL REFERENCES "users"("id") ON DELETE CASCADE,
+      "prayer_log_id" TEXT REFERENCES "prayer_logs"("id") ON DELETE SET NULL,
+      "prayer_name" TEXT NOT NULL,
+      "prayer_date" TEXT NOT NULL,
+      "previous_status" TEXT NOT NULL DEFAULT 'missed',
+      "requested_status" TEXT NOT NULL,
+      "reason" TEXT NOT NULL,
+      "notes" TEXT,
+      "status" TEXT NOT NULL DEFAULT 'PENDING_APPROVAL',
+      "reviewed_by" TEXT REFERENCES "users"("id") ON DELETE SET NULL,
+      "reviewed_at" TIMESTAMPTZ,
+      "rejection_reason" TEXT,
+      "created_at" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updated_at" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS "idx_salah_corrections_user" ON "salah_correction_requests"("user_id", "status");
+    CREATE INDEX IF NOT EXISTS "idx_salah_corrections_status" ON "salah_correction_requests"("status", "created_at");
   `).then(() => {
     console.log('[PostgreSQL] Verified prayer_logs schema invariants (is_admin_override, qada_completed_at).');
   }).catch((err) => {

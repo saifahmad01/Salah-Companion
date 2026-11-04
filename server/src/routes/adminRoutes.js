@@ -21,6 +21,11 @@ import {
   getAdminPrayerCorrections,
   getAdminSalahAnalytics,
 } from '../controllers/adminSalahController.js';
+import {
+  getAdminCorrectionRequests,
+  approveCorrectionRequest,
+  rejectCorrectionRequest,
+} from '../controllers/salahCorrectionController.js';
 import { protectRoute, restrictTo } from '../middlewares/authMiddleware.js';
 
 export const adminRouter = Router();
@@ -52,12 +57,18 @@ adminRouter.get('/prayers/corrections', getAdminPrayerCorrections);
 adminRouter.get('/analytics/salah', getAdminSalahAnalytics);
 
 // ============================================================================
+// Admin Salah Historical Correction Requests Review
+// ============================================================================
+adminRouter.get('/prayers/correction-requests', getAdminCorrectionRequests);
+adminRouter.post('/prayers/correction-requests/:id/approve', approveCorrectionRequest);
+adminRouter.post('/prayers/correction-requests/:id/reject', rejectCorrectionRequest);
+
+// ============================================================================
 // Quran PDF Resource Admin Endpoints
 // ============================================================================
 adminRouter.get('/quran/resources', getAdminQuranResources);
 adminRouter.post('/quran/resources', upsertQuranResource);
 adminRouter.patch('/quran/resources/:id/status', toggleResourceStatus);
-
 
 // ============================================================================
 // Application Version & Release Management

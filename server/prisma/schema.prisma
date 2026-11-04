@@ -45,6 +45,8 @@ model User {
   readingProgressStates   QuranReadingProgressState[]
   adminCorrectionsReceived AdminPrayerCorrection[] @relation("TargetUser")
   adminCorrectionsMade     AdminPrayerCorrection[] @relation("AdminUser")
+  correctionRequestsMade     SalahCorrectionRequest[] @relation("CorrectionRequestUser")
+  correctionRequestsReviewed SalahCorrectionRequest[] @relation("CorrectionRequestReviewer")
 
   @@index([email])
   @@index([verificationTokenHash])
@@ -70,6 +72,7 @@ model PrayerLog {
   isAdminOverride Boolean  @default(false) @map("is_admin_override")
   qadaCompletedAt DateTime? @map("qada_completed_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
+  correctionRequests SalahCorrectionRequest[]
 
   @@unique([userId, prayerName, date])
   @@index([userId, date])
@@ -310,4 +313,31 @@ model AdminPrayerCorrection {
   @@map("admin_prayer_corrections")
 }
 
+// ----------------------------------------------------------------------------
+// Historical Salah Correction Requests (User-submitted, Admin-approved)
+// ----------------------------------------------------------------------------
+model SalahCorrectionRequest {
+  id              String      @id @default(uuid())
+  userId          String      @map("user_id")
+  user            User        @relation("CorrectionRequestUser", fields: [userId], references: [id], onDelete: Cascade)
+  prayerLogId     String?     @map("prayer_log_id")
+  prayerLog       PrayerLog?  @relation(fields: [prayerLogId], references: [id], onDelete: SetNull)
+  prayerName      String      @map("prayer_name")
+  prayerDate      String      @map("prayer_date")
+  previousStatus  String      @map("previous_status")
+  requestedStatus String      @map("requested_status")
+  reason          String
+  notes           String?
+  status          String      @default("PENDING_APPROVAL")
+  reviewedBy      String?     @map("reviewed_by")
+  reviewer        User?       @relation("CorrectionRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewedAt      DateTime?   @map("reviewed_at")
+  rejectionReason String?     @map("rejection_reason")
+  createdAt       DateTime    @default(now()) @map("created_at")
+  updatedAt       DateTime    @updatedAt @map("updated_at")
 
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([prayerDate])
+  @@map("salah_correction_requests")
+}

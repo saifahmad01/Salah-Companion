@@ -10,6 +10,10 @@ import {
   recordQadaPrayer,
   getPendingQadaPrayers,
 } from '../controllers/prayerLogController.js';
+import {
+  submitCorrectionRequest,
+  getMyCorrectionRequests,
+} from '../controllers/salahCorrectionController.js';
 import { protectRoute, requireVerifiedEmail, validateBody } from '../middlewares/authMiddleware.js';
 import { logPrayerInputSchema } from '../schemas/prayerLogSchema.js';
 
@@ -18,6 +22,10 @@ export const prayerLogRouter = Router();
 // Enforce authentication & verified email status on all prayer log routes
 prayerLogRouter.use(protectRoute);
 prayerLogRouter.use(requireVerifiedEmail);
+
+// Historical Salah Correction Requests (User-facing, strictly for past dates)
+prayerLogRouter.post('/corrections/request', submitCorrectionRequest);
+prayerLogRouter.get('/corrections/my', getMyCorrectionRequests);
 
 // Qada routes
 prayerLogRouter.post('/qada', recordQadaPrayer);
@@ -47,4 +55,3 @@ prayerLogRouter.delete('/log/:id', deletePrayerLog);
 prayerLogRouter.delete('/:id', deletePrayerLog);
 prayerLogRouter.delete('/log', deletePrayerLog);
 prayerLogRouter.delete('/', deletePrayerLog);
-
