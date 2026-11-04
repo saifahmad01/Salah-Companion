@@ -41,6 +41,7 @@ import {
 } from '../services/backendApi'
 import { device } from '../platform/device'
 import { PdfJsReader } from './PdfJsReader'
+import { QuranScreenSkeleton } from './SkeletonLoaders'
 
 
 interface QuranScreenProps {
@@ -496,7 +497,10 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
       {/* SUB-TAB 1: PERSONAL QURAN READING TRACKER & DASHBOARD     */}
       {/* ======================================================== */}
       {activeTab === 'dashboard' && (
-        <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
+        isLoadingDashboard && !dashboardData ? (
+          <QuranScreenSkeleton />
+        ) : (
+          <div className="p-4 sm:p-6 max-w-4xl mx-auto space-y-5">
           {/* Action Hero Header */}
           <div className="bg-gradient-to-br from-[#064E3B] to-[#043327] rounded-3xl p-5 sm:p-6 text-white shadow-md relative overflow-hidden border border-emerald-800/40">
             <div className="absolute right-0 top-0 w-48 h-48 bg-[#E2B755]/10 rounded-full blur-2xl pointer-events-none"></div>
@@ -710,6 +714,7 @@ export const QuranScreen: React.FC<QuranScreenProps> = ({ onBack, onOpenHadithVi
             )}
           </div>
         </div>
+        )
       )}
 
       {/* ======================================================== */}

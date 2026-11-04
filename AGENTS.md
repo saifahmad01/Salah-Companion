@@ -192,6 +192,7 @@ flowchart TD
 2. **Dual-Tier Database Strategy:** Production uses Supabase PostgreSQL through connection poolers (PgBouncer port 6543) and direct connection (port 5432). Local development automatically diverts to `database.sqlite` / `dev.db` when Supabase is inaccessible or during automated test runs.
 3. **Graceful Degradation:** The client calculates prayer times and Qibla direction offline using local astronomical math without blocking on network availability.
 4. **Idempotency & Isolation:** Background schedulers and prayer logging routes enforce strict idempotency keys to eliminate double logging and notification spam.
+5. **Frontend-First Stale-While-Revalidate Rendering:** The layout, navigation, astronomical timings, and cached records render immediately (0ms delay). Dynamic backend queries use stale-while-revalidate with persistent local storage and session storage caches, smooth skeleton loaders, and controlled exponential backoff without blocking screens on backend cold starts.
 
 ---
 
@@ -235,6 +236,7 @@ src/
 │   ├── ServerWarmupNotice.tsx # Auto-detects Render cold start and shows warmup pill
 │   ├── SettingsScreen.tsx  # App configurations, calculation methods, notifications
 │   ├── SignOutConfirmationModal.tsx # Explicit sign-out prompt
+│   ├── SkeletonLoaders.tsx  # Smooth skeleton placeholders for 0ms frontend-first rendering
 │   ├── StrengthenIman.tsx  # Curated lessons and inspirational articles
 │   ├── TodaysDeeds.tsx     # Daily Sunnah deed checklist (6 deeds)
 │   └── TodaysSalah.tsx     # Primary 5-prayer completion list on Home tab

@@ -1,7 +1,8 @@
 import React from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { Compass } from 'lucide-react'
+import { authStorage } from '../services/backendApi'
+import { DashboardSkeleton } from './SkeletonLoaders'
 
 interface ProtectedRouteProps {
   children: React.ReactElement
@@ -10,24 +11,24 @@ interface ProtectedRouteProps {
 export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   const { user, loading } = useAuth()
   const location = useLocation()
+  const hasToken = !!authStorage.getToken()
 
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-[#07241A] flex flex-col items-center justify-center text-center p-6 select-none">
-        <div className="relative mb-4">
-          <div className="w-16 h-16 rounded-full border-2 border-amber-400/20 border-t-amber-400 animate-spin" />
-          <Compass className="w-8 h-8 text-amber-300 absolute inset-0 m-auto" />
-        </div>
-        <h2 className="text-xl font-serif text-white tracking-wide">Salah Companion</h2>
-        <p className="text-xs text-emerald-200/70 mt-1 font-sans">Connecting to your prayer space...</p>
-      </div>
-    )
+  // 1. If user is already loaded (e.g. from cached profile), render immediately (0ms delay)
+  if (user) {
+    return children
   }
 
-  if (!user) {
-    // Redirect to login preserving intended target URL
+  // 2. If no token exists at all, redirect immediately to login without waiting
+  if (!hasToken) {
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  return children
+  // 3. If token exists but auth is still validating (no cached profile yet),
+  // render the smooth layout skeleton instead of a full-page blocking spinner
+  if (loading) {
+    return <DashboardSkeleton />
+  }
+
+  // 4. Fallback: verification completed but no valid user found
+  return <Navigate to="/login" state={{ from: location }} replace />
 }

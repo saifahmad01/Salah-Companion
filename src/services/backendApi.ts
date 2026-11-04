@@ -33,8 +33,9 @@ export function resolveApiBaseUrl(): string {
 export const PRIMARY_BASE_URL = resolveApiBaseUrl();
 const FALLBACK_BASE_URL = 'https://salah-companion-z3i4.onrender.com/api';
 const TOKEN_KEY = 'salah_auth_token';
+const USER_KEY = 'salah_user_profile';
 
-// Token persistence helpers
+// Token and profile persistence helpers for 0ms frontend-first session restoration
 export const authStorage = {
   getToken(): string | null {
     return localStorage.getItem(TOKEN_KEY);
@@ -44,6 +45,20 @@ export const authStorage = {
   },
   clearToken(): void {
     localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(USER_KEY);
+  },
+  getCachedUser(): UserProfile | null {
+    try {
+      const raw = localStorage.getItem(USER_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  },
+  setCachedUser(user: UserProfile): void {
+    try {
+      localStorage.setItem(USER_KEY, JSON.stringify(user));
+    } catch {}
   },
 };
 
@@ -289,6 +304,9 @@ export const salahApi = {
     if (data.token) {
       authStorage.setToken(data.token);
     }
+    if (data.user) {
+      authStorage.setCachedUser(data.user);
+    }
     return data;
   },
 
@@ -321,6 +339,9 @@ export const salahApi = {
     });
     if (data.token) {
       authStorage.setToken(data.token);
+    }
+    if (data.user) {
+      authStorage.setCachedUser(data.user);
     }
     return data;
   },
@@ -359,6 +380,9 @@ export const salahApi = {
     if (data.token) {
       authStorage.setToken(data.token);
     }
+    if (data.user) {
+      authStorage.setCachedUser(data.user);
+    }
     return data;
   },
 
@@ -384,6 +408,9 @@ export const salahApi = {
     });
     if (data.token) {
       authStorage.setToken(data.token);
+    }
+    if (data.user) {
+      authStorage.setCachedUser(data.user);
     }
     return data;
   },
@@ -417,6 +444,9 @@ export const salahApi = {
     if (data.token) {
       authStorage.setToken(data.token);
     }
+    if (data.user) {
+      authStorage.setCachedUser(data.user);
+    }
     return data;
   },
 
@@ -449,7 +479,11 @@ export const salahApi = {
    * GET /api/auth/me (Protected)
    */
   async getMe(): Promise<{ success: boolean; user: UserProfile }> {
-    return await fetchWithAuth('/auth/me', { method: 'GET' });
+    const data = await fetchWithAuth('/auth/me', { method: 'GET' });
+    if (data?.user) {
+      authStorage.setCachedUser(data.user);
+    }
+    return data;
   },
 
   /**
@@ -462,10 +496,14 @@ export const salahApi = {
     latitude?: number | null;
     longitude?: number | null;
   }): Promise<{ success: boolean; user: UserProfile }> {
-    return await fetchWithAuth('/auth/profile', {
+    const data = await fetchWithAuth('/auth/profile', {
       method: 'PATCH',
       body: JSON.stringify(payload),
     });
+    if (data?.user) {
+      authStorage.setCachedUser(data.user);
+    }
+    return data;
   },
 
   /**

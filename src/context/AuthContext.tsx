@@ -32,8 +32,23 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<UserProfile | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Frontend-First Session Initialization:
+  // If token and cached user exist, render immediately (0ms delay) without blocking spinner
+  const [user, setUser] = useState<UserProfile | null>(() => {
+    if (typeof window !== 'undefined' && authStorage.getToken()) {
+      return authStorage.getCachedUser()
+    }
+    return null
+  })
+  const [loading, setLoading] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') {
+      const token = authStorage.getToken()
+      const cached = authStorage.getCachedUser()
+      // If user has token but no cached profile yet, brief loading
+      return Boolean(token && !cached)
+    }
+    return false
+  })
   const [banner, setBanner] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const initStartedRef = useRef(false)
   const processingCallbackRef = useRef(false)
@@ -53,13 +68,20 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       const res = await salahApi.getMe()
       if (res?.user) {
         setUser(res.user)
+        authStorage.setCachedUser(res.user)
         return res.user
       }
-      setUser(null)
       return null
-    } catch {
-      authStorage.clearToken()
-      setUser(null)
+    } catch (err: any) {
+      // Only clear token if server explicitly returned 401 Unauthorized or 403 Forbidden
+      const status = err?.status || err?.response?.status
+      if (status === 401 || status === 403) {
+        authStorage.clearToken()
+        setUser(null)
+      } else {
+        // Cold start, slow network, or offline: preserve cached user session
+        console.warn('[AuthContext] Backend unreachable during refreshUser, preserving cached user session.')
+      }
       return null
     }
   }

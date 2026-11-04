@@ -80,7 +80,7 @@ export const MySalahScreen: React.FC<MySalahScreenProps> = ({
     queryKey: ['weekly-prayers', selectedWeekStart],
     queryFn: () => salahApi.getWeeklyPrayers({ startDate: selectedWeekStart }),
     enabled: hasToken,
-    staleTime: 5000,
+    staleTime: 1000 * 60 * 5,
   })
 
   const displayWeek = useMemo(() => {
