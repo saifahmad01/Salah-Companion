@@ -1,0 +1,54 @@
+name: CI & Production Verification
+
+on:
+  push:
+    branches: [ main, feat/*, fix/* ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  verify-build:
+    name: Frontend Build & Cloudflare Bundle
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build frontend application
+        run: npm run build
+
+      - name: Verify Cloudflare Worker bundle (dry-run)
+        run: npx wrangler deploy --dry-run
+
+  verify-backend:
+    name: Backend Unit Tests & Syntax Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install backend dependencies
+        run: |
+          cd server
+          npm ci
+
+      - name: Run backend unit tests
+        run: |
+          cd server
+          node tests/transliterateUrdu.test.js
+          node tests/hadithApi.test.js
+          node tests/appVersion.test.js
