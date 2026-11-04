@@ -27,6 +27,7 @@ import {
   type WeeklyStats,
 } from '../utils/prayerRecords'
 import { salahApi } from '../services/backendApi'
+import { ProgressScreenSkeleton } from './SkeletonLoaders'
 
 interface ProgressScreenProps {
   onBack?: () => void
@@ -112,9 +113,22 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
   const [customEndDate, setCustomEndDate] = useState<string>(() => {
     return new Date().toISOString().split('T')[0]
   })
-  const [backendData, setBackendData] = useState<BackendProgressSummary | null>(null)
-  const [loading, setLoading] = useState<boolean>(true)
+  const [backendData, setBackendData] = useState<BackendProgressSummary | null>(() => {
+    try {
+      const cached = sessionStorage.getItem('salah_progress_weekly')
+      if (cached) return JSON.parse(cached)
+    } catch {}
+    return null
+  })
+  const [loading, setLoading] = useState<boolean>(() => {
+    try {
+      const cached = sessionStorage.getItem('salah_progress_weekly')
+      if (cached) return false
+    } catch {}
+    return true
+  })
   const [refreshing, setRefreshing] = useState<boolean>(false)
+  const [syncError, setSyncError] = useState<boolean>(false)
   const [pendingQadaList, setPendingQadaList] = useState<Array<{ id: string; prayerName: string; date: string; notes?: string }>>([])
   const [qadaLoadingId, setQadaLoadingId] = useState<string | null>(null)
   const [qadaSuccessMessage, setQadaSuccessMessage] = useState<string | null>(null)
@@ -154,10 +168,20 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
     return computeWeeklyStats(records)
   }, [weeklyStats])
 
-  // Fetch real statistics from backend
+  // Fetch real statistics from backend (stale-while-revalidate)
   const fetchProgress = useCallback(async (isSilent = false) => {
-    if (!isSilent) setLoading(true)
-    else setRefreshing(true)
+    const cacheKey = `salah_progress_${period}${period === 'custom' ? `_${customStartDate}_${customEndDate}` : ''}`
+    let hasCached = false
+    try {
+      hasCached = !!sessionStorage.getItem(cacheKey)
+    } catch {}
+
+    if (!isSilent && !hasCached && !backendData) {
+      setLoading(true)
+    } else {
+      setRefreshing(true)
+    }
+    setSyncError(false)
 
     try {
       const params: { period: string; startDate?: string; endDate?: string } = { period }
@@ -168,18 +192,30 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
       const res = await salahApi.getProgressSummary(params)
       if (res && res.summary) {
         setBackendData(res)
+        try {
+          sessionStorage.setItem(cacheKey, JSON.stringify(res))
+        } catch {}
       }
     } catch (err) {
       console.warn('[ProgressScreen] Falling back to local offline statistics:', err)
+      setSyncError(true)
     } finally {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [period, customStartDate, customEndDate])
+  }, [period, customStartDate, customEndDate, backendData])
 
   useEffect(() => {
+    const cacheKey = `salah_progress_${period}${period === 'custom' ? `_${customStartDate}_${customEndDate}` : ''}`
+    try {
+      const cached = sessionStorage.getItem(cacheKey)
+      if (cached) {
+        setBackendData(JSON.parse(cached))
+        setLoading(false)
+      }
+    } catch {}
     fetchProgress()
-  }, [fetchProgress])
+  }, [period, customStartDate, customEndDate])
 
   // Consolidated display stats (merging backend with local fallback)
   const displayStats = useMemo(() => {
@@ -428,11 +464,24 @@ export const ProgressScreen: React.FC<ProgressScreenProps> = ({
 
       {/* Main Analytics Content Container */}
       <div className="w-full px-4 sm:px-6 lg:px-8 space-y-4 mt-1">
-        {loading ? (
-          <div className="py-24 flex flex-col items-center justify-center text-center bg-white/60 rounded-3xl border border-stone-200/60 shadow-xs">
-            <RefreshCw className="w-7 h-7 text-[#0E543F] animate-spin mb-2" />
-            <p className="text-xs font-semibold text-stone-600">Calculating verified Salah metrics...</p>
+        {syncError && (
+          <div className="flex items-center justify-between p-3 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span>Offline / Slow Connection. Displaying cached prayer records.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchProgress(false)}
+              className="px-2.5 py-1 rounded-xl bg-amber-200 hover:bg-amber-300 font-semibold transition cursor-pointer"
+            >
+              Retry
+            </button>
           </div>
+        )}
+
+        {loading && !backendData ? (
+          <ProgressScreenSkeleton />
         ) : (
           <>
             {/* ROW 1: Salah Overview Ring + Stat Cards & Keep Going */}

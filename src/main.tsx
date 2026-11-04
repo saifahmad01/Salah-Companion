@@ -74,9 +74,19 @@ class ErrorBoundary extends Component<Props, State> {
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 1000 * 60 * 5,
-      retry: 1,
+      staleTime: 1000 * 60 * 5, // 5 minutes fresh cache
+      gcTime: 1000 * 60 * 60 * 24, // 24 hours garbage collection retention
+      retry: (failureCount, error: any) => {
+        // Do not retry 4xx client/auth errors
+        const status = error?.status || error?.response?.status
+        if (status && status >= 400 && status < 500) {
+          return false
+        }
+        return failureCount < 2
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
       refetchOnWindowFocus: false,
+      refetchOnReconnect: true,
     },
   },
 })
