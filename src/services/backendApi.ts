@@ -994,6 +994,15 @@ export const salahApi = {
     const query = searchParams.toString() ? '?' + searchParams.toString() : '';
     return await fetchWithAuth('/prayers/corrections/my' + query, { method: 'GET' });
   },
+
+  /**
+   * Delete / dismiss a resolved correction notification message for the user
+   */
+  async deleteCorrectionRequest(id: string): Promise<{ success: boolean; message: string }> {
+    return await fetchWithAuth('/prayers/corrections/' + id, {
+      method: 'DELETE',
+    });
+  },
 };
 
 

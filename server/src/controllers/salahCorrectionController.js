@@ -159,9 +159,26 @@ export async function getMyCorrectionRequests(req, res, next) {
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * parseInt(limit, 10);
     const take = Math.min(50, Math.max(1, parseInt(limit, 10)));
 
-    const where = { userId };
+    const fiveHoursAgo = new Date(Date.now() - 5 * 60 * 60 * 1000);
+    const where = {
+      userId,
+      userDismissedAt: null,
+      OR: [
+        { status: 'PENDING_APPROVAL' },
+        {
+          status: { in: ['APPROVED', 'REJECTED'] },
+          reviewedAt: { gte: fiveHoursAgo },
+        },
+      ],
+    };
+
     if (status && status !== 'ALL') {
-      where.status = String(status).toUpperCase();
+      const upperStatus = String(status).toUpperCase();
+      delete where.OR;
+      where.status = upperStatus;
+      if (upperStatus !== 'PENDING_APPROVAL') {
+        where.reviewedAt = { gte: fiveHoursAgo };
+      }
     }
 
     const [total, requests] = await Promise.all([
@@ -427,7 +444,7 @@ export async function approveCorrectionRequest(req, res, next) {
       }
 
       return { updatedRequest, prayerLog };
-    });
+    }, { maxWait: 10000, timeout: 20000 });
 
     return res.status(200).json({
       success: true,
@@ -520,7 +537,7 @@ export async function rejectCorrectionRequest(req, res, next) {
       }
 
       return rejected;
-    });
+    }, { maxWait: 10000, timeout: 20000 });
 
     return res.status(200).json({
       success: true,
@@ -529,6 +546,71 @@ export async function rejectCorrectionRequest(req, res, next) {
     });
   } catch (error) {
     console.error('[SalahCorrection] rejectCorrectionRequest error:', error);
+    next(error);
+  }
+}
+
+/**
+ * DELETE /api/prayers/corrections/:id
+ * Allows a user to manually delete/dismiss a resolved correction notification message.
+ * Removes only the user's notification/inbox message while strictly preserving:
+ * 1. The actual salah_correction_requests database record for administrative review
+ * 2. The admin_prayer_corrections audit log
+ * 3. The historical prayer_logs entry
+ * Pending requests CANNOT be deleted.
+ */
+export async function deleteCorrectionNotification(req, res, next) {
+  try {
+    const userId = req.user.id;
+    const { id } = req.params;
+
+    const request = await prisma.salahCorrectionRequest.findFirst({
+      where: { id, userId },
+    });
+
+    if (!request) {
+      return res.status(404).json({
+        success: false,
+        code: 'NOT_FOUND',
+        error: 'Correction request not found.',
+      });
+    }
+
+    if (request.status === 'PENDING_APPROVAL') {
+      return res.status(400).json({
+        success: false,
+        code: 'PENDING_CANNOT_BE_DELETED',
+        error: 'Pending requests cannot be deleted while awaiting administrator review.',
+      });
+    }
+
+    // Soft delete for user by setting userDismissedAt
+    await prisma.salahCorrectionRequest.update({
+      where: { id },
+      data: { userDismissedAt: new Date() },
+    });
+
+    // Also delete matching notification_logs entries for this user and prayer
+    try {
+      const normPrayer = request.prayerName.charAt(0).toUpperCase() + request.prayerName.slice(1);
+      await prisma.notificationLog.deleteMany({
+        where: {
+          userId,
+          prayerName: { in: [request.prayerName, normPrayer] },
+          date: request.prayerDate,
+          category: 'prayer_correction',
+        },
+      });
+    } catch (notifErr) {
+      // non-fatal
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Correction notification deleted successfully.',
+    });
+  } catch (error) {
+    console.error('[SalahCorrection] deleteCorrectionNotification error:', error);
     next(error);
   }
 }

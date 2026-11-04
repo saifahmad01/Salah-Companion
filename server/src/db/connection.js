@@ -121,6 +121,13 @@ if (isPostgresUrl) {
         if (!pCols.some((c) => c.name === 'qada_completed_at')) {
           sqliteDb.prepare('ALTER TABLE prayer_logs ADD COLUMN qada_completed_at DATETIME').run();
         }
+
+      const cCols = sqliteDb.pragma('table_info(salah_correction_requests)');
+      if (cCols && cCols.length > 0) {
+        if (!cCols.some((c) => c.name === 'user_dismissed_at')) {
+          sqliteDb.prepare('ALTER TABLE salah_correction_requests ADD COLUMN user_dismissed_at DATETIME').run();
+        }
+      }
       }
     } catch (e) {
       console.warn('[Database] SQLite column check notice:', e.message);

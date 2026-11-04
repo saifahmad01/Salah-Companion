@@ -663,7 +663,8 @@ Base URL: `http://localhost:8080/api` (Dev) | `https://salah-companion-z3i4.onre
 | `PATCH`| `/api/prayers/log/:id` | Verified User | Update existing prayer status or personal notes. |
 | `DELETE`| `/api/prayers/log/:id` | Verified User | Undo/delete a prayer logged today. Historical records are read-only. |
 | `POST` | `/api/prayers/corrections/request` | Verified User | Submit historical Salah correction request (strictly for past dates). Stored as `PENDING_APPROVAL` without altering historical `prayer_logs`. |
-| `GET`  | `/api/prayers/corrections/my` | Verified User | Fetch current authenticated user's submitted historical correction requests with approval statuses and rejection reasons. |
+| `GET`  | `/api/prayers/corrections/my` | Verified User | Fetch current authenticated user's submitted historical correction requests with approval statuses and rejection reasons. Automatically filters out resolved requests older than 5 hours while permanently retaining pending requests. |
+| `DELETE`| `/api/prayers/corrections/:id`| Verified User | User soft-deletes a resolved correction notification message (sets `user_dismissed_at` and purges matching user notification log). Pending requests are protected against deletion. Historical `prayer_logs` and admin audit records remain intact. |
 
 ### Progress Summary (`/api/progress`)
 | Method | Path | Auth Required | Description |

@@ -13,6 +13,7 @@ import {
 import {
   submitCorrectionRequest,
   getMyCorrectionRequests,
+  deleteCorrectionNotification,
 } from '../controllers/salahCorrectionController.js';
 import { protectRoute, requireVerifiedEmail, validateBody } from '../middlewares/authMiddleware.js';
 import { logPrayerInputSchema } from '../schemas/prayerLogSchema.js';
@@ -26,6 +27,7 @@ prayerLogRouter.use(requireVerifiedEmail);
 // Historical Salah Correction Requests (User-facing, strictly for past dates)
 prayerLogRouter.post('/corrections/request', submitCorrectionRequest);
 prayerLogRouter.get('/corrections/my', getMyCorrectionRequests);
+prayerLogRouter.delete('/corrections/:id', deleteCorrectionNotification);
 
 // Qada routes
 prayerLogRouter.post('/qada', recordQadaPrayer);
