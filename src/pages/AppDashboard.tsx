@@ -56,6 +56,7 @@ import { LogOut, Volume2, Shield, Compass, ChevronRight, ArrowLeft, Building } f
 import { useSalahNotifications } from '../hooks/useSalahNotifications'
 import { QiblaCompassModal } from '../components/QiblaCompassModal'
 import { PrayerConfirmationModal } from '../components/PrayerConfirmationModal'
+import { ModalErrorBoundary } from '../components/ModalErrorBoundary'
 import { SignOutConfirmationModal } from '../components/SignOutConfirmationModal'
 import { AppExitModal } from '../components/AppExitModal'
 import { useExitConfirmation } from '../hooks/useExitConfirmation'
@@ -1480,23 +1481,32 @@ export const AppDashboard = () => {
           onConfirmSignOut={handleConfirmSignOut}
           userName={currentUser?.name}
         />
-        <PrayerConfirmationModal
-          isOpen={isConfirmModalOpen}
-          onClose={() => {
-            if (!isConfirmSubmitting) {
-              setIsConfirmModalOpen(false)
-              setPendingConfirmation(null)
-              setConfirmError(null)
-            }
+        <ModalErrorBoundary
+          fallbackTitle="Prayer Confirmation"
+          onReset={() => {
+            setIsConfirmModalOpen(false)
+            setPendingConfirmation(null)
+            setConfirmError(null)
           }}
-          onConfirm={handleConfirmPrayer}
-          prayer={pendingConfirmation?.prayer || null}
-          targetStatus={pendingConfirmation?.status || 'ON_TIME'}
-          prayerDate={pendingConfirmation?.dateKey || todayDateKey}
-          isCorrection={pendingConfirmation?.isCorrection}
-          isSubmitting={isConfirmSubmitting}
-          error={confirmError}
-        />
+        >
+          <PrayerConfirmationModal
+            isOpen={isConfirmModalOpen}
+            onClose={() => {
+              if (!isConfirmSubmitting) {
+                setIsConfirmModalOpen(false)
+                setPendingConfirmation(null)
+                setConfirmError(null)
+              }
+            }}
+            onConfirm={handleConfirmPrayer}
+            prayer={pendingConfirmation?.prayer || null}
+            targetStatus={pendingConfirmation?.status || 'ON_TIME'}
+            prayerDate={pendingConfirmation?.dateKey || todayDateKey}
+            isCorrection={pendingConfirmation?.isCorrection}
+            isSubmitting={isConfirmSubmitting}
+            error={confirmError}
+          />
+        </ModalErrorBoundary>
         <QiblaCompassModal
           isOpen={isQiblaOpen}
           onClose={() => setIsQiblaOpen(false)}
