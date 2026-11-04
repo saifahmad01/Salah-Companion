@@ -950,6 +950,10 @@ export const salahApi = {
       body: JSON.stringify(payload),
     });
   },
+
+  async getAppReleaseInfo(): Promise<{ success: boolean; data: any }> {
+    return await fetchWithAuth('/app/version', { method: 'GET' });
+  },
 };
 
 
@@ -996,6 +1000,16 @@ export interface AdminUserData {
 }
 
 export const adminApi = {
+  async getAppReleaseInfo(): Promise<{ success: boolean; data: any }> {
+    return await fetchWithAuth('/admin/app/version', { method: 'GET' });
+  },
+
+  async updateAppReleaseInfo(payload: any): Promise<{ success: boolean; message: string; data: any }> {
+    return await fetchWithAuth('/admin/app/version', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+  },
   async getOverview(): Promise<{ success: boolean; data: AdminOverviewData }> {
     return await fetchWithAuth('/admin/overview', { method: 'GET' });
   },

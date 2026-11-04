@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Users,
+  Smartphone,
   Activity,
   Bell,
   Shield,
@@ -38,13 +39,14 @@ import {
 } from '../services/backendApi';
 import { useAuth } from '../context/AuthContext';
 import { SignOutConfirmationModal } from '../components/SignOutConfirmationModal';
+import { AppReleaseManagementView } from '../components/admin/AppReleaseManagementView';
 
 export const AdminDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser, logout, banner, setBanner } = useAuth();
   const [isSignOutModalOpen, setIsSignOutModalOpen] = useState(false);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'salah' | 'broadcast' | 'resources'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'users' | 'salah' | 'broadcast' | 'resources' | 'releases'>('overview');
   const [overview, setOverview] = useState<AdminOverviewData | null>(null);
   const [users, setUsers] = useState<AdminUserData[]>([]);
   const [quranResources, setQuranResources] = useState<QuranResourceItem[]>([]);
@@ -442,6 +444,18 @@ export const AdminDashboard: React.FC = () => {
         >
           <BookOpen className="w-4 h-4" />
           <span>Quran Resources</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('releases')}
+          className={`py-3 px-4 text-xs font-semibold flex items-center gap-2 border-b-2 transition cursor-pointer whitespace-nowrap ${
+            activeTab === 'releases'
+              ? 'border-amber-400 text-amber-300 bg-emerald-900/20'
+              : 'border-transparent text-emerald-200/70 hover:text-white'
+          }`}
+        >
+          <Smartphone className="w-4 h-4 text-amber-400" />
+          <span>App Releases</span>
         </button>
       </nav>
 
@@ -1145,7 +1159,7 @@ export const AdminDashboard: React.FC = () => {
               </button>
             </form>
           </div>
-        ) : (
+        ) : activeTab === 'resources' ? (
           /* ======================================================== */
           /* QURAN PDF RESOURCES TAB (SUPABASE STORAGE INTEGRATION)    */
           /* ======================================================== */
@@ -1280,7 +1294,9 @@ export const AdminDashboard: React.FC = () => {
               })}
             </div>
           </div>
-        )}
+        ) : activeTab === 'releases' ? (
+          <AppReleaseManagementView onNotification={(type, msg) => setBanner({ type, message: msg })} />
+        ) : null}
 
         {/* MODAL: Correct Salah Status */}
         {correctingRecord && (
